@@ -20,6 +20,7 @@ const (
 	backupView          = 5
 	importView          = 6
 	filePickerView      = 7
+	csvProfileView      = 8
 )
 
 const (
@@ -46,6 +47,9 @@ type model struct {
 	dirEntries   []string
 	fileIndex    int
 	selectedFile string
+
+	profileIndex    int
+	selectedProfile string
 }
 
 func NewModel(store *Store) model {
@@ -96,6 +100,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleImportView(key)
 		case filePickerView:
 			return m.handleFilePickerView(key)
+		case csvProfileView:
+			return m.handleCSVProfileView(key)
 		}
 	case tea.WindowSizeMsg:
 		m.windowHeight = msg.Height
@@ -362,6 +368,8 @@ func (m model) handleImportView(key string) (tea.Model, tea.Cmd) {
 		}
 
 		m.state = filePickerView
+	case "p":
+		m.state = csvProfileView
 	}
 	return m, nil
 }
@@ -401,13 +409,20 @@ func (m model) handleFilePickerView(key string) (tea.Model, tea.Cmd) {
 				m.store.importName = fullPath
 
 				currentCount := len(m.transactions)
-				err := m.store.ImportTransactionsFromCSV("Bank2")
+				// Use the selected profile instead of hardcoded profileName
+				profileToUse := m.store.csvProfiles.Default
+				if profileToUse == "" && len(m.store.csvProfiles.Profiles) > 0 {
+					profileToUse = m.store.csvProfiles.Profiles[0].Name
+				}
+
+				err := m.store.ImportTransactionsFromCSV(profileToUse)
 				if err != nil {
 					m.importMessage = fmt.Sprintf("Error: %v", err)
 				} else {
 					m.transactions, _ = m.store.GetTransactions()
 					imported := len(m.transactions) - currentCount
-					m.importMessage = fmt.Sprintf("Successfully imported %d transactions from %s", imported, filepath.Base(selected))
+					m.importMessage = fmt.Sprintf("Successfully imported %d transactions from %s using profile %s",
+						imported, filepath.Base(selected), profileToUse)
 				}
 				m.state = importView
 			}
@@ -444,4 +459,38 @@ func (m *model) loadDirectoryEntries() error {
 	}
 
 	return nil
+}
+
+// CSV Profile View
+
+func (m model) handleCSVProfileView(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "esc":
+		m.state = importView
+	case "up":
+		if m.profileIndex > 0 {
+			m.profileIndex--
+		}
+	case "down":
+		if len(m.store.csvProfiles.Profiles) > 0 && m.profileIndex < len(m.store.csvProfiles.Profiles)-1 {
+			m.profileIndex++
+		}
+	case "enter":
+		if len(m.store.csvProfiles.Profiles) > 0 && m.profileIndex < len(m.store.csvProfiles.Profiles) {
+			selectedProfile := m.store.csvProfiles.Profiles[m.profileIndex]
+			m.selectedProfile = selectedProfile.Name
+
+			// Update the store's default profile
+			m.store.csvProfiles.Default = selectedProfile.Name
+			err := m.store.saveCSVProfiles()
+			if err != nil {
+				m.importMessage = fmt.Sprintf("Error saving profile selection: %v", err)
+			} else {
+				m.importMessage = fmt.Sprintf("Selected CSV profile: %s", selectedProfile.Name)
+			}
+
+			m.state = importView
+		}
+	}
+	return m, nil
 }

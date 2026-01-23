@@ -146,6 +146,13 @@ func (m model) View() string {
 	case importView:
 		s += headerStyle.Render("Import Options:") + "\n\n"
 
+		// Show current selected profile
+		currentProfile := m.store.csvProfiles.Default
+		if currentProfile == "" && len(m.store.csvProfiles.Profiles) > 0 {
+			currentProfile = m.store.csvProfiles.Profiles[0].Name
+		}
+		s += faintStyle.Render(fmt.Sprintf("Current CSV Profile: %s", currentProfile)) + "\n\n"
+
 		if m.importMessage != "" {
 			if strings.Contains(m.importMessage, "Error") {
 				s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.importMessage) + "\n\n"
@@ -154,7 +161,7 @@ func (m model) View() string {
 			}
 		}
 
-		s += faintStyle.Render("i: Import CSV file | Esc: Return to menu") + "\n\n"
+		s += faintStyle.Render("i: Import CSV file | p: Select CSV Profile | Esc: Return to menu") + "\n\n"
 	case filePickerView:
 		s += headerStyle.Render("Select CSV File") + "\n\n"
 		s += faintStyle.Render("Current Directory: "+m.currentDir) + "\n\n"
@@ -176,6 +183,34 @@ func (m model) View() string {
 				} else {
 					s += enumeratorStyle.Render(prefix) + entry + "\n"
 				}
+			}
+		}
+
+		s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: Select | Esc: Cancel")
+	case csvProfileView:
+		s += headerStyle.Render("Select CSV Profile") + "\n\n"
+
+		if len(m.store.csvProfiles.Profiles) == 0 {
+			s += faintStyle.Render("No CSV profiles found.") + "\n\n"
+		} else {
+			// Display available profiles
+			for i, profile := range m.store.csvProfiles.Profiles {
+				prefix := "  "
+				if i == m.profileIndex {
+					prefix = "> "
+				}
+
+				// Show current default
+				suffix := ""
+				if profile.Name == m.store.csvProfiles.Default {
+					suffix = " (current)"
+				}
+
+				// Show profile details
+				profileDetails := fmt.Sprintf("%s - Date:%d, Amount:%d, Desc:%d, Header:%v%s",
+					profile.Name, profile.DateColumn, profile.AmountColumn, profile.DescColumn, profile.HasHeader, suffix)
+
+				s += enumeratorStyle.Render(prefix) + profileDetails + "\n"
 			}
 		}
 
