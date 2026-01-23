@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -143,7 +146,40 @@ func (m model) View() string {
 	case importView:
 		s += headerStyle.Render("Import Options:") + "\n\n"
 
-		s += faintStyle.Render("i: Import from import.csv | Esc: Return to menu") + "\n\n"
+		if m.importMessage != "" {
+			if strings.Contains(m.importMessage, "Error") {
+				s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.importMessage) + "\n\n"
+			} else {
+				s += lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.importMessage) + "\n\n"
+			}
+		}
+
+		s += faintStyle.Render("i: Import CSV file | Esc: Return to menu") + "\n\n"
+	case filePickerView:
+		s += headerStyle.Render("Select CSV File") + "\n\n"
+		s += faintStyle.Render("Current Directory: "+m.currentDir) + "\n\n"
+
+		if len(m.dirEntries) == 0 {
+			s += faintStyle.Render("No directories or CSV files found in this location.") + "\n\n"
+		} else {
+			// Display directory entries
+			for i, entry := range m.dirEntries {
+				prefix := "  "
+				if i == m.fileIndex {
+					prefix = "> "
+				}
+
+				// Style directories differently
+				fullPath := filepath.Join(m.currentDir, entry)
+				if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
+					s += enumeratorStyle.Render(prefix) + headerStyle.Render(entry+"/") + "\n"
+				} else {
+					s += enumeratorStyle.Render(prefix) + entry + "\n"
+				}
+			}
+		}
+
+		s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: Select | Esc: Cancel")
 	}
 
 	return s

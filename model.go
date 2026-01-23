@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -10,13 +12,14 @@ import (
 )
 
 const (
-	menuView   uint = iota
-	listView        = 1
-	titleView       = 2
-	bodyView        = 3
-	editView        = 4
-	backupView      = 5
-	importView      = 6
+	menuView       uint = iota
+	listView            = 1
+	titleView           = 2
+	bodyView            = 3
+	editView            = 4
+	backupView          = 5
+	importView          = 6
+	filePickerView      = 7
 )
 
 const (
@@ -38,6 +41,11 @@ type model struct {
 	backupMessage   string
 	importMessage   string
 	editAmountStr   string
+
+	currentDir   string
+	dirEntries   []string
+	fileIndex    int
+	selectedFile string
 }
 
 func NewModel(store *Store) model {
@@ -86,6 +94,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleBackupView(key)
 		case importView:
 			return m.handleImportView(key)
+		case filePickerView:
+			return m.handleFilePickerView(key)
 		}
 	case tea.WindowSizeMsg:
 		m.windowHeight = msg.Height
@@ -330,15 +340,108 @@ func (m model) handleImportView(key string) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.state = menuView
 	case "i":
-		currentCount := len(m.transactions)
-		err := m.store.ImportTransactionsFromCSV()
+		// Open file picker
+		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			m.importMessage = fmt.Sprintf("Error: %v", err)
-		} else {
-			m.transactions, _ = m.store.GetTransactions()
-			imported := len(m.transactions) - currentCount
-			m.importMessage = fmt.Sprintf("Successfully imported %d transactions", imported)
+			homeDir = "."
+		}
+		m.currentDir = homeDir
+		m.fileIndex = 0
+		m.selectedFile = ""
+
+		// Load directory entries with error handling
+		err = m.loadDirectoryEntries()
+		if err != nil {
+			m.importMessage = fmt.Sprintf("Error opening directory: %v", err)
+			return m, nil
+		}
+
+		// Debug: Check if we found any entries
+		if len(m.dirEntries) == 0 {
+			m.importMessage = "No directories or CSV files found"
+		}
+
+		m.state = filePickerView
+	}
+	return m, nil
+}
+
+// File Picker View
+
+func (m model) handleFilePickerView(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "esc":
+		m.state = importView
+	case "up":
+		if m.fileIndex > 0 {
+			m.fileIndex--
+		}
+	case "down":
+		if len(m.dirEntries) > 0 && m.fileIndex < len(m.dirEntries)-1 {
+			m.fileIndex++
+		}
+	case "enter":
+		if len(m.dirEntries) > 0 && m.fileIndex < len(m.dirEntries) {
+			selected := m.dirEntries[m.fileIndex]
+			fullPath := filepath.Join(m.currentDir, selected)
+
+			// Check if it's a directory
+			if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
+				if selected == ".." {
+					// Go up one directory
+					m.currentDir = filepath.Dir(m.currentDir)
+				} else {
+					// Enter directory
+					m.currentDir = fullPath
+				}
+				m.fileIndex = 0
+				m.loadDirectoryEntries()
+			} else if strings.HasSuffix(strings.ToLower(selected), ".csv") {
+				// CSV file selected - set import path and import
+				m.store.importName = fullPath
+
+				currentCount := len(m.transactions)
+				err := m.store.ImportTransactionsFromCSV("Bank2")
+				if err != nil {
+					m.importMessage = fmt.Sprintf("Error: %v", err)
+				} else {
+					m.transactions, _ = m.store.GetTransactions()
+					imported := len(m.transactions) - currentCount
+					m.importMessage = fmt.Sprintf("Successfully imported %d transactions from %s", imported, filepath.Base(selected))
+				}
+				m.state = importView
+			}
 		}
 	}
 	return m, nil
+}
+
+func (m *model) loadDirectoryEntries() error {
+	entries, err := os.ReadDir(m.currentDir)
+	if err != nil {
+		return err
+	}
+
+	m.dirEntries = []string{}
+
+	// Add parent directory option if not at root
+	if m.currentDir != filepath.Dir(m.currentDir) {
+		m.dirEntries = append(m.dirEntries, "..")
+	}
+
+	// Add directories first
+	for _, entry := range entries {
+		if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
+			m.dirEntries = append(m.dirEntries, entry.Name())
+		}
+	}
+
+	// Add CSV files
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".csv") {
+			m.dirEntries = append(m.dirEntries, entry.Name())
+		}
+	}
+
+	return nil
 }

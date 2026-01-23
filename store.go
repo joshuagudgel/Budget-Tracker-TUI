@@ -18,12 +18,27 @@ type Transaction struct {
 	TransactionType string  `json:"transactionType"`
 }
 
+type CSVProfile struct {
+	Name         string `json:"name"`
+	DateColumn   int    `json:"dateColumn"`
+	AmountColumn int    `json:"amountColumn"`
+	DescColumn   int    `json:"descColumn"`
+	HasHeader    bool   `json:"hasHeader"`
+}
+
+type CSVProfileStore struct {
+	Profiles []CSVProfile `json:"profiles"`
+	Default  string
+}
+
 type Store struct {
 	filename     string
 	backupName   string
 	importName   string
+	profileName  string
 	transactions []Transaction
 	nextId       int64
+	csvProfiles  CSVProfileStore
 }
 
 func (s *Store) Init() error {
@@ -40,11 +55,16 @@ func (s *Store) Init() error {
 	s.filename = filepath.Join(appDir, "transaction-data.json")
 	s.backupName = filepath.Join(appDir, "backup.json")
 	s.importName = filepath.Join(appDir, "import.csv")
+	s.profileName = filepath.Join(appDir, "csv-profiles.json")
 
 	fmt.Printf("Transactions will be saved to: %s\n", s.filename)
 
+	s.loadCSVProfiles()
+
 	return s.loadTransactions()
 }
+
+// Transactions
 
 func (s *Store) loadTransactions() error {
 	if _, err := os.Stat(s.filename); os.IsNotExist(err) {
@@ -120,7 +140,12 @@ func (s *Store) DeleteTransaction(id int64) error {
 	return s.saveTransactions()
 }
 
-func (s *Store) ImportTransactionsFromCSV() error {
+func (s *Store) ImportTransactionsFromCSV(profileName string) error {
+	profile := s.getProfileByName(profileName)
+	if profile == nil {
+		return fmt.Errorf("profile '%s' not found", profileName)
+	}
+
 	data, err := os.ReadFile(s.importName)
 	if err != nil {
 		return fmt.Errorf("failed to read CSV file: %v", err)
@@ -131,17 +156,12 @@ func (s *Store) ImportTransactionsFromCSV() error {
 		return fmt.Errorf("empty CSV file")
 	}
 
-	// Detect format by analyzing first line
-	format := s.detectCSVFormat(lines[0])
-
+	// Use profile.HasHeader to determine start line
 	var startLine int
-	switch format {
-	case "bank2":
+	if profile.HasHeader {
 		startLine = 1 // Skip header row
-	case "bank1":
+	} else {
 		startLine = 0 // No headers
-	default:
-		return fmt.Errorf("unsupported CSV format")
 	}
 
 	var importedTransactions []Transaction
@@ -152,14 +172,23 @@ func (s *Store) ImportTransactionsFromCSV() error {
 		}
 
 		fields := s.parseCSVLine(line)
-		if len(fields) < 5 {
-			continue // Skip malformed lines
+
+		// Check if we have enough columns based on profile requirements
+		maxColumn := profile.DateColumn
+		if profile.AmountColumn > maxColumn {
+			maxColumn = profile.AmountColumn
+		}
+		if profile.DescColumn > maxColumn {
+			maxColumn = profile.DescColumn
 		}
 
-		transaction, err := s.parseTransactionFromFields(fields, format)
+		if len(fields) <= maxColumn {
+			continue // Skip lines with insufficient columns
+		}
+
+		transaction, err := s.parseTransactionFromProfile(fields, profile)
 		if err != nil {
-			//fmt.Printf("Skipping invalid line %d: %v\n", i+1, err)
-			continue
+			continue // Skip invalid lines
 		}
 
 		// Auto-assign ID using existing pattern
@@ -177,21 +206,30 @@ func (s *Store) ImportTransactionsFromCSV() error {
 	// Add to existing transactions
 	s.transactions = append(s.transactions, importedTransactions...)
 
-	//fmt.Printf("Imported %d transactions from CSV\n", len(importedTransactions))
 	return s.saveTransactions()
 }
 
-func (s *Store) detectCSVFormat(firstLine string) string {
-	// Check for bank2 format by looking for header keywords
-	lowerLine := strings.ToLower(firstLine)
-	if strings.Contains(lowerLine, "date") &&
-		strings.Contains(lowerLine, "description") &&
-		strings.Contains(lowerLine, "amount") {
-		return "bank2"
+func (s *Store) parseTransactionFromProfile(fields []string, profile *CSVProfile) (Transaction, error) {
+	var transaction Transaction
+	var err error
+
+	// Extract date from specified column
+	transaction.Date = strings.Trim(fields[profile.DateColumn], "\"")
+
+	// Extract description from specified column
+	transaction.Description = strings.Trim(fields[profile.DescColumn], "\"")
+
+	// Extract amount from specified column
+	amountStr := strings.Trim(fields[profile.AmountColumn], "\"")
+	transaction.Amount, err = s.parseAmount(amountStr)
+	if err != nil {
+		return transaction, fmt.Errorf("invalid amount: %v", err)
 	}
 
-	// Assume bank1 format (no headers)
-	return "bank1"
+	// Set empty category (can be enhanced later for category column support)
+	transaction.Category = ""
+
+	return transaction, nil
 }
 
 func (s *Store) parseCSVLine(line string) []string {
@@ -270,6 +308,8 @@ func (s *Store) parseAmount(amountStr string) (float64, error) {
 	return strconv.ParseFloat(cleaned, 64)
 }
 
+// Restore
+
 type BackupTransaction struct {
 	Amount          float64 `json:"amount"`
 	Description     string  `json:"description"`
@@ -318,4 +358,43 @@ func (s *Store) RestoreFromBackup() error {
 
 	// save transactions
 	return s.saveTransactions()
+}
+
+// CSV Profile
+func (s *Store) loadCSVProfiles() error {
+	if _, err := os.Stat(s.profileName); os.IsNotExist(err) {
+		// Create default profiles
+		s.csvProfiles = CSVProfileStore{
+			Profiles: []CSVProfile{
+				{Name: "Bank1", DateColumn: 0, AmountColumn: 1, DescColumn: 4, HasHeader: false},
+				{Name: "Bank2", DateColumn: 0, AmountColumn: 5, DescColumn: 2, HasHeader: true},
+			},
+			Default: "Bank1",
+		}
+		return s.saveCSVProfiles()
+	}
+
+	data, err := os.ReadFile(s.profileName)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(data, &s.csvProfiles)
+}
+
+func (s *Store) saveCSVProfiles() error {
+	data, err := json.MarshalIndent(s.csvProfiles, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.profileName, data, 0644)
+}
+
+func (s *Store) getProfileByName(name string) *CSVProfile {
+	for _, profile := range s.csvProfiles.Profiles {
+		if profile.Name == name {
+			return &profile
+		}
+	}
+	return nil
 }
