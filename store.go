@@ -64,7 +64,7 @@ func (s *Store) Init() error {
 	return s.loadTransactions()
 }
 
-// Transactions
+// Transactions --------------------
 
 func (s *Store) loadTransactions() error {
 	if _, err := os.Stat(s.filename); os.IsNotExist(err) {
@@ -253,47 +253,6 @@ func (s *Store) parseCSVLine(line string) []string {
 	return fields
 }
 
-func (s *Store) parseTransactionFromFields(fields []string, format string) (Transaction, error) {
-	var transaction Transaction
-	var err error
-
-	switch format {
-	case "bank2":
-		// Date*=0, Post Date=1, Description*=2, Category=3, Type=4, Amount*=5, Memo=6
-		if len(fields) < 6 {
-			return transaction, fmt.Errorf("insufficient fields for bank2 format")
-		}
-
-		transaction.Date = strings.Trim(fields[0], "\"")
-		transaction.Description = strings.Trim(fields[2], "\"")
-		if len(fields) > 3 {
-			transaction.Category = strings.Trim(fields[3], "\"")
-		}
-
-		amountStr := strings.Trim(fields[5], "\"")
-		transaction.Amount, err = s.parseAmount(amountStr)
-
-	case "bank1":
-		// Date*=0, Amount*=1, something=2, something=3, Description*=4
-		if len(fields) < 5 {
-			return transaction, fmt.Errorf("insufficient fields for bank1 format")
-		}
-
-		transaction.Date = strings.Trim(fields[0], "\"")
-		transaction.Description = strings.Trim(fields[4], "\"")
-		transaction.Category = "" // Not available in bank1 format
-
-		amountStr := strings.Trim(fields[1], "\"")
-		transaction.Amount, err = s.parseAmount(amountStr)
-	}
-
-	if err != nil {
-		return transaction, fmt.Errorf("invalid amount: %v", err)
-	}
-
-	return transaction, nil
-}
-
 func (s *Store) parseAmount(amountStr string) (float64, error) {
 	// Clean amount string: remove currency symbols, parentheses, extra spaces
 	cleaned := strings.TrimSpace(amountStr)
@@ -308,7 +267,7 @@ func (s *Store) parseAmount(amountStr string) (float64, error) {
 	return strconv.ParseFloat(cleaned, 64)
 }
 
-// Restore
+// Restore --------------------
 
 type BackupTransaction struct {
 	Amount          float64 `json:"amount"`
@@ -360,7 +319,7 @@ func (s *Store) RestoreFromBackup() error {
 	return s.saveTransactions()
 }
 
-// CSV Profile
+// CSV Profile ---------------------
 func (s *Store) loadCSVProfiles() error {
 	if _, err := os.Stat(s.profileName); os.IsNotExist(err) {
 		// Create default profiles
@@ -398,3 +357,5 @@ func (s *Store) getProfileByName(name string) *CSVProfile {
 	}
 	return nil
 }
+
+// TODO profile validation for handleCreateProfile

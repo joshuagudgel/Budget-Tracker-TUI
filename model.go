@@ -12,15 +12,16 @@ import (
 )
 
 const (
-	menuView       uint = iota
-	listView            = 1
-	titleView           = 2
-	bodyView            = 3
-	editView            = 4
-	backupView          = 5
-	importView          = 6
-	filePickerView      = 7
-	csvProfileView      = 8
+	menuView          uint = iota
+	listView               = 1
+	titleView              = 2
+	bodyView               = 3
+	editView               = 4
+	backupView             = 5
+	importView             = 6
+	filePickerView         = 7
+	csvProfileView         = 8
+	createProfileView      = 9
 )
 
 const (
@@ -29,6 +30,14 @@ const (
 	editDate
 	editType
 	editCategory
+)
+
+const (
+	createProfileName uint = iota
+	createProfileDate
+	createProfileAmount
+	createProfileDesc
+	createProfileHeader
 )
 
 type model struct {
@@ -42,14 +51,17 @@ type model struct {
 	backupMessage   string
 	importMessage   string
 	editAmountStr   string
-
+	// file explorer
 	currentDir   string
 	dirEntries   []string
 	fileIndex    int
 	selectedFile string
-
+	// csvProfile creation
 	profileIndex    int
 	selectedProfile string
+	newProfile      CSVProfile
+	createField     uint
+	createMessage   string
 }
 
 func NewModel(store *Store) model {
@@ -102,6 +114,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleFilePickerView(key)
 		case csvProfileView:
 			return m.handleCSVProfileView(key)
+		case createProfileView:
+			return m.handleCreateProfileView(key)
 		}
 	case tea.WindowSizeMsg:
 		m.windowHeight = msg.Height
@@ -491,6 +505,117 @@ func (m model) handleCSVProfileView(key string) (tea.Model, tea.Cmd) {
 
 			m.state = importView
 		}
+	case "c":
+		m.newProfile = CSVProfile{}
+		m.createField = createProfileName
+		m.createMessage = ""
+		m.state = createProfileView
 	}
+	return m, nil
+}
+
+// Create Profile View
+func (m model) handleCreateProfileView(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "esc":
+		m.state = csvProfileView
+	case "down", "tab":
+		if m.createField < createProfileHeader {
+			m.createField++
+		}
+	case "up":
+		if m.createField > createProfileName {
+			m.createField--
+		}
+	case "enter":
+		return m.handleSaveProfile()
+	case "backspace":
+		return m.handleCreateProfileBackspace()
+	default:
+		if len(key) == 1 {
+			return m.handleCreateProfileInput(key)
+		}
+	}
+	return m, nil
+}
+
+func (m model) handleCreateProfileInput(key string) (tea.Model, tea.Cmd) {
+	switch m.createField {
+	case createProfileName:
+		m.newProfile.Name += key
+	case createProfileDate:
+		if key >= "0" && key <= "9" {
+			if digit, err := strconv.Atoi(key); err == nil {
+				m.newProfile.DateColumn = m.newProfile.DateColumn*10 + digit
+			}
+		}
+	case createProfileAmount:
+		if key >= "0" && key <= "9" {
+			if digit, err := strconv.Atoi(key); err == nil {
+				m.newProfile.AmountColumn = m.newProfile.AmountColumn*10 + digit
+			}
+		}
+	case createProfileDesc:
+		if key >= "0" && key <= "9" {
+			if digit, err := strconv.Atoi(key); err == nil {
+				m.newProfile.DescColumn = m.newProfile.DescColumn*10 + digit
+			}
+		}
+	case createProfileHeader:
+		if key == "y" || key == "Y" {
+			m.newProfile.HasHeader = true
+		} else if key == "n" || key == "N" {
+			m.newProfile.HasHeader = false
+		}
+	}
+	return m, nil
+}
+
+func (m model) handleCreateProfileBackspace() (tea.Model, tea.Cmd) {
+	switch m.createField {
+	case createProfileName:
+		if len(m.newProfile.Name) > 0 {
+			m.newProfile.Name = m.newProfile.Name[:len(m.newProfile.Name)-1]
+		}
+	case createProfileDate:
+		m.newProfile.DateColumn = m.newProfile.DateColumn / 10
+	case createProfileAmount:
+		m.newProfile.AmountColumn = m.newProfile.AmountColumn / 10
+	case createProfileDesc:
+		m.newProfile.DescColumn = m.newProfile.DescColumn / 10
+	case createProfileHeader:
+		m.newProfile.HasHeader = false
+	}
+	return m, nil
+}
+
+func (m model) handleSaveProfile() (tea.Model, tea.Cmd) {
+	// Validate profile name is not empty
+	if strings.TrimSpace(m.newProfile.Name) == "" {
+		m.createMessage = "Profile name cannot be empty"
+		return m, nil
+	}
+
+	// Check for duplicate names
+	for _, profile := range m.store.csvProfiles.Profiles {
+		if profile.Name == m.newProfile.Name {
+			m.createMessage = "Profile name already exists"
+			return m, nil
+		}
+	}
+
+	// Add new profile and set as default
+	m.store.csvProfiles.Profiles = append(m.store.csvProfiles.Profiles, m.newProfile)
+	m.store.csvProfiles.Default = m.newProfile.Name
+
+	// Save profiles
+	err := m.store.saveCSVProfiles()
+	if err != nil {
+		m.createMessage = fmt.Sprintf("Error saving profile: %v", err)
+		return m, nil
+	}
+
+	// Return to CSV profile view
+	m.state = csvProfileView
 	return m, nil
 }

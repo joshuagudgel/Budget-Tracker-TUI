@@ -214,7 +214,54 @@ func (m model) View() string {
 			}
 		}
 
-		s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: Select | Esc: Cancel")
+		s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: Select | c: Create Profile | Esc: Cancel")
+	case createProfileView:
+		s += headerStyle.Render("Create CSV Profile") + "\n\n"
+
+		if m.createMessage != "" {
+			s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.createMessage) + "\n\n"
+		}
+
+		// Profile Name field
+		nameStyle := formFieldStyle
+		if m.createField == createProfileName {
+			nameStyle = activeFieldStyle
+		}
+		s += formLabelStyle.Render("Profile Name:") + nameStyle.Render(m.newProfile.Name) + "\n\n"
+
+		// Date Column field
+		dateStyle := formFieldStyle
+		if m.createField == createProfileDate {
+			dateStyle = activeFieldStyle
+		}
+		s += formLabelStyle.Render("Date Column:") + dateStyle.Render(fmt.Sprintf("%d", m.newProfile.DateColumn)) + "\n\n"
+
+		// Amount Column field
+		amountStyle := formFieldStyle
+		if m.createField == createProfileAmount {
+			amountStyle = activeFieldStyle
+		}
+		s += formLabelStyle.Render("Amount Column:") + amountStyle.Render(fmt.Sprintf("%d", m.newProfile.AmountColumn)) + "\n\n"
+
+		// Description Column field
+		descStyle := formFieldStyle
+		if m.createField == createProfileDesc {
+			descStyle = activeFieldStyle
+		}
+		s += formLabelStyle.Render("Desc Column:") + descStyle.Render(fmt.Sprintf("%d", m.newProfile.DescColumn)) + "\n\n"
+
+		// Has Header field
+		headerStyle := formFieldStyle
+		if m.createField == createProfileHeader {
+			headerStyle = activeFieldStyle
+		}
+		headerValue := "No"
+		if m.newProfile.HasHeader {
+			headerValue = "Yes"
+		}
+		s += formLabelStyle.Render("Has Header:") + headerStyle.Render(headerValue) + " (y/n)\n\n"
+
+		s += faintStyle.Render("Up/Down: Navigate fields | Enter: Save | Esc: Cancel")
 	}
 
 	return s
