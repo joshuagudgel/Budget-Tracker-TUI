@@ -280,7 +280,6 @@ func (s *Store) loadCategories() error {
 				{Name: "transport", DisplayName: "Transportation"},
 				{Name: "entertainment", DisplayName: "Entertainment"},
 				{Name: "utilities", DisplayName: "Utilities"},
-				{Name: "income", DisplayName: "Income"},
 				{Name: "unsorted", DisplayName: "Unsorted"},
 				{Name: "sorted", DisplayName: "Sorted"},
 			},
@@ -429,5 +428,3 @@ func (s *Store) getProfileByName(name string) *CSVProfile {
 	}
 	return nil
 }
-
-// TODO profile validation for handleCreateProfile
