@@ -32,6 +32,7 @@ const (
 	editDate
 	editType
 	editCategory
+	editSplit
 )
 
 const (
@@ -40,6 +41,15 @@ const (
 	createProfileAmount
 	createProfileDesc
 	createProfileHeader
+)
+
+const (
+	splitAmount1Field uint = iota
+	splitDesc1Field
+	splitCategory1Field
+	splitAmount2Field
+	splitDesc2Field
+	splitCategory2Field
 )
 
 const (
@@ -75,6 +85,17 @@ type model struct {
 	newCategory         Category
 	createCategoryField uint
 	categoryMessage     string
+
+	// Split transaction fields
+	isSplitMode    bool
+	splitAmount1   string
+	splitAmount2   string
+	splitDesc1     string
+	splitDesc2     string
+	splitCategory1 string
+	splitCategory2 string
+	splitField     uint
+	splitMessage   string
 }
 
 func NewModel(store *Store) model {
@@ -213,18 +234,43 @@ func (m model) handleListView(key string) (tea.Model, tea.Cmd) {
 func (m model) handleEditView(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc":
+		if m.isSplitMode {
+			// Exit split mode and clear split data
+			return m.exitSplitMode()
+		}
 		m.editAmountStr = ""
 		m.state = listView
+	case "s":
+		if !m.isSplitMode {
+			return m.enterSplitMode()
+		} else {
+			return m.exitSplitMode()
+		}
 	case "down", "tab":
+		if m.isSplitMode {
+			return m.handleSplitFieldNavigation(1)
+		}
 		return m.handleFieldNavigation(1)
 	case "up":
+		if m.isSplitMode {
+			return m.handleSplitFieldNavigation(-1)
+		}
 		return m.handleFieldNavigation(-1)
 	case "enter":
+		if m.isSplitMode {
+			return m.handleSaveSplit()
+		}
 		return m.handleSaveTransaction()
 	case "backspace":
+		if m.isSplitMode {
+			return m.handleSplitBackspace()
+		}
 		return m.handleBackspace()
 	default:
 		if len(key) == 1 {
+			if m.isSplitMode {
+				return m.handleSplitInput(key)
+			}
 			return m.handleTextInput(key)
 		}
 	}
@@ -750,4 +796,180 @@ func (m model) handleSaveCategory() (tea.Model, tea.Cmd) {
 	m.categoryMessage = fmt.Sprintf("Created category: %s", m.newCategory.DisplayName)
 	m.state = categoryView
 	return m, nil
+}
+
+// Split Transaction Mode --------------------
+func (m model) enterSplitMode() (tea.Model, tea.Cmd) {
+	m.isSplitMode = true
+	m.splitField = splitAmount1Field
+	m.splitMessage = ""
+
+	// Initialize split data with defaults - preserve sign
+	halfAmount := m.currTransaction.Amount / 2
+	m.splitAmount1 = fmt.Sprintf("%.2f", halfAmount)
+	m.splitAmount2 = fmt.Sprintf("%.2f", halfAmount)
+	m.splitDesc1 = m.currTransaction.Description
+	m.splitDesc2 = m.currTransaction.Description
+	m.splitCategory1 = m.currTransaction.Category
+	m.splitCategory2 = m.currTransaction.Category
+
+	return m, nil
+}
+
+func (m model) exitSplitMode() (tea.Model, tea.Cmd) {
+	m.isSplitMode = false
+	m.splitField = 0
+	m.splitMessage = ""
+	m.splitAmount1 = ""
+	m.splitAmount2 = ""
+	m.splitDesc1 = ""
+	m.splitDesc2 = ""
+	m.splitCategory1 = ""
+	m.splitCategory2 = ""
+	return m, nil
+}
+
+func (m model) handleSplitFieldNavigation(direction int) (tea.Model, tea.Cmd) {
+	if direction > 0 && m.splitField < splitCategory2Field {
+		m.splitField++
+	} else if direction < 0 && m.splitField > splitAmount1Field {
+		m.splitField--
+	}
+	return m, nil
+}
+
+func (m model) handleSplitInput(key string) (tea.Model, tea.Cmd) {
+	switch m.splitField {
+	case splitAmount1Field:
+		m.splitAmount1 = m.updateAmountField(m.splitAmount1, key)
+	case splitAmount2Field:
+		m.splitAmount2 = m.updateAmountField(m.splitAmount2, key)
+	case splitDesc1Field:
+		m.splitDesc1 += key
+	case splitDesc2Field:
+		m.splitDesc2 += key
+	case splitCategory1Field:
+		m.splitCategory1 += key
+	case splitCategory2Field:
+		m.splitCategory2 += key
+	}
+	return m, nil
+}
+
+func (m model) updateAmountField(currentValue, key string) string {
+	// Handle negative sign
+	if key == "-" {
+		if len(currentValue) == 0 {
+			return "-"
+		}
+		return currentValue
+	}
+
+	// Handle digits and decimal point
+	if (key >= "0" && key <= "9") || key == "." {
+		// Don't allow multiple decimal points
+		if key == "." && strings.Contains(currentValue, ".") {
+			return currentValue
+		}
+
+		newStr := currentValue + key
+
+		// Validate decimal places (max 2)
+		dotIndex := strings.LastIndex(newStr, ".")
+		if dotIndex != -1 && len(newStr)-dotIndex-1 > 2 {
+			return currentValue
+		}
+
+		return newStr
+	}
+	return currentValue
+}
+
+func (m model) handleSplitBackspace() (tea.Model, tea.Cmd) {
+	switch m.splitField {
+	case splitAmount1Field:
+		if len(m.splitAmount1) > 0 {
+			m.splitAmount1 = m.splitAmount1[:len(m.splitAmount1)-1]
+		}
+	case splitAmount2Field:
+		if len(m.splitAmount2) > 0 {
+			m.splitAmount2 = m.splitAmount2[:len(m.splitAmount2)-1]
+		}
+	case splitDesc1Field:
+		if len(m.splitDesc1) > 0 {
+			m.splitDesc1 = m.splitDesc1[:len(m.splitDesc1)-1]
+		}
+	case splitDesc2Field:
+		if len(m.splitDesc2) > 0 {
+			m.splitDesc2 = m.splitDesc2[:len(m.splitDesc2)-1]
+		}
+	case splitCategory1Field:
+		if len(m.splitCategory1) > 0 {
+			m.splitCategory1 = m.splitCategory1[:len(m.splitCategory1)-1]
+		}
+	case splitCategory2Field:
+		if len(m.splitCategory2) > 0 {
+			m.splitCategory2 = m.splitCategory2[:len(m.splitCategory2)-1]
+		}
+	}
+	return m, nil
+}
+
+func (m model) handleSaveSplit() (tea.Model, tea.Cmd) {
+	// Validate amounts
+	amount1, err1 := strconv.ParseFloat(m.splitAmount1, 64)
+	amount2, err2 := strconv.ParseFloat(m.splitAmount2, 64)
+
+	if err1 != nil || err2 != nil {
+		m.splitMessage = "Error: Invalid amount format"
+		return m, nil
+	}
+
+	// Allow negative amounts for expenses - just check they're not zero
+	if amount1 == 0 || amount2 == 0 {
+		m.splitMessage = "Error: Amounts cannot be zero"
+		return m, nil
+	}
+
+	// Validate splits add up to original amount (works for both positive and negative)
+	if amount1+amount2 != m.currTransaction.Amount {
+		m.splitMessage = fmt.Sprintf("Error: Split amounts (%.2f + %.2f = %.2f) must equal original amount (%.2f)",
+			amount1, amount2, amount1+amount2, m.currTransaction.Amount)
+		return m, nil
+	}
+
+	// Validate descriptions
+	if strings.TrimSpace(m.splitDesc1) == "" || strings.TrimSpace(m.splitDesc2) == "" {
+		m.splitMessage = "Error: Descriptions cannot be empty"
+		return m, nil
+	}
+
+	// Create split transactions
+	split1 := Transaction{
+		Amount:          amount1,
+		Description:     strings.TrimSpace(m.splitDesc1),
+		Date:            m.currTransaction.Date,
+		Category:        strings.TrimSpace(m.splitCategory1),
+		TransactionType: m.currTransaction.TransactionType,
+	}
+
+	split2 := Transaction{
+		Amount:          amount2,
+		Description:     strings.TrimSpace(m.splitDesc2),
+		Date:            m.currTransaction.Date,
+		Category:        strings.TrimSpace(m.splitCategory2),
+		TransactionType: m.currTransaction.TransactionType,
+	}
+
+	// Use store's SplitTransaction method
+	err := m.store.SplitTransaction(m.currTransaction.Id, []Transaction{split1, split2})
+	if err != nil {
+		m.splitMessage = fmt.Sprintf("Error saving split: %v", err)
+		return m, nil
+	}
+
+	// Refresh transactions and return to list view
+	m.transactions, _ = m.store.GetTransactions()
+	m.state = listView
+	return m.exitSplitMode()
 }

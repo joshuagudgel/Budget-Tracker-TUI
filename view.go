@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -100,46 +101,12 @@ func (m model) View() string {
 	case editView:
 		s += headerStyle.Render("Edit Transaction") + "\n\n"
 
-		// Amount field
-		amountStyle := formFieldStyle
-		if m.editField == editAmount {
-			amountStyle = activeFieldStyle
+		if m.isSplitMode {
+			s += m.renderSplitView()
+		} else {
+			s += m.renderNormalEditView()
 		}
-		displayAmount := fmt.Sprintf("%.2f", m.currTransaction.Amount)
-		if m.editField == editAmount && m.editAmountStr != "" {
-			displayAmount = m.editAmountStr
-		}
-		s += formLabelStyle.Render("Amount:") + amountStyle.Render(displayAmount) + "\n\n"
 
-		// Description field
-		descStyle := formFieldStyle
-		if m.editField == editDescription {
-			descStyle = activeFieldStyle
-		}
-		s += formLabelStyle.Render("Description:") + descStyle.Render(m.currTransaction.Description) + "\n\n"
-
-		// Date field
-		dateStyle := formFieldStyle
-		if m.editField == editDate {
-			dateStyle = activeFieldStyle
-		}
-		s += formLabelStyle.Render("Date:") + dateStyle.Render(m.currTransaction.Date) + "\n\n"
-
-		// Transaction Type field
-		typeStyle := formFieldStyle
-		if m.editField == editType {
-			typeStyle = activeFieldStyle
-		}
-		s += formLabelStyle.Render("Type:") + typeStyle.Render(m.currTransaction.TransactionType) + "\n\n"
-
-		// Category field
-		categoryStyle := formFieldStyle
-		if m.editField == editCategory {
-			categoryStyle = activeFieldStyle
-		}
-		s += formLabelStyle.Render("Category:") + categoryStyle.Render(m.currTransaction.Category) + "\n\n"
-
-		s += faintStyle.Render("Up/Down: Navigate fields | Enter: Save | Esc: Cancel")
 	case categoryView:
 		s += headerStyle.Render("Category Management") + "\n\n"
 
@@ -326,5 +293,106 @@ func (m model) View() string {
 		s += faintStyle.Render("Up/Down: Navigate fields | Enter: Save | Esc: Cancel")
 	}
 
+	return s
+}
+
+func (m model) renderSplitView() string {
+	var s string
+	// Show amount with proper sign formatting
+	amountDisplay := fmt.Sprintf("$%.2f", m.currTransaction.Amount)
+	if m.currTransaction.Amount < 0 {
+		amountDisplay = fmt.Sprintf("-$%.2f", -m.currTransaction.Amount)
+	}
+
+	s += headerStyle.Render(fmt.Sprintf("Split Transaction: %s", amountDisplay)) + "\n\n"
+
+	if m.splitMessage != "" {
+		if strings.Contains(m.splitMessage, "Error") {
+			s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.splitMessage) + "\n\n"
+		} else {
+			s += lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.splitMessage) + "\n\n"
+		}
+	}
+
+	// Split 1 fields
+	s += headerStyle.Render("Split 1:") + "\n"
+	s += m.renderSplitField("Amount:", m.splitAmount1, splitAmount1Field) + "\n"
+	s += m.renderSplitField("Description:", m.splitDesc1, splitDesc1Field) + "\n"
+	s += m.renderSplitField("Category:", m.splitCategory1, splitCategory1Field) + "\n\n"
+
+	// Split 2 fields
+	s += headerStyle.Render("Split 2:") + "\n"
+	s += m.renderSplitField("Amount:", m.splitAmount2, splitAmount2Field) + "\n"
+	s += m.renderSplitField("Description:", m.splitDesc2, splitDesc2Field) + "\n"
+	s += m.renderSplitField("Category:", m.splitCategory2, splitCategory2Field) + "\n\n"
+
+	// Show remaining amount with proper formatting
+	total1, _ := strconv.ParseFloat(m.splitAmount1, 64)
+	total2, _ := strconv.ParseFloat(m.splitAmount2, 64)
+	remaining := m.currTransaction.Amount - total1 - total2
+
+	remainingDisplay := fmt.Sprintf("Remaining: $%.2f", remaining)
+	if remaining < 0 {
+		remainingDisplay = fmt.Sprintf("Remaining: -$%.2f", -remaining)
+	} else if remaining == 0 {
+		remainingDisplay = faintStyle.Render("✓ Balanced")
+	}
+	s += faintStyle.Render(remainingDisplay) + "\n\n"
+
+	s += faintStyle.Render("Up/Down: Navigate | Enter: Save Split | s: Exit Split Mode | Esc: Cancel")
+	return s
+}
+
+func (m model) renderSplitField(label, value string, fieldType uint) string {
+	style := formFieldStyle
+	if m.splitField == fieldType {
+		style = activeFieldStyle
+	}
+	return formLabelStyle.Render(label) + style.Render(value)
+}
+
+func (m model) renderNormalEditView() string {
+	var s string
+
+	// Amount field
+	amountStyle := formFieldStyle
+	if m.editField == editAmount {
+		amountStyle = activeFieldStyle
+	}
+	displayAmount := fmt.Sprintf("%.2f", m.currTransaction.Amount)
+	if m.editField == editAmount && m.editAmountStr != "" {
+		displayAmount = m.editAmountStr
+	}
+	s += formLabelStyle.Render("Amount:") + amountStyle.Render(displayAmount) + "\n\n"
+
+	// Description field
+	descStyle := formFieldStyle
+	if m.editField == editDescription {
+		descStyle = activeFieldStyle
+	}
+	s += formLabelStyle.Render("Description:") + descStyle.Render(m.currTransaction.Description) + "\n\n"
+
+	// Date field
+	dateStyle := formFieldStyle
+	if m.editField == editDate {
+		dateStyle = activeFieldStyle
+	}
+	s += formLabelStyle.Render("Date:") + dateStyle.Render(m.currTransaction.Date) + "\n\n"
+
+	// Transaction Type field
+	typeStyle := formFieldStyle
+	if m.editField == editType {
+		typeStyle = activeFieldStyle
+	}
+	s += formLabelStyle.Render("Type:") + typeStyle.Render(m.currTransaction.TransactionType) + "\n\n"
+
+	// Category field
+	categoryStyle := formFieldStyle
+	if m.editField == editCategory {
+		categoryStyle = activeFieldStyle
+	}
+	s += formLabelStyle.Render("Category:") + categoryStyle.Render(m.currTransaction.Category) + "\n\n"
+
+	s += faintStyle.Render("Up/Down: Navigate fields | Enter: Save | s: Split Transaction | Esc: Cancel")
 	return s
 }

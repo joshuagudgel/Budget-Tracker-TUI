@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -48,11 +49,13 @@ func (s *Store) Init() error {
 
 type Transaction struct {
 	Id              int64   `json:"id"`
+	ParentId        *int64  `json:"parentId,omitempty"`
 	Amount          float64 `json:"amount"`
 	Description     string  `json:"description"`
 	Date            string  `json:"date"`
 	Category        string  `json:"category"`
 	TransactionType string  `json:"transactionType"`
+	IsSplit         bool    `json:"isSplit"`
 }
 
 func (s *Store) loadTransactions() error {
@@ -126,6 +129,47 @@ func (s *Store) DeleteTransaction(id int64) error {
 			break
 		}
 	}
+	return s.saveTransactions()
+}
+
+func (s *Store) getTransactionByID(id int64) *Transaction {
+	for i := range s.transactions {
+		if s.transactions[i].Id == id {
+			return &s.transactions[i]
+		}
+	}
+	return nil
+}
+
+func (s *Store) SplitTransaction(parentId int64, splits []Transaction) error {
+	// Validate splits add up to parent amount (works for negative amounts)
+	parent := s.getTransactionByID(parentId)
+	if parent == nil {
+		return fmt.Errorf("parent transaction not found")
+	}
+
+	var totalSplit float64
+	for _, split := range splits {
+		totalSplit += split.Amount
+	}
+
+	// Use epsilon comparison for floating point
+	if math.Abs(totalSplit-parent.Amount) > 0.01 {
+		return fmt.Errorf("split amounts (%.2f) don't match parent (%.2f)",
+			totalSplit, parent.Amount)
+	}
+
+	// Mark parent as split
+	parent.IsSplit = true
+
+	// Add split transactions
+	for _, split := range splits {
+		split.Id = s.nextId
+		split.ParentId = &parentId
+		s.nextId++
+		s.transactions = append(s.transactions, split)
+	}
+
 	return s.saveTransactions()
 }
 
