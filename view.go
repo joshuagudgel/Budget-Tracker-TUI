@@ -363,35 +363,35 @@ func (m model) renderNormalEditView() string {
 	if m.editField == editAmount && m.editAmountStr != "" {
 		displayAmount = m.editAmountStr
 	}
-	s += formLabelStyle.Render("Amount:") + amountStyle.Render(displayAmount) + "\n\n"
+	s += formLabelStyle.Render("Amount:") + "\n" + amountStyle.Render(displayAmount) + "\n\n"
 
 	// Description field
 	descStyle := formFieldStyle
 	if m.editField == editDescription {
 		descStyle = activeFieldStyle
 	}
-	s += formLabelStyle.Render("Description:") + descStyle.Render(m.currTransaction.Description) + "\n\n"
+	s += formLabelStyle.Render("Description:") + "\n" + descStyle.Render(m.currTransaction.Description) + "\n\n"
 
 	// Date field
 	dateStyle := formFieldStyle
 	if m.editField == editDate {
 		dateStyle = activeFieldStyle
 	}
-	s += formLabelStyle.Render("Date:") + dateStyle.Render(m.currTransaction.Date) + "\n\n"
+	s += formLabelStyle.Render("Date:") + "\n" + dateStyle.Render(m.currTransaction.Date) + "\n\n"
 
 	// Transaction Type field
 	typeStyle := formFieldStyle
 	if m.editField == editType {
 		typeStyle = activeFieldStyle
 	}
-	s += formLabelStyle.Render("Type:") + typeStyle.Render(m.currTransaction.TransactionType) + "\n\n"
+	s += formLabelStyle.Render("Type:") + "\n" + typeStyle.Render(m.currTransaction.TransactionType) + "\n\n"
 
 	// Category field
 	categoryStyle := formFieldStyle
 	if m.editField == editCategory {
 		categoryStyle = activeFieldStyle
 	}
-	s += formLabelStyle.Render("Category:") + categoryStyle.Render(m.currTransaction.Category) + "\n\n"
+	s += formLabelStyle.Render("Category:") + "\n" + categoryStyle.Render(m.currTransaction.Category) + "\n\n"
 
 	s += faintStyle.Render("Up/Down: Navigate fields | Enter: Save | s: Split Transaction | Esc: Cancel")
 	return s
