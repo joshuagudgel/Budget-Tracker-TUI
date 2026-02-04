@@ -12,16 +12,18 @@ import (
 )
 
 const (
-	menuView          uint = iota
-	listView               = 1
-	titleView              = 2
-	bodyView               = 3
-	editView               = 4
-	backupView             = 5
-	importView             = 6
-	filePickerView         = 7
-	csvProfileView         = 8
-	createProfileView      = 9
+	menuView           uint = iota
+	listView                = 1
+	titleView               = 2
+	bodyView                = 3
+	editView                = 4
+	backupView              = 5
+	importView              = 6
+	filePickerView          = 7
+	csvProfileView          = 8
+	createProfileView       = 9
+	categoryView            = 10
+	createCategoryView      = 11
 )
 
 const (
@@ -38,6 +40,11 @@ const (
 	createProfileAmount
 	createProfileDesc
 	createProfileHeader
+)
+
+const (
+	createCategoryName uint = iota
+	createCategoryDisplayName
 )
 
 type model struct {
@@ -62,6 +69,12 @@ type model struct {
 	newProfile      CSVProfile
 	createField     uint
 	createMessage   string
+	// category management
+	categoryIndex       int
+	selectedCategory    string
+	newCategory         Category
+	createCategoryField uint
+	categoryMessage     string
 }
 
 func NewModel(store *Store) model {
@@ -116,6 +129,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleCSVProfileView(key)
 		case createProfileView:
 			return m.handleCreateProfileView(key)
+		case categoryView:
+			return m.handleCategoryView(key)
+		case createCategoryView:
+			return m.handleCreateCategoryView(key)
 		}
 	case tea.WindowSizeMsg:
 		m.windowHeight = msg.Height
@@ -134,6 +151,10 @@ func (m model) handleMenuView(key string) (tea.Model, tea.Cmd) {
 	case "i":
 		m.state = importView
 		m.importMessage = ""
+	case "c":
+		m.state = categoryView
+		m.categoryMessage = ""
+		m.categoryIndex = 0
 	case "q":
 		return m, tea.Quit
 	}
@@ -617,5 +638,116 @@ func (m model) handleSaveProfile() (tea.Model, tea.Cmd) {
 
 	// Return to CSV profile view
 	m.state = csvProfileView
+	return m, nil
+}
+
+// Category View --------------------
+func (m model) handleCategoryView(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "esc":
+		m.state = menuView
+	case "up":
+		if m.categoryIndex > 0 {
+			m.categoryIndex--
+		}
+	case "down":
+		if len(m.store.categories.Categories) > 0 && m.categoryIndex < len(m.store.categories.Categories)-1 {
+			m.categoryIndex++
+		}
+	case "enter":
+		if len(m.store.categories.Categories) > 0 && m.categoryIndex < len(m.store.categories.Categories) {
+			selectedCategory := m.store.categories.Categories[m.categoryIndex]
+			m.selectedCategory = selectedCategory.Name
+
+			// Update the store's default category
+			m.store.categories.Default = selectedCategory.Name
+			err := m.store.saveCategories()
+			if err != nil {
+				m.categoryMessage = fmt.Sprintf("Error saving category selection: %v", err)
+			} else {
+				m.categoryMessage = fmt.Sprintf("Selected default category: %s", selectedCategory.DisplayName)
+			}
+		}
+	case "c":
+		m.newCategory = Category{}
+		m.createCategoryField = createCategoryName
+		m.categoryMessage = ""
+		m.state = createCategoryView
+	}
+	return m, nil
+}
+
+// Create Category View
+func (m model) handleCreateCategoryView(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "esc":
+		m.state = categoryView
+	case "down", "tab":
+		if m.createCategoryField < createCategoryDisplayName {
+			m.createCategoryField++
+		}
+	case "up":
+		if m.createCategoryField > createCategoryName {
+			m.createCategoryField--
+		}
+	case "enter":
+		return m.handleSaveCategory()
+	case "backspace":
+		return m.handleCreateCategoryBackspace()
+	default:
+		if len(key) == 1 {
+			return m.handleCreateCategoryInput(key)
+		}
+	}
+	return m, nil
+}
+
+func (m model) handleCreateCategoryInput(key string) (tea.Model, tea.Cmd) {
+	switch m.createCategoryField {
+	case createCategoryName:
+		m.newCategory.Name += key
+	case createCategoryDisplayName:
+		m.newCategory.DisplayName += key
+	}
+	return m, nil
+}
+
+func (m model) handleCreateCategoryBackspace() (tea.Model, tea.Cmd) {
+	switch m.createCategoryField {
+	case createCategoryName:
+		if len(m.newCategory.Name) > 0 {
+			m.newCategory.Name = m.newCategory.Name[:len(m.newCategory.Name)-1]
+		}
+	case createCategoryDisplayName:
+		if len(m.newCategory.DisplayName) > 0 {
+			m.newCategory.DisplayName = m.newCategory.DisplayName[:len(m.newCategory.DisplayName)-1]
+		}
+	}
+	return m, nil
+}
+
+func (m model) handleSaveCategory() (tea.Model, tea.Cmd) {
+	// Validate category name is not empty
+	if strings.TrimSpace(m.newCategory.Name) == "" {
+		m.categoryMessage = "Category name cannot be empty"
+		return m, nil
+	}
+
+	// Validate display name is not empty
+	if strings.TrimSpace(m.newCategory.DisplayName) == "" {
+		m.categoryMessage = "Display name cannot be empty"
+		return m, nil
+	}
+
+	// Add new category
+	err := m.store.AddCategory(m.newCategory.Name, m.newCategory.DisplayName)
+	if err != nil {
+		m.categoryMessage = fmt.Sprintf("Error: %v", err)
+		return m, nil
+	}
+
+	// Return to category view
+	m.categoryMessage = fmt.Sprintf("Created category: %s", m.newCategory.DisplayName)
+	m.state = categoryView
 	return m, nil
 }

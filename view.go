@@ -31,6 +31,7 @@ func (m model) View() string {
 	switch m.state {
 	case menuView:
 		s += headerStyle.Render("Transactions ('t')") + "\n"
+		s += headerStyle.Render("Categories ('c')") + "\n"
 		s += headerStyle.Render("Restore ('r')") + "\n"
 		s += headerStyle.Render("Import ('i')") + "\n"
 		s += headerStyle.Render("Quit ('q')") + "\n"
@@ -137,6 +138,67 @@ func (m model) View() string {
 			categoryStyle = activeFieldStyle
 		}
 		s += formLabelStyle.Render("Category:") + categoryStyle.Render(m.currTransaction.Category) + "\n\n"
+
+		s += faintStyle.Render("Up/Down: Navigate fields | Enter: Save | Esc: Cancel")
+	case categoryView:
+		s += headerStyle.Render("Category Management") + "\n\n"
+
+		// Show current default category
+		currentDefault := m.store.categories.Default
+		s += faintStyle.Render(fmt.Sprintf("Current Default: %s", currentDefault)) + "\n\n"
+
+		if m.categoryMessage != "" {
+			if strings.Contains(m.categoryMessage, "Error") {
+				s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.categoryMessage) + "\n\n"
+			} else {
+				s += lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.categoryMessage) + "\n\n"
+			}
+		}
+
+		if len(m.store.categories.Categories) == 0 {
+			s += faintStyle.Render("No categories found.") + "\n\n"
+		} else {
+			// Display available categories
+			for i, category := range m.store.categories.Categories {
+				prefix := "  "
+				if i == m.categoryIndex {
+					prefix = "> "
+				}
+
+				// Show default indicator
+				suffix := ""
+				if category.Name == m.store.categories.Default {
+					suffix = " (default)"
+				}
+
+				// Show category details
+				categoryDetails := fmt.Sprintf("%s - %s%s", category.Name, category.DisplayName, suffix)
+				s += enumeratorStyle.Render(prefix) + categoryDetails + "\n"
+			}
+		}
+
+		s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: Set Default | c: Create Category | Esc: Return to menu")
+
+	case createCategoryView:
+		s += headerStyle.Render("Create Category") + "\n\n"
+
+		if m.categoryMessage != "" {
+			s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.categoryMessage) + "\n\n"
+		}
+
+		// Category Name field
+		nameStyle := formFieldStyle
+		if m.createCategoryField == createCategoryName {
+			nameStyle = activeFieldStyle
+		}
+		s += formLabelStyle.Render("Name:") + nameStyle.Render(m.newCategory.Name) + "\n\n"
+
+		// Display Name field
+		displayStyle := formFieldStyle
+		if m.createCategoryField == createCategoryDisplayName {
+			displayStyle = activeFieldStyle
+		}
+		s += formLabelStyle.Render("Display Name:") + displayStyle.Render(m.newCategory.DisplayName) + "\n\n"
 
 		s += faintStyle.Render("Up/Down: Navigate fields | Enter: Save | Esc: Cancel")
 	case backupView:

@@ -9,36 +9,16 @@ import (
 	"strings"
 )
 
-type Transaction struct {
-	Id              int64   `json:"id"`
-	Amount          float64 `json:"amount"`
-	Description     string  `json:"description"`
-	Date            string  `json:"date"`
-	Category        string  `json:"category"`
-	TransactionType string  `json:"transactionType"`
-}
-
-type CSVProfile struct {
-	Name         string `json:"name"`
-	DateColumn   int    `json:"dateColumn"`
-	AmountColumn int    `json:"amountColumn"`
-	DescColumn   int    `json:"descColumn"`
-	HasHeader    bool   `json:"hasHeader"`
-}
-
-type CSVProfileStore struct {
-	Profiles []CSVProfile `json:"profiles"`
-	Default  string
-}
-
 type Store struct {
 	filename     string
 	backupName   string
 	importName   string
 	profileName  string
+	categoryName string
 	transactions []Transaction
 	nextId       int64
 	csvProfiles  CSVProfileStore
+	categories   CategoryStore
 }
 
 func (s *Store) Init() error {
@@ -56,15 +36,26 @@ func (s *Store) Init() error {
 	s.backupName = filepath.Join(appDir, "backup.json")
 	s.importName = filepath.Join(appDir, "import.csv")
 	s.profileName = filepath.Join(appDir, "csv-profiles.json")
+	s.categoryName = filepath.Join(appDir, "categories.json")
 
 	fmt.Printf("Transactions will be saved to: %s\n", s.filename)
 
 	s.loadCSVProfiles()
+	s.loadCategories()
 
 	return s.loadTransactions()
 }
 
 // Transactions --------------------
+
+type Transaction struct {
+	Id              int64   `json:"id"`
+	Amount          float64 `json:"amount"`
+	Description     string  `json:"description"`
+	Date            string  `json:"date"`
+	Category        string  `json:"category"`
+	TransactionType string  `json:"transactionType"`
+}
 
 func (s *Store) loadTransactions() error {
 	if _, err := os.Stat(s.filename); os.IsNotExist(err) {
@@ -139,6 +130,8 @@ func (s *Store) DeleteTransaction(id int64) error {
 	}
 	return s.saveTransactions()
 }
+
+// Import Transactions --------------------
 
 func (s *Store) ImportTransactionsFromCSV(profileName string) error {
 	profile := s.getProfileByName(profileName)
@@ -267,6 +260,72 @@ func (s *Store) parseAmount(amountStr string) (float64, error) {
 	return strconv.ParseFloat(cleaned, 64)
 }
 
+// Category --------------------
+type Category struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"displayName"`
+}
+
+type CategoryStore struct {
+	Categories []Category `json:"categories"`
+	Default    string     `json:"default"`
+}
+
+func (s *Store) loadCategories() error {
+	if _, err := os.Stat(s.categoryName); os.IsNotExist(err) {
+		// Create default categories
+		s.categories = CategoryStore{
+			Categories: []Category{
+				{Name: "food", DisplayName: "Food & Dining"},
+				{Name: "transport", DisplayName: "Transportation"},
+				{Name: "entertainment", DisplayName: "Entertainment"},
+				{Name: "utilities", DisplayName: "Utilities"},
+				{Name: "income", DisplayName: "Income"},
+				{Name: "unsorted", DisplayName: "Unsorted"},
+				{Name: "sorted", DisplayName: "Sorted"},
+			},
+			Default: "unsorted",
+		}
+		return s.saveCategories()
+	}
+
+	data, err := os.ReadFile(s.categoryName)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(data, &s.categories)
+}
+
+func (s *Store) saveCategories() error {
+	data, err := json.MarshalIndent(s.categories, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.categoryName, data, 0644)
+}
+
+func (s *Store) GetCategories() ([]Category, error) {
+	return s.categories.Categories, nil
+}
+
+func (s *Store) AddCategory(name, displayName string) error {
+	// Check for duplicates
+	for _, cat := range s.categories.Categories {
+		if cat.Name == name {
+			return fmt.Errorf("category '%s' already exists", name)
+		}
+	}
+
+	category := Category{
+		Name:        name,
+		DisplayName: displayName,
+	}
+
+	s.categories.Categories = append(s.categories.Categories, category)
+	return s.saveCategories()
+}
+
 // Restore --------------------
 
 type BackupTransaction struct {
@@ -320,6 +379,19 @@ func (s *Store) RestoreFromBackup() error {
 }
 
 // CSV Profile ---------------------
+type CSVProfile struct {
+	Name         string `json:"name"`
+	DateColumn   int    `json:"dateColumn"`
+	AmountColumn int    `json:"amountColumn"`
+	DescColumn   int    `json:"descColumn"`
+	HasHeader    bool   `json:"hasHeader"`
+}
+
+type CSVProfileStore struct {
+	Profiles []CSVProfile `json:"profiles"`
+	Default  string
+}
+
 func (s *Store) loadCSVProfiles() error {
 	if _, err := os.Stat(s.profileName); os.IsNotExist(err) {
 		// Create default profiles
