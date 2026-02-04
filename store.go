@@ -35,7 +35,6 @@ func (s *Store) Init() error {
 
 	s.filename = filepath.Join(appDir, "transactions.json")
 	s.backupName = filepath.Join(appDir, "backup.json")
-	s.importName = filepath.Join(appDir, "import.csv")
 	s.profileName = filepath.Join(appDir, "csv-profiles.json")
 	s.categoryName = filepath.Join(appDir, "categories.json")
 
@@ -261,8 +260,8 @@ func (s *Store) parseTransactionFromProfile(fields []string, profile *CSVProfile
 		return transaction, fmt.Errorf("invalid amount: %v", err)
 	}
 
-	// Set empty category (can be enhanced later for category column support)
-	transaction.Category = ""
+	// Use default category from CategoryStore
+	transaction.Category = s.categories.Default
 
 	return transaction, nil
 }
