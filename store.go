@@ -29,16 +29,14 @@ func (s *Store) Init() error {
 		return err
 	}
 
-	appDir := filepath.Join(homeDir, ".budget-app")
+	appDir := filepath.Join(homeDir, ".finance-wrapped")
 	os.MkdirAll(appDir, 0755)
 
-	s.filename = filepath.Join(appDir, "transaction-data.json")
+	s.filename = filepath.Join(appDir, "transactions.json")
 	s.backupName = filepath.Join(appDir, "backup.json")
 	s.importName = filepath.Join(appDir, "import.csv")
 	s.profileName = filepath.Join(appDir, "csv-profiles.json")
 	s.categoryName = filepath.Join(appDir, "categories.json")
-
-	fmt.Printf("Transactions will be saved to: %s\n", s.filename)
 
 	s.loadCSVProfiles()
 	s.loadCategories()
