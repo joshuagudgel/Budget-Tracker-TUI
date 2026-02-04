@@ -12,8 +12,7 @@ func main() {
 		log.Fatalf("unable to init store: %v", err)
 	}
 	m := NewModel(store)
-
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatalf("unable to run tui: %v", err)
 	}
