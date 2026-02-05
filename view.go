@@ -325,20 +325,114 @@ func (m model) View() string {
 		// Category field
 		categoryStyle := formFieldStyle
 		if m.bulkEditField == bulkEditCategory {
-			categoryStyle = activeFieldStyle
+			if m.isBulkSelectingCategory {
+				categoryStyle = selectingFieldStyle
+			} else {
+				categoryStyle = activeFieldStyle
+			}
 		}
-		s += formLabelStyle.Render("Category:") + "\n" + categoryStyle.Render(m.bulkEditValue) + "\n\n"
+
+		categoryValue := m.bulkCategoryValue
+		if m.bulkEditField == bulkEditCategory && m.isBulkSelectingCategory {
+			categoryValue = "▼ Select Category"
+		}
+		if categoryValue == "" {
+			categoryValue = "(No selection)"
+		}
+
+		s += formLabelStyle.Render("Category:") + "\n" + categoryStyle.Render(categoryValue) + "\n"
+
+		// Show category dropdown when selecting
+		if m.isBulkSelectingCategory {
+			s += m.renderBulkCategoryOptions() + "\n"
+		}
+		s += "\n"
 
 		// Type field
 		typeStyle := formFieldStyle
 		if m.bulkEditField == bulkEditType {
-			typeStyle = activeFieldStyle
+			if m.isBulkSelectingType {
+				typeStyle = selectingFieldStyle
+			} else {
+				typeStyle = activeFieldStyle
+			}
 		}
-		s += formLabelStyle.Render("Type:") + "\n" + typeStyle.Render(m.bulkEditValue) + "\n\n"
 
-		s += faintStyle.Render("Up/Down: Navigate fields | Enter: Apply to all selected | Esc: Cancel")
+		typeValue := m.bulkTypeValue
+		if m.bulkEditField == bulkEditType && m.isBulkSelectingType {
+			typeValue = "▼ Select Type"
+		}
+		if typeValue == "" {
+			typeValue = "(No selection)"
+		}
+
+		s += formLabelStyle.Render("Type:") + "\n" + typeStyle.Render(typeValue) + "\n"
+
+		// Show type dropdown when selecting
+		if m.isBulkSelectingType {
+			s += m.renderBulkTypeOptions() + "\n"
+		}
+
+		s += "\n" + faintStyle.Render("Up/Down: Navigate fields | Enter: Select | Ctrl+S: Save | Esc: Cancel")
 	}
 
+	return s
+}
+
+func (m model) renderBulkCategoryOptions() string {
+	var s string
+	s += faintStyle.Render("Categories:") + "\n"
+
+	categories := m.store.categories.Categories
+	maxVisible := 5
+
+	startIdx := 0
+	if len(categories) > maxVisible {
+		startIdx = m.bulkCategorySelectIndex - maxVisible/2
+		if startIdx < 0 {
+			startIdx = 0
+		}
+		if startIdx > len(categories)-maxVisible {
+			startIdx = len(categories) - maxVisible
+		}
+	}
+
+	endIdx := startIdx + maxVisible
+	if endIdx > len(categories) {
+		endIdx = len(categories)
+	}
+
+	for i := startIdx; i < endIdx; i++ {
+		cat := categories[i]
+		prefix := "  "
+		if i == m.bulkCategorySelectIndex {
+			prefix = "> "
+			s += enumeratorStyle.Render(prefix) + headerStyle.Render(cat.DisplayName) + "\n"
+		} else {
+			s += faintStyle.Render(prefix+cat.DisplayName) + "\n"
+		}
+	}
+
+	if len(categories) > maxVisible {
+		s += faintStyle.Render(fmt.Sprintf("   (%d/%d categories)", m.bulkCategorySelectIndex+1, len(categories))) + "\n"
+	}
+
+	return s
+}
+
+func (m model) renderBulkTypeOptions() string {
+	var s string
+	s += faintStyle.Render("Types:") + "\n"
+
+	for i, transactionType := range m.availableTypes {
+		prefix := "  "
+		if i == m.bulkTypeSelectIndex {
+			prefix = "> "
+			s += enumeratorStyle.Render(prefix) + headerStyle.Render(transactionType) + "\n"
+		} else {
+			s += faintStyle.Render(prefix+transactionType) + "\n"
+		}
+	}
 	return s
 }
 

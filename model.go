@@ -104,10 +104,16 @@ type model struct {
 	splitMessage   string
 
 	// Multi-select mode
-	isMultiSelectMode bool
-	selectedTxIds     map[int64]bool
-	bulkEditField     uint
-	bulkEditValue     string
+	isMultiSelectMode       bool
+	selectedTxIds           map[int64]bool
+	bulkEditField           uint
+	bulkEditValue           string
+	isBulkSelectingCategory bool
+	isBulkSelectingType     bool
+	bulkCategorySelectIndex int
+	bulkTypeSelectIndex     int
+	bulkCategoryValue       string
+	bulkTypeValue           string
 
 	// Selection mode fields
 	isSelectingCategory bool
@@ -767,9 +773,10 @@ func (m model) handleCreateProfileInput(key string) (tea.Model, tea.Cmd) {
 			}
 		}
 	case createProfileHeader:
-		if key == "y" || key == "Y" {
+		switch key {
+		case "y", "Y":
 			m.newProfile.HasHeader = true
-		} else if key == "n" || key == "N" {
+		case "n", "N":
 			m.newProfile.HasHeader = false
 		}
 	}
@@ -1008,46 +1015,98 @@ func (m model) handleSplitBackspace() (tea.Model, tea.Cmd) {
 
 // Bulk Edit View --------------------
 func (m model) handleBulkEditView(key string) (tea.Model, tea.Cmd) {
+	// Handle active selection states first
+	if m.isBulkSelectingCategory {
+		return m.handleBulkCategorySelection(key)
+	}
+	if m.isBulkSelectingType {
+		return m.handleBulkTypeSelection(key)
+	}
+
 	switch key {
 	case "esc":
 		m.state = listView
 	case "down", "tab":
 		if m.bulkEditField < bulkEditType {
 			m.bulkEditField++
-			m.bulkEditValue = ""
 		}
 	case "up":
 		if m.bulkEditField > bulkEditCategory {
 			m.bulkEditField--
-			m.bulkEditValue = ""
 		}
 	case "enter":
+		switch m.bulkEditField {
+		case bulkEditCategory:
+			m.isBulkSelectingCategory = true
+			m.bulkCategorySelectIndex = 0
+		case bulkEditType:
+			m.isBulkSelectingType = true
+			m.bulkTypeSelectIndex = 0
+		default:
+			return m.handleSaveBulkEdit()
+		}
+	case "ctrl+s": // Add save functionality
 		return m.handleSaveBulkEdit()
-	case "backspace":
-		if len(m.bulkEditValue) > 0 {
-			m.bulkEditValue = m.bulkEditValue[:len(m.bulkEditValue)-1]
+	}
+	return m, nil
+}
+
+func (m model) handleBulkCategorySelection(key string) (tea.Model, tea.Cmd) {
+	categories := m.store.categories.Categories
+
+	switch key {
+	case "esc":
+		m.isBulkSelectingCategory = false
+	case "up":
+		if m.bulkCategorySelectIndex > 0 {
+			m.bulkCategorySelectIndex--
 		}
-	default:
-		if len(key) == 1 {
-			m.bulkEditValue += key
+	case "down":
+		if m.bulkCategorySelectIndex < len(categories)-1 {
+			m.bulkCategorySelectIndex++
 		}
+	case "enter":
+		if len(categories) > 0 {
+			selectedCategory := categories[m.bulkCategorySelectIndex]
+			m.bulkCategoryValue = selectedCategory.Name
+		}
+		m.isBulkSelectingCategory = false
+	}
+	return m, nil
+}
+
+func (m model) handleBulkTypeSelection(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "esc":
+		m.isBulkSelectingType = false
+	case "up":
+		if m.bulkTypeSelectIndex > 0 {
+			m.bulkTypeSelectIndex--
+		}
+	case "down":
+		if m.bulkTypeSelectIndex < len(m.availableTypes)-1 {
+			m.bulkTypeSelectIndex++
+		}
+	case "enter":
+		selectedType := m.availableTypes[m.bulkTypeSelectIndex]
+		m.bulkTypeValue = selectedType
+		m.isBulkSelectingType = false
 	}
 	return m, nil
 }
 
 func (m model) handleSaveBulkEdit() (tea.Model, tea.Cmd) {
-	if strings.TrimSpace(m.bulkEditValue) == "" {
-		return m, nil // Don't save empty values
-	}
-
 	// Update all selected transactions
 	for i := range m.transactions {
 		if m.selectedTxIds[m.transactions[i].Id] {
-			switch m.bulkEditField {
-			case bulkEditCategory:
-				m.transactions[i].Category = strings.TrimSpace(m.bulkEditValue)
-			case bulkEditType:
-				m.transactions[i].TransactionType = strings.TrimSpace(m.bulkEditValue)
+			// Apply category if one was selected
+			if strings.TrimSpace(m.bulkCategoryValue) != "" {
+				m.transactions[i].Category = m.bulkCategoryValue
+			}
+
+			// Apply type if one was selected
+			if strings.TrimSpace(m.bulkTypeValue) != "" {
+				m.transactions[i].TransactionType = m.bulkTypeValue
 			}
 
 			// Save each transaction
