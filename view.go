@@ -29,21 +29,19 @@ var (
 )
 
 func (m model) View() string {
-	s := appNameStyle.Render("Budget Tracker") + "\n\n"
+	s := appNameStyle.Render("Finances Wrapped") + "\n\n"
 
 	// Add multi-select indicator
 	if m.isMultiSelectMode {
 		s += headerStyle.Render(fmt.Sprintf("MULTI-SELECT MODE (%d selected)", len(m.selectedTxIds))) + "\n"
 	}
 
-	s += faintStyle.Render(fmt.Sprintf("DEBUG: State=%d, Index=%d, Count=%d", m.state, m.listIndex, len(m.transactions))) + "\n\n"
-
 	switch m.state {
 	case menuView:
-		s += headerStyle.Render("Transactions ('t')") + "\n"
+		s += headerStyle.Render("Manage Transactions ('t')") + "\n"
 		s += headerStyle.Render("Categories ('c')") + "\n"
 		s += headerStyle.Render("Restore ('r')") + "\n"
-		s += headerStyle.Render("Import ('i')") + "\n"
+		s += headerStyle.Render("Import Bank Statement ('i')") + "\n"
 		s += headerStyle.Render("Quit ('q')") + "\n"
 	case listView:
 		// view transactions in one large list
