@@ -403,27 +403,53 @@ func (m model) renderNormalEditView() string {
 	// Amount field
 	amountStyle := formFieldStyle
 	if m.editField == editAmount {
-		amountStyle = activeFieldStyle
+		if m.isEditingAmount {
+			amountStyle = selectingFieldStyle
+		} else {
+			amountStyle = activeFieldStyle
+		}
 	}
-	displayAmount := fmt.Sprintf("%.2f", m.currTransaction.Amount)
-	if m.editField == editAmount && m.editAmountStr != "" {
-		displayAmount = m.editAmountStr
+
+	amountValue := fmt.Sprintf("%.2f", m.currTransaction.Amount)
+	if m.isEditingAmount {
+		amountValue = m.editingAmountStr
 	}
-	s += formLabelStyle.Render("Amount:") + "\n" + amountStyle.Render(displayAmount) + "\n\n"
+
+	s += formLabelStyle.Render("Amount:") + "\n" + amountStyle.Render(amountValue) + "\n\n"
 
 	// Description field
 	descStyle := formFieldStyle
 	if m.editField == editDescription {
-		descStyle = activeFieldStyle
+		if m.isEditingDescription {
+			descStyle = selectingFieldStyle
+		} else {
+			descStyle = activeFieldStyle
+		}
 	}
-	s += formLabelStyle.Render("Description:") + "\n" + descStyle.Render(m.currTransaction.Description) + "\n\n"
+
+	descValue := m.currTransaction.Description
+	if m.isEditingDescription {
+		descValue = m.editingDescStr
+	}
+
+	s += formLabelStyle.Render("Description:") + "\n" + descStyle.Render(descValue) + "\n\n"
 
 	// Date field
 	dateStyle := formFieldStyle
 	if m.editField == editDate {
-		dateStyle = activeFieldStyle
+		if m.isEditingDate {
+			dateStyle = selectingFieldStyle
+		} else {
+			dateStyle = activeFieldStyle
+		}
 	}
-	s += formLabelStyle.Render("Date:") + "\n" + dateStyle.Render(m.currTransaction.Date) + "\n\n"
+
+	dateValue := m.currTransaction.Date
+	if m.isEditingDate {
+		dateValue = m.editingDateStr
+	}
+
+	s += formLabelStyle.Render("Date:") + "\n" + dateStyle.Render(dateValue) + "\n\n"
 
 	// Transaction Type field with selection
 	typeStyle := formFieldStyle
@@ -471,7 +497,7 @@ func (m model) renderNormalEditView() string {
 		s += m.renderCategoryOptions() + "\n"
 	}
 
-	s += "\n" + faintStyle.Render("Up/Down: Navigate fields | Enter: Select/Save | s: Split Transaction | Esc: Cancel")
+	s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: Edit Field | Ctrl+S: Save Transaction | s: Split | Esc: Cancel")
 	return s
 }
 

@@ -115,6 +115,14 @@ type model struct {
 	categorySelectIndex int
 	typeSelectIndex     int
 	availableTypes      []string
+
+	// Field editing state
+	isEditingAmount      bool
+	isEditingDescription bool
+	isEditingDate        bool
+	editingAmountStr     string
+	editingDescStr       string
+	editingDateStr       string
 }
 
 func NewModel(store *Store) model {
@@ -304,6 +312,16 @@ func (m model) handleToggleSelection() (tea.Model, tea.Cmd) {
 // Edit Transaction View
 
 func (m model) handleEditView(key string) (tea.Model, tea.Cmd) {
+	// Handle active editing states
+	if m.isEditingAmount {
+		return m.handleAmountEditing(key)
+	}
+	if m.isEditingDescription {
+		return m.handleDescriptionEditing(key)
+	}
+	if m.isEditingDate {
+		return m.handleDateEditing(key)
+	}
 	if m.isSelectingCategory {
 		return m.handleCategorySelection(key)
 	}
@@ -316,25 +334,17 @@ func (m model) handleEditView(key string) (tea.Model, tea.Cmd) {
 		if m.isSplitMode {
 			return m.exitSplitMode()
 		}
-		m.editAmountStr = ""
 		m.state = listView
 	case "enter":
-		if m.editField == editCategory {
-			return m.enterCategorySelection()
-		}
-		if m.editField == editType {
-			return m.enterTypeSelection()
-		}
-		if m.isSplitMode {
-			return m.handleSaveSplit()
-		}
-		return m.handleSaveTransaction()
+		return m.handleFieldActivation()
 	case "s":
 		if !m.isSplitMode {
 			return m.enterSplitMode()
 		} else {
 			return m.exitSplitMode()
 		}
+	case "ctrl+s": // Save entire transaction
+		return m.handleSaveTransaction()
 	case "down", "tab":
 		if m.isSplitMode {
 			return m.handleSplitFieldNavigation(1)
@@ -349,14 +359,9 @@ func (m model) handleEditView(key string) (tea.Model, tea.Cmd) {
 		if m.isSplitMode {
 			return m.handleSplitBackspace()
 		}
-		return m.handleBackspace()
+		// No backspace in field selection mode
 	default:
-		if len(key) == 1 {
-			if m.isSplitMode {
-				return m.handleSplitInput(key)
-			}
-			return m.handleTextInput(key)
-		}
+		// No text input in field selection mode
 	}
 	return m, nil
 }
@@ -374,6 +379,143 @@ func (m model) handleFieldNavigation(direction int) (tea.Model, tea.Cmd) {
 	if m.editField == editAmount && m.editAmountStr == "" {
 		if m.currTransaction.Amount != 0 {
 			m.editAmountStr = fmt.Sprintf("%.2f", m.currTransaction.Amount)
+		}
+	}
+	return m, nil
+}
+
+func (m model) handleFieldActivation() (tea.Model, tea.Cmd) {
+	switch m.editField {
+	case editAmount:
+		return m.enterAmountEditing()
+	case editDescription:
+		return m.enterDescriptionEditing()
+	case editDate:
+		return m.enterDateEditing()
+	case editType:
+		return m.enterTypeSelection()
+	case editCategory:
+		return m.enterCategorySelection()
+	}
+	return m, nil
+}
+
+func (m model) enterAmountEditing() (tea.Model, tea.Cmd) {
+	m.isEditingAmount = true
+	m.editingAmountStr = fmt.Sprintf("%.2f", m.currTransaction.Amount)
+	return m, nil
+}
+
+func (m model) enterDescriptionEditing() (tea.Model, tea.Cmd) {
+	m.isEditingDescription = true
+	m.editingDescStr = m.currTransaction.Description
+	return m, nil
+}
+
+func (m model) enterDateEditing() (tea.Model, tea.Cmd) {
+	m.isEditingDate = true
+	m.editingDateStr = m.currTransaction.Date
+	return m, nil
+}
+
+func (m model) handleAmountEditing(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "enter":
+		// Save amount
+		if amount, err := strconv.ParseFloat(m.editingAmountStr, 64); err == nil {
+			m.currTransaction.Amount = amount
+		}
+		m.isEditingAmount = false
+		m.editingAmountStr = ""
+	case "esc":
+		// Cancel editing
+		m.isEditingAmount = false
+		m.editingAmountStr = ""
+	case "backspace":
+		if len(m.editingAmountStr) > 0 {
+			m.editingAmountStr = m.editingAmountStr[:len(m.editingAmountStr)-1]
+		}
+	default:
+		if len(key) == 1 {
+			return m.handleAmountInput(key)
+		}
+	}
+	return m, nil
+}
+
+func (m model) handleAmountInput(key string) (tea.Model, tea.Cmd) {
+	// Handle negative sign
+	if key == "-" {
+		if len(m.editingAmountStr) == 0 {
+			m.editingAmountStr = "-"
+		}
+		return m, nil
+	}
+
+	// Only allow digits and decimal point
+	if (key >= "0" && key <= "9") || key == "." {
+		// Don't allow multiple decimal points
+		if key == "." && strings.Contains(m.editingAmountStr, ".") {
+			return m, nil
+		}
+
+		newStr := m.editingAmountStr + key
+
+		// Validate decimal places (max 2)
+		dotIndex := strings.LastIndex(newStr, ".")
+		if dotIndex != -1 && len(newStr)-dotIndex-1 > 2 {
+			return m, nil
+		}
+
+		// Validate it's a valid number format
+		if _, err := strconv.ParseFloat(newStr, 64); err == nil || newStr == "." || newStr == "-." {
+			m.editingAmountStr = newStr
+		}
+	}
+	return m, nil
+}
+
+func (m model) handleDescriptionEditing(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "enter":
+		// Save description
+		m.currTransaction.Description = strings.TrimSpace(m.editingDescStr)
+		m.isEditingDescription = false
+		m.editingDescStr = ""
+	case "esc":
+		// Cancel editing
+		m.isEditingDescription = false
+		m.editingDescStr = ""
+	case "backspace":
+		if len(m.editingDescStr) > 0 {
+			m.editingDescStr = m.editingDescStr[:len(m.editingDescStr)-1]
+		}
+	default:
+		if len(key) == 1 {
+			m.editingDescStr += key
+		}
+	}
+	return m, nil
+}
+
+func (m model) handleDateEditing(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "enter":
+		// Save date
+		m.currTransaction.Date = strings.TrimSpace(m.editingDateStr)
+		m.isEditingDate = false
+		m.editingDateStr = ""
+	case "esc":
+		// Cancel editing
+		m.isEditingDate = false
+		m.editingDateStr = ""
+	case "backspace":
+		if len(m.editingDateStr) > 0 {
+			m.editingDateStr = m.editingDateStr[:len(m.editingDateStr)-1]
+		}
+	default:
+		if len(key) == 1 {
+			m.editingDateStr += key
 		}
 	}
 	return m, nil
@@ -438,48 +580,6 @@ func (m model) handleBackspace() (tea.Model, tea.Cmd) {
 	case editCategory:
 		if len(m.currTransaction.Category) > 0 {
 			m.currTransaction.Category = m.currTransaction.Category[:len(m.currTransaction.Category)-1]
-		}
-	}
-	return m, nil
-}
-
-func (m model) handleTextInput(key string) (tea.Model, tea.Cmd) {
-	switch m.editField {
-	case editAmount:
-		return m.handleAmountInput(key)
-	case editDescription:
-		m.currTransaction.Description += key
-	case editDate:
-		m.currTransaction.Date += key
-	case editType:
-		m.currTransaction.TransactionType += key
-	case editCategory:
-		m.currTransaction.Category += key
-	}
-	return m, nil
-}
-
-func (m model) handleAmountInput(key string) (tea.Model, tea.Cmd) {
-	// initialize if empty
-	if m.editAmountStr == "" {
-		if m.currTransaction.Amount != 0 {
-			m.editAmountStr = fmt.Sprintf("%.2f", m.currTransaction.Amount)
-		}
-	}
-
-	// Only allow digits and decimal point
-	if (key >= "0" && key <= "9") || key == "." {
-		newStr := m.editAmountStr + key
-
-		// Validate decimal places (max 2)
-		dotIndex := strings.LastIndex(newStr, ".")
-		if dotIndex != -1 && len(newStr)-dotIndex-1 > 2 {
-			return m, nil
-		}
-
-		// Validate it's a valid number format
-		if _, err := strconv.ParseFloat(newStr, 64); err == nil || newStr == "." {
-			m.editAmountStr = newStr
 		}
 	}
 	return m, nil
