@@ -539,52 +539,6 @@ func (m model) handleSaveTransaction() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) handleBackspace() (tea.Model, tea.Cmd) {
-	switch m.editField {
-	case editAmount:
-		// Initialize if empty
-		if m.editAmountStr == "" {
-			if m.currTransaction.Amount == 0 {
-				m.editAmountStr = ""
-			} else {
-				m.editAmountStr = fmt.Sprintf("%.2f", m.currTransaction.Amount)
-			}
-		}
-		// Remove last character
-		if len(m.editAmountStr) > 0 {
-			m.editAmountStr = m.editAmountStr[:len(m.editAmountStr)-1]
-		}
-		amountStr := fmt.Sprintf("%g", m.currTransaction.Amount)
-		if len(amountStr) > 1 {
-			amountStr = amountStr[:len(amountStr)-1]
-			if newAmount, err := strconv.ParseFloat(amountStr, 64); err == nil {
-				m.currTransaction.Amount = newAmount
-			} else {
-				m.currTransaction.Amount = 0 // Reset to 0 if invalid
-			}
-		} else {
-			m.currTransaction.Amount = 0 // Reset to 0 if only one character left
-		}
-	case editDescription:
-		if len(m.currTransaction.Description) > 0 {
-			m.currTransaction.Description = m.currTransaction.Description[:len(m.currTransaction.Description)-1]
-		}
-	case editDate:
-		if len(m.currTransaction.Date) > 0 {
-			m.currTransaction.Date = m.currTransaction.Date[:len(m.currTransaction.Date)-1]
-		}
-	case editType:
-		if len(m.currTransaction.TransactionType) > 0 {
-			m.currTransaction.TransactionType = m.currTransaction.TransactionType[:len(m.currTransaction.TransactionType)-1]
-		}
-	case editCategory:
-		if len(m.currTransaction.Category) > 0 {
-			m.currTransaction.Category = m.currTransaction.Category[:len(m.currTransaction.Category)-1]
-		}
-	}
-	return m, nil
-}
-
 // Backup View
 
 func (m model) handleBackupView(key string) (tea.Model, tea.Cmd) {
@@ -1022,53 +976,6 @@ func (m model) handleSplitFieldNavigation(direction int) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) handleSplitInput(key string) (tea.Model, tea.Cmd) {
-	switch m.splitField {
-	case splitAmount1Field:
-		m.splitAmount1 = m.updateAmountField(m.splitAmount1, key)
-	case splitAmount2Field:
-		m.splitAmount2 = m.updateAmountField(m.splitAmount2, key)
-	case splitDesc1Field:
-		m.splitDesc1 += key
-	case splitDesc2Field:
-		m.splitDesc2 += key
-	case splitCategory1Field:
-		m.splitCategory1 += key
-	case splitCategory2Field:
-		m.splitCategory2 += key
-	}
-	return m, nil
-}
-
-func (m model) updateAmountField(currentValue, key string) string {
-	// Handle negative sign
-	if key == "-" {
-		if len(currentValue) == 0 {
-			return "-"
-		}
-		return currentValue
-	}
-
-	// Handle digits and decimal point
-	if (key >= "0" && key <= "9") || key == "." {
-		// Don't allow multiple decimal points
-		if key == "." && strings.Contains(currentValue, ".") {
-			return currentValue
-		}
-
-		newStr := currentValue + key
-
-		// Validate decimal places (max 2)
-		dotIndex := strings.LastIndex(newStr, ".")
-		if dotIndex != -1 && len(newStr)-dotIndex-1 > 2 {
-			return currentValue
-		}
-
-		return newStr
-	}
-	return currentValue
-}
-
 func (m model) handleSplitBackspace() (tea.Model, tea.Cmd) {
 	switch m.splitField {
 	case splitAmount1Field:
@@ -1097,65 +1004,6 @@ func (m model) handleSplitBackspace() (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
-}
-
-func (m model) handleSaveSplit() (tea.Model, tea.Cmd) {
-	// Validate amounts
-	amount1, err1 := strconv.ParseFloat(m.splitAmount1, 64)
-	amount2, err2 := strconv.ParseFloat(m.splitAmount2, 64)
-
-	if err1 != nil || err2 != nil {
-		m.splitMessage = "Error: Invalid amount format"
-		return m, nil
-	}
-
-	// Allow negative amounts for expenses - just check they're not zero
-	if amount1 == 0 || amount2 == 0 {
-		m.splitMessage = "Error: Amounts cannot be zero"
-		return m, nil
-	}
-
-	// Validate splits add up to original amount (works for both positive and negative)
-	if amount1+amount2 != m.currTransaction.Amount {
-		m.splitMessage = fmt.Sprintf("Error: Split amounts (%.2f + %.2f = %.2f) must equal original amount (%.2f)",
-			amount1, amount2, amount1+amount2, m.currTransaction.Amount)
-		return m, nil
-	}
-
-	// Validate descriptions
-	if strings.TrimSpace(m.splitDesc1) == "" || strings.TrimSpace(m.splitDesc2) == "" {
-		m.splitMessage = "Error: Descriptions cannot be empty"
-		return m, nil
-	}
-
-	// Create split transactions
-	split1 := Transaction{
-		Amount:          amount1,
-		Description:     strings.TrimSpace(m.splitDesc1),
-		Date:            m.currTransaction.Date,
-		Category:        strings.TrimSpace(m.splitCategory1),
-		TransactionType: m.currTransaction.TransactionType,
-	}
-
-	split2 := Transaction{
-		Amount:          amount2,
-		Description:     strings.TrimSpace(m.splitDesc2),
-		Date:            m.currTransaction.Date,
-		Category:        strings.TrimSpace(m.splitCategory2),
-		TransactionType: m.currTransaction.TransactionType,
-	}
-
-	// Use store's SplitTransaction method
-	err := m.store.SplitTransaction(m.currTransaction.Id, []Transaction{split1, split2})
-	if err != nil {
-		m.splitMessage = fmt.Sprintf("Error saving split: %v", err)
-		return m, nil
-	}
-
-	// Refresh transactions and return to list view
-	m.transactions, _ = m.store.GetTransactions()
-	m.state = listView
-	return m.exitSplitMode()
 }
 
 // Bulk Edit View --------------------
