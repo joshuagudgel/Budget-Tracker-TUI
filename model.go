@@ -24,6 +24,7 @@ const (
 	createProfileView       = 9
 	categoryView            = 10
 	createCategoryView      = 11
+	bulkEditView            = 12
 )
 
 const (
@@ -55,6 +56,11 @@ const (
 const (
 	createCategoryName uint = iota
 	createCategoryDisplayName
+)
+
+const (
+	bulkEditCategory uint = iota
+	bulkEditType
 )
 
 type model struct {
@@ -96,6 +102,12 @@ type model struct {
 	splitCategory2 string
 	splitField     uint
 	splitMessage   string
+
+	// Multi-select mode
+	isMultiSelectMode bool
+	selectedTxIds     map[int64]bool
+	bulkEditField     uint
+	bulkEditValue     string
 }
 
 func NewModel(store *Store) model {
@@ -154,6 +166,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleCategoryView(key)
 		case createCategoryView:
 			return m.handleCreateCategoryView(key)
+		case bulkEditView:
+			return m.handleBulkEditView(key)
 		}
 	case tea.WindowSizeMsg:
 		m.windowHeight = msg.Height
@@ -201,30 +215,80 @@ func (m model) handleListView(key string) (tea.Model, tea.Cmd) {
 			m.editAmountStr = ""
 			m.state = editView
 		}
+	case "m":
+		// Toggle multi-select mode
+		if file, err := tea.LogToFile("debug.log", "debug"); err == nil {
+			defer file.Close()
+			log.Printf("M key pressed! Current mode: %v", m.isMultiSelectMode)
+		}
+		return m.handleMultiSelectToggle()
+	case "b":
+		if m.isMultiSelectMode && len(m.selectedTxIds) > 0 {
+			// Enter bulk edit mode
+			m.bulkEditField = bulkEditCategory
+			m.bulkEditValue = ""
+			m.state = bulkEditView
+		}
+	case "enter":
+		if m.isMultiSelectMode && len(m.transactions) > 0 {
+			// Toggle selection for current transaction
+			return m.handleToggleSelection()
+		}
 	case "d":
-		if file, err := tea.LogToFile("debug.log", "debug"); err == nil {
-			defer file.Close()
-			log.Printf("Delete attempt: listIndex=%d, transactionCount=%d", m.listIndex, len(m.transactions))
-		}
-
-		if m.listIndex >= len(m.transactions) || m.listIndex < 0 {
-			log.Printf("Attempting to delete out of bounds")
-		}
-		m.store.DeleteTransaction(m.transactions[m.listIndex].Id)
-		m.transactions, _ = m.store.GetTransactions()
-
-		if m.listIndex >= len(m.transactions) && len(m.transactions) > 0 {
-			m.listIndex = len(m.transactions) - 1
-		} else if len(m.transactions) == 0 {
-			m.listIndex = 0
-		}
-
-		if file, err := tea.LogToFile("debug.log", "debug"); err == nil {
-			defer file.Close()
-			log.Printf("Delete completed: newListIndex=%d, newTransactionCount=%d", m.listIndex, len(m.transactions))
+		if !m.isMultiSelectMode {
+			// Existing single delete logic
+			m.store.DeleteTransaction(m.transactions[m.listIndex].Id)
+			m.transactions, _ = m.store.GetTransactions()
+			// ...existing bounds checking...
 		}
 	case "esc":
+		if m.isMultiSelectMode {
+			return m.exitMultiSelectMode()
+		}
 		m.state = menuView
+	}
+	return m, nil
+}
+
+func (m model) handleMultiSelectToggle() (tea.Model, tea.Cmd) {
+	if file, err := tea.LogToFile("debug.log", "debug"); err == nil {
+		defer file.Close()
+		log.Printf("handleMultiSelectToggle called: current mode=%v", m.isMultiSelectMode)
+	}
+
+	if !m.isMultiSelectMode {
+		// Enter multi-select mode
+		m.isMultiSelectMode = true
+		m.selectedTxIds = make(map[int64]bool)
+		if file, err := tea.LogToFile("debug.log", "debug"); err == nil {
+			defer file.Close()
+			log.Printf("Entered multi-select mode")
+		}
+	} else {
+		// Exit multi-select mode
+		if file, err := tea.LogToFile("debug.log", "debug"); err == nil {
+			defer file.Close()
+			log.Printf("Exiting multi-select mode")
+		}
+		return m.exitMultiSelectMode()
+	}
+	return m, nil
+}
+
+func (m model) exitMultiSelectMode() (tea.Model, tea.Cmd) {
+	m.isMultiSelectMode = false
+	m.selectedTxIds = make(map[int64]bool)
+	return m, nil
+}
+
+func (m model) handleToggleSelection() (tea.Model, tea.Cmd) {
+	if len(m.transactions) > 0 && m.listIndex < len(m.transactions) {
+		txId := m.transactions[m.listIndex].Id
+		if m.selectedTxIds[txId] {
+			delete(m.selectedTxIds, txId)
+		} else {
+			m.selectedTxIds[txId] = true
+		}
 	}
 	return m, nil
 }
@@ -972,4 +1036,59 @@ func (m model) handleSaveSplit() (tea.Model, tea.Cmd) {
 	m.transactions, _ = m.store.GetTransactions()
 	m.state = listView
 	return m.exitSplitMode()
+}
+
+// Bulk Edit View --------------------
+func (m model) handleBulkEditView(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "esc":
+		m.state = listView
+	case "down", "tab":
+		if m.bulkEditField < bulkEditType {
+			m.bulkEditField++
+			m.bulkEditValue = ""
+		}
+	case "up":
+		if m.bulkEditField > bulkEditCategory {
+			m.bulkEditField--
+			m.bulkEditValue = ""
+		}
+	case "enter":
+		return m.handleSaveBulkEdit()
+	case "backspace":
+		if len(m.bulkEditValue) > 0 {
+			m.bulkEditValue = m.bulkEditValue[:len(m.bulkEditValue)-1]
+		}
+	default:
+		if len(key) == 1 {
+			m.bulkEditValue += key
+		}
+	}
+	return m, nil
+}
+
+func (m model) handleSaveBulkEdit() (tea.Model, tea.Cmd) {
+	if strings.TrimSpace(m.bulkEditValue) == "" {
+		return m, nil // Don't save empty values
+	}
+
+	// Update all selected transactions
+	for i := range m.transactions {
+		if m.selectedTxIds[m.transactions[i].Id] {
+			switch m.bulkEditField {
+			case bulkEditCategory:
+				m.transactions[i].Category = strings.TrimSpace(m.bulkEditValue)
+			case bulkEditType:
+				m.transactions[i].TransactionType = strings.TrimSpace(m.bulkEditValue)
+			}
+
+			// Save each transaction
+			m.store.SaveTransaction(m.transactions[i])
+		}
+	}
+
+	// Refresh and exit
+	m.transactions, _ = m.store.GetTransactions()
+	m.state = listView
+	return m.exitMultiSelectMode()
 }

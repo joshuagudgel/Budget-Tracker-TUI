@@ -27,6 +27,12 @@ var (
 
 func (m model) View() string {
 	s := appNameStyle.Render("Budget Tracker") + "\n\n"
+
+	// Add multi-select indicator
+	if m.isMultiSelectMode {
+		s += headerStyle.Render(fmt.Sprintf("MULTI-SELECT MODE (%d selected)", len(m.selectedTxIds))) + "\n"
+	}
+
 	s += faintStyle.Render(fmt.Sprintf("DEBUG: State=%d, Index=%d, Count=%d", m.state, m.listIndex, len(m.transactions))) + "\n\n"
 
 	switch m.state {
@@ -43,7 +49,7 @@ func (m model) View() string {
 			headerStyle.Render("Description") + " | " +
 			headerStyle.Render("Amount") + " | " +
 			headerStyle.Render("Category") + " | " +
-			headerStyle.Render("Expense/Transfer") + headerStyle.Render("\n\n")
+			headerStyle.Render("Type") + "\n\n"
 
 		headerLines := 4 // App title + debug + empty line + header line
 		availableHeight := m.windowHeight - headerLines - 2
@@ -69,11 +75,24 @@ func (m model) View() string {
 			endIndex = len(m.transactions)
 		}
 
-		// Render visible transactions
+		// Render visible transactions with selection indicators
 		for i := startIndex; i < endIndex; i++ {
 			t := m.transactions[i]
 			prefix := " "
-			if i == m.listIndex {
+
+			if m.isMultiSelectMode {
+				if m.selectedTxIds[t.Id] {
+					prefix = "✓"
+				} else {
+					prefix = " "
+				}
+
+				if i == m.listIndex {
+					prefix += ">"
+				} else {
+					prefix += " "
+				}
+			} else if i == m.listIndex {
 				prefix = ">"
 			}
 
@@ -96,7 +115,13 @@ func (m model) View() string {
 			if len(m.transactions) > availableHeight {
 				scrollInfo = fmt.Sprintf(" (%d/%d)", m.listIndex+1, len(m.transactions))
 			}
-			s += faintStyle.Render("Up/Down: Navigate transactions | e: Edit | d: Delete | Esc: Return to menu" + scrollInfo)
+
+			// Updated help text based on mode
+			if m.isMultiSelectMode {
+				s += faintStyle.Render("Enter: Toggle Selection | b: Bulk Edit | m: Exit Multi-Select | Esc: Menu" + scrollInfo)
+			} else {
+				s += faintStyle.Render("Up/Down: Navigate | e: Edit | m: Multi-Select | d: Delete | Esc: Menu" + scrollInfo)
+			}
 		}
 	case editView:
 		s += headerStyle.Render("Edit Transaction") + "\n\n"
@@ -291,6 +316,24 @@ func (m model) View() string {
 		s += formLabelStyle.Render("Has Header:") + headerStyle.Render(headerValue) + " (y/n)\n\n"
 
 		s += faintStyle.Render("Up/Down: Navigate fields | Enter: Save | Esc: Cancel")
+	case bulkEditView:
+		s += headerStyle.Render(fmt.Sprintf("Bulk Edit %d Transactions", len(m.selectedTxIds))) + "\n\n"
+
+		// Category field
+		categoryStyle := formFieldStyle
+		if m.bulkEditField == bulkEditCategory {
+			categoryStyle = activeFieldStyle
+		}
+		s += formLabelStyle.Render("Category:") + "\n" + categoryStyle.Render(m.bulkEditValue) + "\n\n"
+
+		// Type field
+		typeStyle := formFieldStyle
+		if m.bulkEditField == bulkEditType {
+			typeStyle = activeFieldStyle
+		}
+		s += formLabelStyle.Render("Type:") + "\n" + typeStyle.Render(m.bulkEditValue) + "\n\n"
+
+		s += faintStyle.Render("Up/Down: Navigate fields | Enter: Apply to all selected | Esc: Cancel")
 	}
 
 	return s
