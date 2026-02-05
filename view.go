@@ -23,6 +23,9 @@ var (
 	formLabelStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")).Width(15)
 	formFieldStyle   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Width(30)
 	activeFieldStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("99")).Padding(0, 1).Width(30)
+
+	// Selection mode indicators (add these)
+	selectingFieldStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("208")).Padding(0, 1).Width(30) // Orange border for selecting
 )
 
 func (m model) View() string {
@@ -422,20 +425,112 @@ func (m model) renderNormalEditView() string {
 	}
 	s += formLabelStyle.Render("Date:") + "\n" + dateStyle.Render(m.currTransaction.Date) + "\n\n"
 
-	// Transaction Type field
+	// Transaction Type field with selection
 	typeStyle := formFieldStyle
 	if m.editField == editType {
-		typeStyle = activeFieldStyle
+		if m.isSelectingType {
+			typeStyle = selectingFieldStyle
+		} else {
+			typeStyle = activeFieldStyle
+		}
 	}
-	s += formLabelStyle.Render("Type:") + "\n" + typeStyle.Render(m.currTransaction.TransactionType) + "\n\n"
 
-	// Category field
+	typeValue := m.currTransaction.TransactionType
+	if m.isSelectingType {
+		typeValue = "▼ Select Type"
+	}
+
+	s += formLabelStyle.Render("Type:") + "\n" + typeStyle.Render(typeValue) + "\n"
+
+	// Show type options when selecting
+	if m.isSelectingType {
+		s += m.renderTypeOptions() + "\n"
+	}
+
+	s += "\n"
+
+	// Category field with selection
 	categoryStyle := formFieldStyle
 	if m.editField == editCategory {
-		categoryStyle = activeFieldStyle
+		if m.isSelectingCategory {
+			categoryStyle = selectingFieldStyle
+		} else {
+			categoryStyle = activeFieldStyle
+		}
 	}
-	s += formLabelStyle.Render("Category:") + "\n" + categoryStyle.Render(m.currTransaction.Category) + "\n\n"
 
-	s += faintStyle.Render("Up/Down: Navigate fields | Enter: Save | s: Split Transaction | Esc: Cancel")
+	categoryValue := m.currTransaction.Category
+	if m.isSelectingCategory {
+		categoryValue = "▼ Select Category"
+	}
+
+	s += formLabelStyle.Render("Category:") + "\n" + categoryStyle.Render(categoryValue) + "\n"
+
+	// Show category options when selecting
+	if m.isSelectingCategory {
+		s += m.renderCategoryOptions() + "\n"
+	}
+
+	s += "\n" + faintStyle.Render("Up/Down: Navigate fields | Enter: Select/Save | s: Split Transaction | Esc: Cancel")
+	return s
+}
+
+func (m model) renderCategoryOptions() string {
+	var s string
+	s += faintStyle.Render("Categories:") + "\n"
+
+	// Calculate available height for scrolling
+	maxVisible := 5
+	categories := m.store.categories.Categories
+
+	// Scroll logic for large category lists
+	startIdx := 0
+	if len(categories) > maxVisible {
+		startIdx = m.categorySelectIndex - maxVisible/2
+		if startIdx < 0 {
+			startIdx = 0
+		}
+		if startIdx > len(categories)-maxVisible {
+			startIdx = len(categories) - maxVisible
+		}
+	}
+
+	endIdx := startIdx + maxVisible
+	if endIdx > len(categories) {
+		endIdx = len(categories)
+	}
+
+	for i := startIdx; i < endIdx; i++ {
+		cat := categories[i]
+		prefix := "  "
+		if i == m.categorySelectIndex {
+			prefix = "> "
+			s += enumeratorStyle.Render(prefix) + headerStyle.Render(cat.DisplayName) + "\n"
+		} else {
+			s += faintStyle.Render(prefix+cat.DisplayName) + "\n"
+		}
+	}
+
+	// Show scroll indicator if needed
+	if len(categories) > maxVisible {
+		s += faintStyle.Render(fmt.Sprintf("   (%d/%d categories)", m.categorySelectIndex+1, len(categories))) + "\n"
+	}
+
+	return s
+}
+
+func (m model) renderTypeOptions() string {
+	var s string
+	s += faintStyle.Render("Types:") + "\n"
+
+	for i, transactionType := range m.availableTypes {
+		prefix := "  "
+		if i == m.typeSelectIndex {
+			prefix = "> "
+			s += enumeratorStyle.Render(prefix) + headerStyle.Render(transactionType) + "\n"
+		} else {
+			s += faintStyle.Render(prefix+transactionType) + "\n"
+		}
+	}
 	return s
 }

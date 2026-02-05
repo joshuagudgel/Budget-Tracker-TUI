@@ -108,6 +108,13 @@ type model struct {
 	selectedTxIds     map[int64]bool
 	bulkEditField     uint
 	bulkEditValue     string
+
+	// Selection mode fields
+	isSelectingCategory bool
+	isSelectingType     bool
+	categorySelectIndex int
+	typeSelectIndex     int
+	availableTypes      []string
 }
 
 func NewModel(store *Store) model {
@@ -116,10 +123,11 @@ func NewModel(store *Store) model {
 		log.Fatalf("unable to get notes: %v", err)
 	}
 	return model{
-		state:        menuView,
-		store:        store,
-		transactions: transactions,
-		listIndex:    0,
+		state:          menuView,
+		store:          store,
+		transactions:   transactions,
+		listIndex:      0,
+		availableTypes: []string{"income", "expense", "transfer"},
 		//currTransaction: transactions[0],
 	}
 }
@@ -296,14 +304,31 @@ func (m model) handleToggleSelection() (tea.Model, tea.Cmd) {
 // Edit Transaction View
 
 func (m model) handleEditView(key string) (tea.Model, tea.Cmd) {
+	if m.isSelectingCategory {
+		return m.handleCategorySelection(key)
+	}
+	if m.isSelectingType {
+		return m.handleTypeSelection(key)
+	}
+
 	switch key {
 	case "esc":
 		if m.isSplitMode {
-			// Exit split mode and clear split data
 			return m.exitSplitMode()
 		}
 		m.editAmountStr = ""
 		m.state = listView
+	case "enter":
+		if m.editField == editCategory {
+			return m.enterCategorySelection()
+		}
+		if m.editField == editType {
+			return m.enterTypeSelection()
+		}
+		if m.isSplitMode {
+			return m.handleSaveSplit()
+		}
+		return m.handleSaveTransaction()
 	case "s":
 		if !m.isSplitMode {
 			return m.enterSplitMode()
@@ -320,11 +345,6 @@ func (m model) handleEditView(key string) (tea.Model, tea.Cmd) {
 			return m.handleSplitFieldNavigation(-1)
 		}
 		return m.handleFieldNavigation(-1)
-	case "enter":
-		if m.isSplitMode {
-			return m.handleSaveSplit()
-		}
-		return m.handleSaveTransaction()
 	case "backspace":
 		if m.isSplitMode {
 			return m.handleSplitBackspace()
@@ -1091,4 +1111,74 @@ func (m model) handleSaveBulkEdit() (tea.Model, tea.Cmd) {
 	m.transactions, _ = m.store.GetTransactions()
 	m.state = listView
 	return m.exitMultiSelectMode()
+}
+
+func (m model) enterCategorySelection() (tea.Model, tea.Cmd) {
+	m.isSelectingCategory = true
+	m.categorySelectIndex = 0
+
+	// Find current category in list for initial position
+	for i, cat := range m.store.categories.Categories {
+		if cat.Name == m.currTransaction.Category {
+			m.categorySelectIndex = i
+			break
+		}
+	}
+	return m, nil
+}
+
+func (m model) handleCategorySelection(key string) (tea.Model, tea.Cmd) {
+	categories := m.store.categories.Categories
+
+	switch key {
+	case "up":
+		if m.categorySelectIndex > 0 {
+			m.categorySelectIndex--
+		}
+	case "down":
+		if m.categorySelectIndex < len(categories)-1 {
+			m.categorySelectIndex++
+		}
+	case "enter":
+		if len(categories) > 0 {
+			m.currTransaction.Category = categories[m.categorySelectIndex].Name
+		}
+		m.isSelectingCategory = false
+	case "esc":
+		m.isSelectingCategory = false
+	}
+	return m, nil
+}
+
+func (m model) enterTypeSelection() (tea.Model, tea.Cmd) {
+	m.isSelectingType = true
+	m.typeSelectIndex = 0
+
+	// Find current type in list
+	for i, t := range m.availableTypes {
+		if t == m.currTransaction.TransactionType {
+			m.typeSelectIndex = i
+			break
+		}
+	}
+	return m, nil
+}
+
+func (m model) handleTypeSelection(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "up":
+		if m.typeSelectIndex > 0 {
+			m.typeSelectIndex--
+		}
+	case "down":
+		if m.typeSelectIndex < len(m.availableTypes)-1 {
+			m.typeSelectIndex++
+		}
+	case "enter":
+		m.currTransaction.TransactionType = m.availableTypes[m.typeSelectIndex]
+		m.isSelectingType = false
+	case "esc":
+		m.isSelectingType = false
+	}
+	return m, nil
 }
