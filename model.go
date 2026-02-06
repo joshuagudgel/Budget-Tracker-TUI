@@ -343,6 +343,9 @@ func (m model) handleEditView(key string) (tea.Model, tea.Cmd) {
 		m.state = listView
 	case "enter":
 		return m.handleFieldActivation()
+	case "backspace":
+		// Enter editing mode for text fields only
+		return m.handleBackspaceActivation()
 	case "s":
 		if !m.isSplitMode {
 			return m.enterSplitMode()
@@ -361,13 +364,6 @@ func (m model) handleEditView(key string) (tea.Model, tea.Cmd) {
 			return m.handleSplitFieldNavigation(-1)
 		}
 		return m.handleFieldNavigation(-1)
-	case "backspace":
-		if m.isSplitMode {
-			return m.handleSplitBackspace()
-		}
-		// No backspace in field selection mode
-	default:
-		// No text input in field selection mode
 	}
 	return m, nil
 }
@@ -386,6 +382,52 @@ func (m model) handleFieldNavigation(direction int) (tea.Model, tea.Cmd) {
 		if m.currTransaction.Amount != 0 {
 			m.editAmountStr = fmt.Sprintf("%.2f", m.currTransaction.Amount)
 		}
+	}
+	return m, nil
+}
+
+func (m model) handleBackspaceActivation() (tea.Model, tea.Cmd) {
+	// Only activate text input fields with backspace
+	switch m.editField {
+	case editAmount:
+		return m.enterAmountEditingWithBackspace()
+	case editDescription:
+		return m.enterDescriptionEditingWithBackspace()
+	case editDate:
+		return m.enterDateEditingWithBackspace()
+	case editType, editCategory:
+		// For dropdown fields, backspace doesn't activate - only enter does
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m model) enterAmountEditingWithBackspace() (tea.Model, tea.Cmd) {
+	m.isEditingAmount = true
+	// Start with current value and immediately apply backspace
+	m.editingAmountStr = fmt.Sprintf("%.2f", m.currTransaction.Amount)
+	if len(m.editingAmountStr) > 0 {
+		m.editingAmountStr = m.editingAmountStr[:len(m.editingAmountStr)-1]
+	}
+	return m, nil
+}
+
+func (m model) enterDescriptionEditingWithBackspace() (tea.Model, tea.Cmd) {
+	m.isEditingDescription = true
+	// Start with current value and immediately apply backspace
+	m.editingDescStr = m.currTransaction.Description
+	if len(m.editingDescStr) > 0 {
+		m.editingDescStr = m.editingDescStr[:len(m.editingDescStr)-1]
+	}
+	return m, nil
+}
+
+func (m model) enterDateEditingWithBackspace() (tea.Model, tea.Cmd) {
+	m.isEditingDate = true
+	// Start with current value and immediately apply backspace
+	m.editingDateStr = m.currTransaction.Date
+	if len(m.editingDateStr) > 0 {
+		m.editingDateStr = m.editingDateStr[:len(m.editingDateStr)-1]
 	}
 	return m, nil
 }
@@ -427,14 +469,10 @@ func (m model) enterDateEditing() (tea.Model, tea.Cmd) {
 func (m model) handleAmountEditing(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "enter":
-		// Save amount
+		// Save amount and exit editing mode
 		if amount, err := strconv.ParseFloat(m.editingAmountStr, 64); err == nil {
 			m.currTransaction.Amount = amount
 		}
-		m.isEditingAmount = false
-		m.editingAmountStr = ""
-	case "esc":
-		// Cancel editing
 		m.isEditingAmount = false
 		m.editingAmountStr = ""
 	case "backspace":
@@ -484,12 +522,8 @@ func (m model) handleAmountInput(key string) (tea.Model, tea.Cmd) {
 func (m model) handleDescriptionEditing(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "enter":
-		// Save description
+		// Save description and exit editing mode
 		m.currTransaction.Description = strings.TrimSpace(m.editingDescStr)
-		m.isEditingDescription = false
-		m.editingDescStr = ""
-	case "esc":
-		// Cancel editing
 		m.isEditingDescription = false
 		m.editingDescStr = ""
 	case "backspace":
@@ -507,12 +541,8 @@ func (m model) handleDescriptionEditing(key string) (tea.Model, tea.Cmd) {
 func (m model) handleDateEditing(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "enter":
-		// Save date
+		// Save date and exit editing mode
 		m.currTransaction.Date = strings.TrimSpace(m.editingDateStr)
-		m.isEditingDate = false
-		m.editingDateStr = ""
-	case "esc":
-		// Cancel editing
 		m.isEditingDate = false
 		m.editingDateStr = ""
 	case "backspace":
