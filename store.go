@@ -18,7 +18,7 @@ type Store struct {
 	categoryName string
 	transactions []Transaction
 	nextId       int64
-	csvProfiles  CSVProfileStore
+	csvTemplates CSVTemplateStore
 	categories   CategoryStore
 }
 
@@ -174,10 +174,10 @@ func (s *Store) SplitTransaction(parentId int64, splits []Transaction) error {
 
 // Import Transactions --------------------
 
-func (s *Store) ImportTransactionsFromCSV(profileName string) error {
-	profile := s.getProfileByName(profileName)
-	if profile == nil {
-		return fmt.Errorf("profile '%s' not found", profileName)
+func (s *Store) ImportTransactionsFromCSV(templateName string) error {
+	template := s.getTemplateByName(templateName)
+	if template == nil {
+		return fmt.Errorf("template '%s' not found", templateName)
 	}
 
 	data, err := os.ReadFile(s.importName)
@@ -190,9 +190,9 @@ func (s *Store) ImportTransactionsFromCSV(profileName string) error {
 		return fmt.Errorf("empty CSV file")
 	}
 
-	// Use profile.HasHeader to determine start line
+	// Use template.HasHeader to determine start line
 	var startLine int
-	if profile.HasHeader {
+	if template.HasHeader {
 		startLine = 1 // Skip header row
 	} else {
 		startLine = 0 // No headers
@@ -207,20 +207,20 @@ func (s *Store) ImportTransactionsFromCSV(profileName string) error {
 
 		fields := s.parseCSVLine(line)
 
-		// Check if we have enough columns based on profile requirements
-		maxColumn := profile.DateColumn
-		if profile.AmountColumn > maxColumn {
-			maxColumn = profile.AmountColumn
+		// Check if we have enough columns based on template requirements
+		maxColumn := template.DateColumn
+		if template.AmountColumn > maxColumn {
+			maxColumn = template.AmountColumn
 		}
-		if profile.DescColumn > maxColumn {
-			maxColumn = profile.DescColumn
+		if template.DescColumn > maxColumn {
+			maxColumn = template.DescColumn
 		}
 
 		if len(fields) <= maxColumn {
 			continue // Skip lines with insufficient columns
 		}
 
-		transaction, err := s.parseTransactionFromProfile(fields, profile)
+		transaction, err := s.parseTransactionFromTemplate(fields, template)
 		if err != nil {
 			continue // Skip invalid lines
 		}
@@ -243,18 +243,19 @@ func (s *Store) ImportTransactionsFromCSV(profileName string) error {
 	return s.saveTransactions()
 }
 
-func (s *Store) parseTransactionFromProfile(fields []string, profile *CSVProfile) (Transaction, error) {
+// TODO clunky
+func (s *Store) parseTransactionFromTemplate(fields []string, template *CSVTemplate) (Transaction, error) {
 	var transaction Transaction
 	var err error
 
 	// Extract date from specified column
-	transaction.Date = strings.Trim(fields[profile.DateColumn], "\"")
+	transaction.Date = strings.Trim(fields[template.DateColumn], "\"")
 
 	// Extract description from specified column
-	transaction.Description = strings.Trim(fields[profile.DescColumn], "\"")
+	transaction.Description = strings.Trim(fields[template.DescColumn], "\"")
 
 	// Extract amount from specified column
-	amountStr := strings.Trim(fields[profile.AmountColumn], "\"")
+	amountStr := strings.Trim(fields[template.AmountColumn], "\"")
 	transaction.Amount, err = s.parseAmount(amountStr)
 	if err != nil {
 		return transaction, fmt.Errorf("invalid amount: %v", err)
@@ -418,8 +419,8 @@ func (s *Store) RestoreFromBackup() error {
 	return s.saveTransactions()
 }
 
-// CSV Profile ---------------------
-type CSVProfile struct {
+// CSV Template ---------------------
+type CSVTemplate struct {
 	Name         string `json:"name"`
 	DateColumn   int    `json:"dateColumn"`
 	AmountColumn int    `json:"amountColumn"`
@@ -427,22 +428,22 @@ type CSVProfile struct {
 	HasHeader    bool   `json:"hasHeader"`
 }
 
-type CSVProfileStore struct {
-	Profiles []CSVProfile `json:"profiles"`
-	Default  string
+type CSVTemplateStore struct {
+	Templates []CSVTemplate `json:"profiles"`
+	Default   string
 }
 
 func (s *Store) loadCSVProfiles() error {
 	if _, err := os.Stat(s.profileName); os.IsNotExist(err) {
-		// Create default profiles
-		s.csvProfiles = CSVProfileStore{
-			Profiles: []CSVProfile{
+		// Create default templates
+		s.csvTemplates = CSVTemplateStore{
+			Templates: []CSVTemplate{
 				{Name: "Bank1", DateColumn: 0, AmountColumn: 1, DescColumn: 4, HasHeader: false},
 				{Name: "Bank2", DateColumn: 0, AmountColumn: 5, DescColumn: 2, HasHeader: true},
 			},
 			Default: "Bank1",
 		}
-		return s.saveCSVProfiles()
+		return s.saveCSVTemplates()
 	}
 
 	data, err := os.ReadFile(s.profileName)
@@ -450,21 +451,21 @@ func (s *Store) loadCSVProfiles() error {
 		return err
 	}
 
-	return json.Unmarshal(data, &s.csvProfiles)
+	return json.Unmarshal(data, &s.csvTemplates)
 }
 
-func (s *Store) saveCSVProfiles() error {
-	data, err := json.MarshalIndent(s.csvProfiles, "", "  ")
+func (s *Store) saveCSVTemplates() error {
+	data, err := json.MarshalIndent(s.csvTemplates, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(s.profileName, data, 0644)
 }
 
-func (s *Store) getProfileByName(name string) *CSVProfile {
-	for _, profile := range s.csvProfiles.Profiles {
-		if profile.Name == name {
-			return &profile
+func (s *Store) getTemplateByName(name string) *CSVTemplate {
+	for _, template := range s.csvTemplates.Templates {
+		if template.Name == name {
+			return &template
 		}
 	}
 	return nil

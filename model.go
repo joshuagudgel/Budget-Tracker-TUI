@@ -20,8 +20,8 @@ const (
 	backupView              = 5
 	importView              = 6
 	filePickerView          = 7
-	csvProfileView          = 8
-	createProfileView       = 9
+	csvTemplateView         = 8
+	createTemplateView      = 9
 	categoryView            = 10
 	createCategoryView      = 11
 	bulkEditView            = 12
@@ -37,11 +37,11 @@ const (
 )
 
 const (
-	createProfileName uint = iota
-	createProfileDate
-	createProfileAmount
-	createProfileDesc
-	createProfileHeader
+	createTemplateName uint = iota
+	createTemplateDate
+	createTemplateAmount
+	createTemplateDesc
+	createTemplateHeader
 )
 
 const (
@@ -79,12 +79,12 @@ type model struct {
 	dirEntries   []string
 	fileIndex    int
 	selectedFile string
-	// csvProfile creation
-	profileIndex    int
-	selectedProfile string
-	newProfile      CSVProfile
-	createField     uint
-	createMessage   string
+	// CSV template creation
+	templateIndex    int
+	selectedTemplate string
+	newTemplate      CSVTemplate
+	createField      uint
+	createMessage    string
 	// category management
 	categoryIndex       int
 	selectedCategory    string
@@ -180,10 +180,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleImportView(key)
 		case filePickerView:
 			return m.handleFilePickerView(key)
-		case csvProfileView:
-			return m.handleCSVProfileView(key)
-		case createProfileView:
-			return m.handleCreateProfileView(key)
+		case csvTemplateView:
+			return m.handleCSVTemplateView(key)
+		case createTemplateView:
+			return m.handleCreateTemplateView(key)
 		case categoryView:
 			return m.handleCategoryView(key)
 		case createCategoryView:
@@ -624,7 +624,7 @@ func (m model) handleImportView(key string) (tea.Model, tea.Cmd) {
 
 		m.state = filePickerView
 	case "p":
-		m.state = csvProfileView
+		m.state = csvTemplateView
 	}
 	return m, nil
 }
@@ -664,20 +664,20 @@ func (m model) handleFilePickerView(key string) (tea.Model, tea.Cmd) {
 				m.store.importName = fullPath
 
 				currentCount := len(m.transactions)
-				// Use the selected profile instead of hardcoded profileName
-				profileToUse := m.store.csvProfiles.Default
-				if profileToUse == "" && len(m.store.csvProfiles.Profiles) > 0 {
-					profileToUse = m.store.csvProfiles.Profiles[0].Name
+				// Use the selected template instead of hardcoded templateName
+				templateToUse := m.store.csvTemplates.Default
+				if templateToUse == "" && len(m.store.csvTemplates.Templates) > 0 {
+					templateToUse = m.store.csvTemplates.Templates[0].Name
 				}
 
-				err := m.store.ImportTransactionsFromCSV(profileToUse)
+				err := m.store.ImportTransactionsFromCSV(templateToUse)
 				if err != nil {
 					m.importMessage = fmt.Sprintf("Error: %v", err)
 				} else {
 					m.transactions, _ = m.store.GetTransactions()
 					imported := len(m.transactions) - currentCount
-					m.importMessage = fmt.Sprintf("Successfully imported %d transactions from %s using profile %s",
-						imported, filepath.Base(selected), profileToUse)
+					m.importMessage = fmt.Sprintf("Successfully imported %d transactions from %s using template %s",
+						imported, filepath.Base(selected), templateToUse)
 				}
 				m.state = importView
 			}
@@ -716,149 +716,149 @@ func (m *model) loadDirectoryEntries() error {
 	return nil
 }
 
-// CSV Profile View
+// CSV Template View
 
-func (m model) handleCSVProfileView(key string) (tea.Model, tea.Cmd) {
+func (m model) handleCSVTemplateView(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc":
 		m.state = importView
 	case "up":
-		if m.profileIndex > 0 {
-			m.profileIndex--
+		if m.templateIndex > 0 {
+			m.templateIndex--
 		}
 	case "down":
-		if len(m.store.csvProfiles.Profiles) > 0 && m.profileIndex < len(m.store.csvProfiles.Profiles)-1 {
-			m.profileIndex++
+		if len(m.store.csvTemplates.Templates) > 0 && m.templateIndex < len(m.store.csvTemplates.Templates)-1 {
+			m.templateIndex++
 		}
 	case "enter":
-		if len(m.store.csvProfiles.Profiles) > 0 && m.profileIndex < len(m.store.csvProfiles.Profiles) {
-			selectedProfile := m.store.csvProfiles.Profiles[m.profileIndex]
-			m.selectedProfile = selectedProfile.Name
+		if len(m.store.csvTemplates.Templates) > 0 && m.templateIndex < len(m.store.csvTemplates.Templates) {
+			selectedTemplate := m.store.csvTemplates.Templates[m.templateIndex]
+			m.selectedTemplate = selectedTemplate.Name
 
-			// Update the store's default profile
-			m.store.csvProfiles.Default = selectedProfile.Name
-			err := m.store.saveCSVProfiles()
+			// Update the store's default template
+			m.store.csvTemplates.Default = selectedTemplate.Name
+			err := m.store.saveCSVTemplates()
 			if err != nil {
-				m.importMessage = fmt.Sprintf("Error saving profile selection: %v", err)
+				m.importMessage = fmt.Sprintf("Error saving template selection: %v", err)
 			} else {
-				m.importMessage = fmt.Sprintf("Selected CSV profile: %s", selectedProfile.Name)
+				m.importMessage = fmt.Sprintf("Selected CSV template: %s", selectedTemplate.Name)
 			}
 
 			m.state = importView
 		}
 	case "c":
-		m.newProfile = CSVProfile{}
-		m.createField = createProfileName
+		m.newTemplate = CSVTemplate{}
+		m.createField = createTemplateName
 		m.createMessage = ""
-		m.state = createProfileView
+		m.state = createTemplateView
 	}
 	return m, nil
 }
 
-// Create Profile View
-func (m model) handleCreateProfileView(key string) (tea.Model, tea.Cmd) {
+// Create CSV Template View
+func (m model) handleCreateTemplateView(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc":
-		m.state = csvProfileView
+		m.state = csvTemplateView
 	case "down", "tab":
-		if m.createField < createProfileHeader {
+		if m.createField < createTemplateHeader {
 			m.createField++
 		}
 	case "up":
-		if m.createField > createProfileName {
+		if m.createField > createTemplateName {
 			m.createField--
 		}
 	case "enter":
-		return m.handleSaveProfile()
+		return m.handleSaveTemplate()
 	case "backspace":
-		return m.handleCreateProfileBackspace()
+		return m.handleCreateTemplateBackspace()
 	default:
 		if len(key) == 1 {
-			return m.handleCreateProfileInput(key)
+			return m.handleCreateTemplateInput(key)
 		}
 	}
 	return m, nil
 }
 
-func (m model) handleCreateProfileInput(key string) (tea.Model, tea.Cmd) {
+func (m model) handleCreateTemplateInput(key string) (tea.Model, tea.Cmd) {
 	switch m.createField {
-	case createProfileName:
-		m.newProfile.Name += key
-	case createProfileDate:
+	case createTemplateName:
+		m.newTemplate.Name += key
+	case createTemplateDate:
 		if key >= "0" && key <= "9" {
 			if digit, err := strconv.Atoi(key); err == nil {
-				m.newProfile.DateColumn = m.newProfile.DateColumn*10 + digit
+				m.newTemplate.DateColumn = m.newTemplate.DateColumn*10 + digit
 			}
 		}
-	case createProfileAmount:
+	case createTemplateAmount:
 		if key >= "0" && key <= "9" {
 			if digit, err := strconv.Atoi(key); err == nil {
-				m.newProfile.AmountColumn = m.newProfile.AmountColumn*10 + digit
+				m.newTemplate.AmountColumn = m.newTemplate.AmountColumn*10 + digit
 			}
 		}
-	case createProfileDesc:
+	case createTemplateDesc:
 		if key >= "0" && key <= "9" {
 			if digit, err := strconv.Atoi(key); err == nil {
-				m.newProfile.DescColumn = m.newProfile.DescColumn*10 + digit
+				m.newTemplate.DescColumn = m.newTemplate.DescColumn*10 + digit
 			}
 		}
-	case createProfileHeader:
+	case createTemplateHeader:
 		switch key {
 		case "y", "Y":
-			m.newProfile.HasHeader = true
+			m.newTemplate.HasHeader = true
 		case "n", "N":
-			m.newProfile.HasHeader = false
+			m.newTemplate.HasHeader = false
 		}
 	}
 	return m, nil
 }
 
-func (m model) handleCreateProfileBackspace() (tea.Model, tea.Cmd) {
+func (m model) handleCreateTemplateBackspace() (tea.Model, tea.Cmd) {
 	switch m.createField {
-	case createProfileName:
-		if len(m.newProfile.Name) > 0 {
-			m.newProfile.Name = m.newProfile.Name[:len(m.newProfile.Name)-1]
+	case createTemplateName:
+		if len(m.newTemplate.Name) > 0 {
+			m.newTemplate.Name = m.newTemplate.Name[:len(m.newTemplate.Name)-1]
 		}
-	case createProfileDate:
-		m.newProfile.DateColumn = m.newProfile.DateColumn / 10
-	case createProfileAmount:
-		m.newProfile.AmountColumn = m.newProfile.AmountColumn / 10
-	case createProfileDesc:
-		m.newProfile.DescColumn = m.newProfile.DescColumn / 10
-	case createProfileHeader:
-		m.newProfile.HasHeader = false
+	case createTemplateDate:
+		m.newTemplate.DateColumn = m.newTemplate.DateColumn / 10
+	case createTemplateAmount:
+		m.newTemplate.AmountColumn = m.newTemplate.AmountColumn / 10
+	case createTemplateDesc:
+		m.newTemplate.DescColumn = m.newTemplate.DescColumn / 10
+	case createTemplateHeader:
+		m.newTemplate.HasHeader = false
 	}
 	return m, nil
 }
 
-func (m model) handleSaveProfile() (tea.Model, tea.Cmd) {
-	// Validate profile name is not empty
-	if strings.TrimSpace(m.newProfile.Name) == "" {
-		m.createMessage = "Profile name cannot be empty"
+func (m model) handleSaveTemplate() (tea.Model, tea.Cmd) {
+	// Validate template name is not empty
+	if strings.TrimSpace(m.newTemplate.Name) == "" {
+		m.createMessage = "Template name cannot be empty"
 		return m, nil
 	}
 
 	// Check for duplicate names
-	for _, profile := range m.store.csvProfiles.Profiles {
-		if profile.Name == m.newProfile.Name {
-			m.createMessage = "Profile name already exists"
+	for _, template := range m.store.csvTemplates.Templates {
+		if template.Name == m.newTemplate.Name {
+			m.createMessage = "Template name already exists"
 			return m, nil
 		}
 	}
 
-	// Add new profile and set as default
-	m.store.csvProfiles.Profiles = append(m.store.csvProfiles.Profiles, m.newProfile)
-	m.store.csvProfiles.Default = m.newProfile.Name
+	// Add new template and set as default
+	m.store.csvTemplates.Templates = append(m.store.csvTemplates.Templates, m.newTemplate)
+	m.store.csvTemplates.Default = m.newTemplate.Name
 
-	// Save profiles
-	err := m.store.saveCSVProfiles()
+	// Save templates
+	err := m.store.saveCSVTemplates()
 	if err != nil {
-		m.createMessage = fmt.Sprintf("Error saving profile: %v", err)
+		m.createMessage = fmt.Sprintf("Error saving template: %v", err)
 		return m, nil
 	}
 
-	// Return to CSV profile view
-	m.state = csvProfileView
+	// Return to CSV template view
+	m.state = csvTemplateView
 	return m, nil
 }
 

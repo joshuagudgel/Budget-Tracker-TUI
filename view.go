@@ -193,12 +193,12 @@ func (m model) View() string {
 	case importView:
 		s += headerStyle.Render("Import Options:") + "\n\n"
 
-		// Show current selected profile
-		currentProfile := m.store.csvProfiles.Default
-		if currentProfile == "" && len(m.store.csvProfiles.Profiles) > 0 {
-			currentProfile = m.store.csvProfiles.Profiles[0].Name
+		// Show current selected template
+		currentTemplate := m.store.csvTemplates.Default
+		if currentTemplate == "" && len(m.store.csvTemplates.Templates) > 0 {
+			currentTemplate = m.store.csvTemplates.Templates[0].Name
 		}
-		s += faintStyle.Render(fmt.Sprintf("Current CSV Profile: %s", currentProfile)) + "\n\n"
+		s += faintStyle.Render(fmt.Sprintf("Current CSV Template: %s", currentTemplate)) + "\n\n"
 
 		if m.importMessage != "" {
 			if strings.Contains(m.importMessage, "Error") {
@@ -208,7 +208,7 @@ func (m model) View() string {
 			}
 		}
 
-		s += faintStyle.Render("i: Import CSV file | p: Select CSV Profile | Esc: Return to menu") + "\n\n"
+		s += faintStyle.Render("i: Import CSV file | p: Select CSV Template | Esc: Return to menu") + "\n\n"
 	case filePickerView:
 		s += headerStyle.Render("Select CSV File") + "\n\n"
 		s += faintStyle.Render("Current Directory: "+m.currentDir) + "\n\n"
@@ -234,76 +234,76 @@ func (m model) View() string {
 		}
 
 		s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: Select | Esc: Cancel")
-	case csvProfileView:
-		s += headerStyle.Render("Select CSV Profile") + "\n\n"
+	case csvTemplateView:
+		s += headerStyle.Render("Select CSV Template") + "\n\n"
 
-		if len(m.store.csvProfiles.Profiles) == 0 {
-			s += faintStyle.Render("No CSV profiles found.") + "\n\n"
+		if len(m.store.csvTemplates.Templates) == 0 {
+			s += faintStyle.Render("No CSV templates found.") + "\n\n"
 		} else {
-			// Display available profiles
-			for i, profile := range m.store.csvProfiles.Profiles {
+			// Display available templates
+			for i, template := range m.store.csvTemplates.Templates {
 				prefix := "  "
-				if i == m.profileIndex {
+				if i == m.templateIndex {
 					prefix = "> "
 				}
 
 				// Show current default
 				suffix := ""
-				if profile.Name == m.store.csvProfiles.Default {
+				if template.Name == m.store.csvTemplates.Default {
 					suffix = " (current)"
 				}
 
-				// Show profile details
-				profileDetails := fmt.Sprintf("%s - Date:%d, Amount:%d, Desc:%d, Header:%v%s",
-					profile.Name, profile.DateColumn, profile.AmountColumn, profile.DescColumn, profile.HasHeader, suffix)
+				// Show template details
+				templateDetails := fmt.Sprintf("%s - Date:%d, Amount:%d, Desc:%d, Header:%v%s",
+					template.Name, template.DateColumn, template.AmountColumn, template.DescColumn, template.HasHeader, suffix)
 
-				s += enumeratorStyle.Render(prefix) + profileDetails + "\n"
+				s += enumeratorStyle.Render(prefix) + templateDetails + "\n"
 			}
 		}
 
-		s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: Select | c: Create Profile | Esc: Cancel")
-	case createProfileView:
-		s += headerStyle.Render("Create CSV Profile") + "\n\n"
+		s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: Select | c: Create Template | Esc: Cancel")
+	case createTemplateView:
+		s += headerStyle.Render("Create CSV Template") + "\n\n"
 
 		if m.createMessage != "" {
 			s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.createMessage) + "\n\n"
 		}
 
-		// Profile Name field
+		// Template Name field
 		nameStyle := formFieldStyle
-		if m.createField == createProfileName {
+		if m.createField == createTemplateName {
 			nameStyle = activeFieldStyle
 		}
-		s += formLabelStyle.Render("Profile Name:") + nameStyle.Render(m.newProfile.Name) + "\n\n"
+		s += formLabelStyle.Render("Template Name:") + nameStyle.Render(m.newTemplate.Name) + "\n\n"
 
 		// Date Column field
 		dateStyle := formFieldStyle
-		if m.createField == createProfileDate {
+		if m.createField == createTemplateDate {
 			dateStyle = activeFieldStyle
 		}
-		s += formLabelStyle.Render("Date Column:") + dateStyle.Render(fmt.Sprintf("%d", m.newProfile.DateColumn)) + "\n\n"
+		s += formLabelStyle.Render("Date Column:") + dateStyle.Render(fmt.Sprintf("%d", m.newTemplate.DateColumn)) + "\n\n"
 
 		// Amount Column field
 		amountStyle := formFieldStyle
-		if m.createField == createProfileAmount {
+		if m.createField == createTemplateAmount {
 			amountStyle = activeFieldStyle
 		}
-		s += formLabelStyle.Render("Amount Column:") + amountStyle.Render(fmt.Sprintf("%d", m.newProfile.AmountColumn)) + "\n\n"
+		s += formLabelStyle.Render("Amount Column:") + amountStyle.Render(fmt.Sprintf("%d", m.newTemplate.AmountColumn)) + "\n\n"
 
 		// Description Column field
 		descStyle := formFieldStyle
-		if m.createField == createProfileDesc {
+		if m.createField == createTemplateDesc {
 			descStyle = activeFieldStyle
 		}
-		s += formLabelStyle.Render("Desc Column:") + descStyle.Render(fmt.Sprintf("%d", m.newProfile.DescColumn)) + "\n\n"
+		s += formLabelStyle.Render("Desc Column:") + descStyle.Render(fmt.Sprintf("%d", m.newTemplate.DescColumn)) + "\n\n"
 
 		// Has Header field
 		headerStyle := formFieldStyle
-		if m.createField == createProfileHeader {
+		if m.createField == createTemplateHeader {
 			headerStyle = activeFieldStyle
 		}
 		headerValue := "No"
-		if m.newProfile.HasHeader {
+		if m.newTemplate.HasHeader {
 			headerValue = "Yes"
 		}
 		s += formLabelStyle.Render("Has Header:") + headerStyle.Render(headerValue) + " (y/n)\n\n"
