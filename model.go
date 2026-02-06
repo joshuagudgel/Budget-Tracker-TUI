@@ -12,19 +12,21 @@ import (
 )
 
 const (
-	menuView           uint = iota
-	listView                = 1
-	titleView               = 2
-	bodyView                = 3
-	editView                = 4
-	backupView              = 5
-	importView              = 6
-	filePickerView          = 7
-	csvTemplateView         = 8
-	createTemplateView      = 9
-	categoryView            = 10
-	createCategoryView      = 11
-	bulkEditView            = 12
+	menuView             uint = iota
+	listView                  = 1
+	titleView                 = 2
+	bodyView                  = 3
+	editView                  = 4
+	backupView                = 5
+	filePickerView            = 6
+	csvTemplateView           = 7
+	createTemplateView        = 8
+	categoryView              = 9
+	createCategoryView        = 10
+	bulkEditView              = 11
+	bankStatementView         = 12
+	statementHistoryView      = 13
+	statementOverlapView      = 14
 )
 
 const (
@@ -129,6 +131,12 @@ type model struct {
 	editingAmountStr     string
 	editingDescStr       string
 	editingDateStr       string
+
+	// Bank statement fields
+	statementIndex   int
+	overlappingStmts []BankStatement
+	pendingStatement BankStatement
+	statementMessage string
 }
 
 func NewModel(store *Store) model {
@@ -176,8 +184,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleEditView(key)
 		case backupView:
 			return m.handleBackupView(key)
-		case importView:
-			return m.handleImportView(key)
 		case filePickerView:
 			return m.handleFilePickerView(key)
 		case csvTemplateView:
@@ -190,6 +196,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleCreateCategoryView(key)
 		case bulkEditView:
 			return m.handleBulkEditView(key)
+		case bankStatementView:
+			return m.handleBankStatementView(key)
+		case statementHistoryView:
+			return m.handleStatementHistoryView(key)
+		case statementOverlapView:
+			return m.handleStatementOverlapView(key)
 		}
 	case tea.WindowSizeMsg:
 		m.windowHeight = msg.Height
@@ -206,8 +218,8 @@ func (m model) handleMenuView(key string) (tea.Model, tea.Cmd) {
 		m.state = backupView
 		m.backupMessage = ""
 	case "i":
-		m.state = importView
-		m.importMessage = ""
+		m.state = bankStatementView
+		m.statementMessage = ""
 	case "c":
 		m.state = categoryView
 		m.categoryMessage = ""
@@ -594,47 +606,17 @@ func (m model) handleBackupView(key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// Import View
-
-func (m model) handleImportView(key string) (tea.Model, tea.Cmd) {
-	switch key {
-	case "esc":
-		m.state = menuView
-	case "i":
-		// Open file picker
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			homeDir = "."
-		}
-		m.currentDir = homeDir
-		m.fileIndex = 0
-		m.selectedFile = ""
-
-		// Load directory entries with error handling
-		err = m.loadDirectoryEntries()
-		if err != nil {
-			m.importMessage = fmt.Sprintf("Error opening directory: %v", err)
-			return m, nil
-		}
-
-		// Debug: Check if we found any entries
-		if len(m.dirEntries) == 0 {
-			m.importMessage = "No directories or CSV files found"
-		}
-
-		m.state = filePickerView
-	case "p":
-		m.state = csvTemplateView
-	}
-	return m, nil
-}
-
 // File Picker View
 
+// Update the existing handleFilePickerView method
 func (m model) handleFilePickerView(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc":
-		m.state = importView
+		// Return to appropriate view based on context
+		if m.state == filePickerView {
+			// Check which view we came from
+			m.state = bankStatementView
+		}
 	case "up":
 		if m.fileIndex > 0 {
 			m.fileIndex--
@@ -651,35 +633,72 @@ func (m model) handleFilePickerView(key string) (tea.Model, tea.Cmd) {
 			// Check if it's a directory
 			if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
 				if selected == ".." {
-					// Go up one directory
 					m.currentDir = filepath.Dir(m.currentDir)
 				} else {
-					// Enter directory
 					m.currentDir = fullPath
 				}
 				m.fileIndex = 0
 				m.loadDirectoryEntries()
 			} else if strings.HasSuffix(strings.ToLower(selected), ".csv") {
-				// CSV file selected - set import path and import
+				// CSV file selected - set import path and check for overlaps
 				m.store.importName = fullPath
+				m.selectedFile = fullPath
 
-				currentCount := len(m.transactions)
-				// Use the selected template instead of hardcoded templateName
 				templateToUse := m.store.csvTemplates.Default
 				if templateToUse == "" && len(m.store.csvTemplates.Templates) > 0 {
 					templateToUse = m.store.csvTemplates.Templates[0].Name
 				}
 
+				// Attempt import to check for overlaps
 				err := m.store.ImportTransactionsFromCSV(templateToUse)
 				if err != nil {
-					m.importMessage = fmt.Sprintf("Error: %v", err)
+					if strings.Contains(err.Error(), "OVERLAP_DETECTED") {
+						// Extract period and detect overlaps
+						template := m.store.getTemplateByName(templateToUse)
+						if template != nil {
+							// Quick parse to get period for overlap detection
+							data, readErr := os.ReadFile(m.store.importName)
+							if readErr == nil {
+								lines := strings.Split(string(data), "\n")
+								var tempTransactions []Transaction
+								startLine := 0
+								if template.HasHeader {
+									startLine = 1
+								}
+
+								for i := startLine; i < len(lines); i++ {
+									line := strings.TrimSpace(lines[i])
+									if line == "" {
+										continue
+									}
+									fields := m.store.parseCSVLine(line)
+									if len(fields) <= template.DateColumn || len(fields) <= template.AmountColumn || len(fields) <= template.DescColumn {
+										continue
+									}
+									if transaction, parseErr := m.store.parseTransactionFromTemplate(fields, template); parseErr == nil {
+										tempTransactions = append(tempTransactions, transaction)
+									}
+								}
+
+								if len(tempTransactions) > 0 {
+									periodStart, periodEnd := m.store.extractPeriodFromTransactions(tempTransactions)
+									m.overlappingStmts = m.store.detectOverlap(periodStart, periodEnd)
+									m.state = statementOverlapView
+									return m, nil
+								}
+							}
+						}
+						m.statementMessage = "Overlap detected but unable to show details"
+					} else {
+						m.statementMessage = fmt.Sprintf("Error: %v", err)
+					}
 				} else {
 					m.transactions, _ = m.store.GetTransactions()
-					imported := len(m.transactions) - currentCount
-					m.importMessage = fmt.Sprintf("Successfully imported %d transactions from %s using template %s",
-						imported, filepath.Base(selected), templateToUse)
+					//imported := len(m.transactions) - len(m.transactions)
+					m.statementMessage = fmt.Sprintf("Successfully imported transactions from %s using template %s",
+						filepath.Base(selected), templateToUse)
 				}
-				m.state = importView
+				m.state = bankStatementView
 			}
 		}
 	}
@@ -721,7 +740,7 @@ func (m *model) loadDirectoryEntries() error {
 func (m model) handleCSVTemplateView(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc":
-		m.state = importView
+		m.state = bankStatementView
 	case "up":
 		if m.templateIndex > 0 {
 			m.templateIndex--
@@ -744,7 +763,7 @@ func (m model) handleCSVTemplateView(key string) (tea.Model, tea.Cmd) {
 				m.importMessage = fmt.Sprintf("Selected CSV template: %s", selectedTemplate.Name)
 			}
 
-			m.state = importView
+			m.state = bankStatementView
 		}
 	case "c":
 		m.newTemplate = CSVTemplate{}
@@ -1075,7 +1094,7 @@ func (m model) handleBulkEditView(key string) (tea.Model, tea.Cmd) {
 		default:
 			return m.handleSaveBulkEdit()
 		}
-	case "ctrl+s": // Add save functionality
+	case "ctrl+s":
 		return m.handleSaveBulkEdit()
 	}
 	return m, nil
@@ -1217,5 +1236,172 @@ func (m model) handleTypeSelection(key string) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.isSelectingType = false
 	}
+	return m, nil
+}
+
+// Bank Statement View
+func (m model) handleBankStatementView(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "esc":
+		m.state = menuView
+	case "t":
+		m.state = csvTemplateView
+	case "f":
+		// Open file picker
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			homeDir = "."
+		}
+		m.currentDir = homeDir
+		m.fileIndex = 0
+		m.selectedFile = ""
+
+		err = m.loadDirectoryEntries()
+		if err != nil {
+			m.statementMessage = fmt.Sprintf("Error opening directory: %v", err)
+			return m, nil
+		}
+
+		if len(m.dirEntries) == 0 {
+			m.statementMessage = "No directories or CSV files found"
+		}
+
+		m.state = filePickerView
+	case "h":
+		m.statementIndex = 0
+		m.state = statementHistoryView
+	}
+	return m, nil
+}
+
+// Statement History View
+func (m model) handleStatementHistoryView(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "esc":
+		m.state = bankStatementView
+	case "up":
+		if m.statementIndex > 0 {
+			m.statementIndex--
+		}
+	case "down":
+		if len(m.store.statements.Statements) > 0 && m.statementIndex < len(m.store.statements.Statements)-1 {
+			m.statementIndex++
+		}
+	case "enter":
+		if len(m.store.statements.Statements) > 0 && m.statementIndex < len(m.store.statements.Statements) {
+			selectedStatement := m.store.statements.Statements[m.statementIndex]
+			m.statementMessage = fmt.Sprintf("Statement: %s | Period: %s to %s | Transactions: %d | Template: %s | Status: %s",
+				selectedStatement.Filename, selectedStatement.PeriodStart, selectedStatement.PeriodEnd,
+				selectedStatement.TxCount, selectedStatement.TemplateUsed, selectedStatement.Status)
+			m.state = bankStatementView
+		}
+	}
+	return m, nil
+}
+
+// Statement Overlap View
+func (m model) handleStatementOverlapView(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "esc", "n":
+		m.state = bankStatementView
+		m.overlappingStmts = nil
+	case "y":
+		// Import anyway with override status
+		return m.handleOverrideImport()
+	}
+	return m, nil
+}
+
+func (m model) handleOverrideImport() (tea.Model, tea.Cmd) {
+	// Get the template to use
+	templateToUse := m.store.csvTemplates.Default
+	if templateToUse == "" && len(m.store.csvTemplates.Templates) > 0 {
+		templateToUse = m.store.csvTemplates.Templates[0].Name
+	}
+
+	// Parse and import transactions with override
+	template := m.store.getTemplateByName(templateToUse)
+	if template == nil {
+		m.statementMessage = fmt.Sprintf("Error: template '%s' not found", templateToUse)
+		m.state = bankStatementView
+		return m, nil
+	}
+
+	data, err := os.ReadFile(m.store.importName)
+	if err != nil {
+		m.statementMessage = fmt.Sprintf("Error reading file: %v", err)
+		m.state = bankStatementView
+		return m, nil
+	}
+
+	lines := strings.Split(string(data), "\n")
+	var importedTransactions []Transaction
+	startLine := 0
+	if template.HasHeader {
+		startLine = 1
+	}
+
+	currentCount := len(m.transactions)
+
+	for i := startLine; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+
+		fields := m.store.parseCSVLine(line)
+		maxColumn := template.DateColumn
+		if template.AmountColumn > maxColumn {
+			maxColumn = template.AmountColumn
+		}
+		if template.DescColumn > maxColumn {
+			maxColumn = template.DescColumn
+		}
+
+		if len(fields) <= maxColumn {
+			continue
+		}
+
+		transaction, err := m.store.parseTransactionFromTemplate(fields, template)
+		if err != nil {
+			continue
+		}
+
+		transaction.Id = m.store.nextId
+		m.store.nextId++
+		transaction.TransactionType = "expense"
+		importedTransactions = append(importedTransactions, transaction)
+	}
+
+	if len(importedTransactions) == 0 {
+		m.statementMessage = "No valid transactions found in CSV"
+		m.state = bankStatementView
+		return m, nil
+	}
+
+	// Add transactions to store
+	m.store.transactions = append(m.store.transactions, importedTransactions...)
+
+	// Record import with override status
+	periodStart, periodEnd := m.store.extractPeriodFromTransactions(importedTransactions)
+	filename := filepath.Base(m.store.importName)
+	err = m.store.recordBankStatement(filename, periodStart, periodEnd, templateToUse, len(importedTransactions), "override")
+	if err != nil {
+		log.Printf("Failed to record statement: %v", err)
+	}
+
+	// Save and refresh
+	err = m.store.saveTransactions()
+	if err != nil {
+		m.statementMessage = fmt.Sprintf("Error saving transactions: %v", err)
+	} else {
+		m.transactions, _ = m.store.GetTransactions()
+		imported := len(m.transactions) - currentCount
+		m.statementMessage = fmt.Sprintf("Successfully imported %d transactions (with overlap override) from %s using template %s",
+			imported, filepath.Base(m.selectedFile), templateToUse)
+	}
+
+	m.overlappingStmts = nil
+	m.state = bankStatementView
 	return m, nil
 }

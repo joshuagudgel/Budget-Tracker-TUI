@@ -4,22 +4,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Store struct {
-	filename     string
-	backupName   string
-	importName   string
-	profileName  string
-	categoryName string
-	transactions []Transaction
-	nextId       int64
-	csvTemplates CSVTemplateStore
-	categories   CategoryStore
+	filename      string
+	backupName    string
+	importName    string
+	profileName   string
+	categoryName  string
+	statementName string // New: bank-statements.json path
+	transactions  []Transaction
+	nextId        int64
+	csvTemplates  CSVTemplateStore
+	categories    CategoryStore
+	statements    BankStatementStore // New: statement history
 }
 
 func (s *Store) Init() error {
@@ -37,9 +41,11 @@ func (s *Store) Init() error {
 	s.backupName = filepath.Join(appDir, "backup.json")
 	s.profileName = filepath.Join(appDir, "csv-profiles.json")
 	s.categoryName = filepath.Join(appDir, "categories.json")
+	s.statementName = filepath.Join(appDir, "bank-statements.json")
 
 	s.loadCSVProfiles()
 	s.loadCategories()
+	s.loadBankStatements()
 
 	return s.loadTransactions()
 }
@@ -190,15 +196,13 @@ func (s *Store) ImportTransactionsFromCSV(templateName string) error {
 		return fmt.Errorf("empty CSV file")
 	}
 
-	// Use template.HasHeader to determine start line
-	var startLine int
+	// Parse transactions first to get period
+	var importedTransactions []Transaction
+	startLine := 0
 	if template.HasHeader {
-		startLine = 1 // Skip header row
-	} else {
-		startLine = 0 // No headers
+		startLine = 1
 	}
 
-	var importedTransactions []Transaction
 	for i := startLine; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
 		if line == "" {
@@ -206,8 +210,6 @@ func (s *Store) ImportTransactionsFromCSV(templateName string) error {
 		}
 
 		fields := s.parseCSVLine(line)
-
-		// Check if we have enough columns based on template requirements
 		maxColumn := template.DateColumn
 		if template.AmountColumn > maxColumn {
 			maxColumn = template.AmountColumn
@@ -217,19 +219,17 @@ func (s *Store) ImportTransactionsFromCSV(templateName string) error {
 		}
 
 		if len(fields) <= maxColumn {
-			continue // Skip lines with insufficient columns
+			continue
 		}
 
 		transaction, err := s.parseTransactionFromTemplate(fields, template)
 		if err != nil {
-			continue // Skip invalid lines
+			continue
 		}
 
-		// Auto-assign ID using existing pattern
 		transaction.Id = s.nextId
 		s.nextId++
-		transaction.TransactionType = "expense" // Default as specified
-
+		transaction.TransactionType = "expense"
 		importedTransactions = append(importedTransactions, transaction)
 	}
 
@@ -237,13 +237,85 @@ func (s *Store) ImportTransactionsFromCSV(templateName string) error {
 		return fmt.Errorf("no valid transactions found in CSV")
 	}
 
-	// Add to existing transactions
+	// Extract period from transactions
+	periodStart, periodEnd := s.extractPeriodFromTransactions(importedTransactions)
+
+	// Check for overlaps
+	overlaps := s.detectOverlap(periodStart, periodEnd)
+	if len(overlaps) > 0 {
+		// Return special error for overlap detection
+		return fmt.Errorf("OVERLAP_DETECTED")
+	}
+
+	// Add transactions and record statement
 	s.transactions = append(s.transactions, importedTransactions...)
+
+	// Record successful import
+	filename := filepath.Base(s.importName)
+	err = s.recordBankStatement(filename, periodStart, periodEnd, templateName, len(importedTransactions), "completed")
+	if err != nil {
+		// Log error but don't fail the import
+		log.Printf("Failed to record statement: %v", err)
+	}
 
 	return s.saveTransactions()
 }
 
-// TODO clunky
+func (s *Store) extractPeriodFromTransactions(transactions []Transaction) (start, end string) {
+	if len(transactions) == 0 {
+		return "", ""
+	}
+
+	start = transactions[0].Date
+	end = transactions[0].Date
+
+	for _, tx := range transactions {
+		if tx.Date < start {
+			start = tx.Date
+		}
+		if tx.Date > end {
+			end = tx.Date
+		}
+	}
+
+	return start, end
+}
+
+func (s *Store) detectOverlap(periodStart, periodEnd string) []BankStatement {
+	var overlaps []BankStatement
+
+	for _, stmt := range s.statements.Statements {
+		if stmt.Status != "completed" {
+			continue
+		}
+
+		// Check for date range overlap
+		if (periodStart <= stmt.PeriodEnd && periodEnd >= stmt.PeriodStart) {
+			overlaps = append(overlaps, stmt)
+		}
+	}
+
+	return overlaps
+}
+
+func (s *Store) recordBankStatement(filename, periodStart, periodEnd, templateUsed string, txCount int, status string) error {
+	statement := BankStatement{
+		Id:           s.statements.NextId,
+		Filename:     filename,
+		ImportDate:   fmt.Sprintf("%d", time.Now().Unix()), // Simple timestamp
+		PeriodStart:  periodStart,
+		PeriodEnd:    periodEnd,
+		TemplateUsed: templateUsed,
+		TxCount:      txCount,
+		Status:       status,
+	}
+
+	s.statements.Statements = append(s.statements.Statements, statement)
+	s.statements.NextId++
+
+	return s.saveBankStatements()
+}
+
 func (s *Store) parseTransactionFromTemplate(fields []string, template *CSVTemplate) (Transaction, error) {
 	var transaction Transaction
 	var err error
@@ -469,4 +541,46 @@ func (s *Store) getTemplateByName(name string) *CSVTemplate {
 		}
 	}
 	return nil
+}
+
+// Bank Statement History ---------------------
+type BankStatement struct {
+	Id           int64  `json:"id"`
+	Filename     string `json:"filename"`
+	ImportDate   string `json:"importDate"`
+	PeriodStart  string `json:"periodStart"`
+	PeriodEnd    string `json:"periodEnd"`
+	TemplateUsed string `json:"templateUsed"`
+	TxCount      int    `json:"txCount"`
+	Status       string `json:"status"` // "completed", "failed", "override"
+}
+
+type BankStatementStore struct {
+	Statements []BankStatement `json:"statements"`
+	NextId     int64           `json:"nextId"`
+}
+
+func (s *Store) loadBankStatements() error {
+	if _, err := os.Stat(s.statementName); os.IsNotExist(err) {
+		s.statements = BankStatementStore{
+			Statements: []BankStatement{},
+			NextId:     1,
+		}
+		return s.saveBankStatements()
+	}
+
+	data, err := os.ReadFile(s.statementName)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(data, &s.statements)
+}
+
+func (s *Store) saveBankStatements() error {
+	data, err := json.MarshalIndent(s.statements, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.statementName, data, 0644)
 }

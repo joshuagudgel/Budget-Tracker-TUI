@@ -39,9 +39,9 @@ func (m model) View() string {
 	switch m.state {
 	case menuView:
 		s += headerStyle.Render("Manage Transactions ('t')") + "\n"
-		s += headerStyle.Render("Categories ('c')") + "\n"
-		s += headerStyle.Render("Restore ('r')") + "\n"
-		s += headerStyle.Render("Import Bank Statement ('i')") + "\n"
+		s += headerStyle.Render("Import Bank Statements ('i')") + "\n"
+		s += headerStyle.Render("Manage Categories ('c')") + "\n"
+		s += headerStyle.Render("Settings ('r')") + "\n"
 		s += headerStyle.Render("Quit ('q')") + "\n"
 	case listView:
 		// view transactions in one large list
@@ -190,25 +190,6 @@ func (m model) View() string {
 		s += headerStyle.Render("Backup Options:") + "\n\n"
 
 		s += faintStyle.Render("r: Restore from backup | Esc: Return to menu") + "\n\n"
-	case importView:
-		s += headerStyle.Render("Import Options:") + "\n\n"
-
-		// Show current selected template
-		currentTemplate := m.store.csvTemplates.Default
-		if currentTemplate == "" && len(m.store.csvTemplates.Templates) > 0 {
-			currentTemplate = m.store.csvTemplates.Templates[0].Name
-		}
-		s += faintStyle.Render(fmt.Sprintf("Current CSV Template: %s", currentTemplate)) + "\n\n"
-
-		if m.importMessage != "" {
-			if strings.Contains(m.importMessage, "Error") {
-				s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.importMessage) + "\n\n"
-			} else {
-				s += lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.importMessage) + "\n\n"
-			}
-		}
-
-		s += faintStyle.Render("i: Import CSV file | p: Select CSV Template | Esc: Return to menu") + "\n\n"
 	case filePickerView:
 		s += headerStyle.Render("Select CSV File") + "\n\n"
 		s += faintStyle.Render("Current Directory: "+m.currentDir) + "\n\n"
@@ -364,6 +345,105 @@ func (m model) View() string {
 		}
 
 		s += "\n" + faintStyle.Render("Up/Down: Navigate fields | Enter: Select | Ctrl+S: Save | Esc: Cancel")
+	case bankStatementView:
+		s += headerStyle.Render("Bank Statement Import") + "\n\n"
+
+		// Current configuration status
+		currentTemplate := m.store.csvTemplates.Default
+		if currentTemplate != "" {
+			s += formLabelStyle.Render("CSV Template:") + " " + headerStyle.Render(currentTemplate) + " ✓\n"
+		} else {
+			s += formLabelStyle.Render("CSV Template:") + " " + faintStyle.Render("Not configured") + " ⚠\n"
+		}
+
+		if m.selectedFile != "" {
+			s += formLabelStyle.Render("Selected File:") + " " + headerStyle.Render(filepath.Base(m.selectedFile)) + " ✓\n\n"
+		} else {
+			s += formLabelStyle.Render("Selected File:") + " " + faintStyle.Render("None selected") + "\n\n"
+		}
+
+		// Recent statement history (last 3)
+		if len(m.store.statements.Statements) > 0 {
+			s += headerStyle.Render("Recent Imports:") + "\n"
+			startIdx := len(m.store.statements.Statements) - 3
+			if startIdx < 0 {
+				startIdx = 0
+			}
+
+			for i := startIdx; i < len(m.store.statements.Statements); i++ {
+				stmt := m.store.statements.Statements[i]
+				statusIcon := "✓"
+				if stmt.Status == "failed" {
+					statusIcon = "✗"
+				} else if stmt.Status == "override" {
+					statusIcon = "⚠"
+				}
+
+				s += faintStyle.Render(fmt.Sprintf("  %s %s (%s to %s) - %d txs",
+					statusIcon, stmt.Filename, stmt.PeriodStart, stmt.PeriodEnd, stmt.TxCount)) + "\n"
+			}
+			s += "\n"
+		}
+
+		if m.statementMessage != "" {
+			if strings.Contains(m.statementMessage, "Error") {
+				s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.statementMessage) + "\n\n"
+			} else {
+				s += lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.statementMessage) + "\n\n"
+			}
+		}
+
+		s += faintStyle.Render("t: Select Template | f: Choose File | h: View History | Esc: Menu")
+
+	case statementHistoryView:
+		s += headerStyle.Render("Bank Statement History") + "\n\n"
+
+		if len(m.store.statements.Statements) == 0 {
+			s += faintStyle.Render("No import history found.") + "\n\n"
+		} else {
+			for i, stmt := range m.store.statements.Statements {
+				prefix := "  "
+				if i == m.statementIndex {
+					prefix = "> "
+				}
+
+				statusIcon := "✓"
+				statusColor := "10" // Green
+				if stmt.Status == "failed" {
+					statusIcon = "✗"
+					statusColor = "9" // Red
+				} else if stmt.Status == "override" {
+					statusIcon = "⚠"
+					statusColor = "208" // Orange
+				}
+
+				statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor))
+
+				s += enumeratorStyle.Render(prefix) +
+					statusStyle.Render(statusIcon) + " " +
+					headerStyle.Render(stmt.Filename) + " " +
+					faintStyle.Render(fmt.Sprintf("(%s to %s) - %d txs using %s",
+						stmt.PeriodStart, stmt.PeriodEnd, stmt.TxCount, stmt.TemplateUsed)) + "\n"
+			}
+		}
+
+		s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: View Details | Esc: Back")
+
+	case statementOverlapView:
+		s += headerStyle.Render("Import Overlap Warning") + "\n\n"
+
+		filename := filepath.Base(m.selectedFile)
+		s += lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Render(
+			fmt.Sprintf("⚠ The file '%s' contains transactions that overlap with existing imports:", filename)) + "\n\n"
+
+		for _, stmt := range m.overlappingStmts {
+			s += faintStyle.Render(fmt.Sprintf("  • %s (%s to %s) - %d transactions",
+				stmt.Filename, stmt.PeriodStart, stmt.PeriodEnd, stmt.TxCount)) + "\n"
+		}
+
+		s += "\n" + faintStyle.Render("This may create duplicate transactions in your data.") + "\n\n"
+
+		s += faintStyle.Render("y: Import Anyway | n: Cancel Import | Esc: Cancel")
 	}
 
 	return s
