@@ -140,14 +140,6 @@ func (m model) View() string {
 		currentDefault := m.store.categories.Default
 		s += faintStyle.Render(fmt.Sprintf("Current Default: %s", currentDefault)) + "\n\n"
 
-		if m.categoryMessage != "" {
-			if strings.Contains(m.categoryMessage, "Error") {
-				s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.categoryMessage) + "\n\n"
-			} else {
-				s += lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.categoryMessage) + "\n\n"
-			}
-		}
-
 		if len(m.store.categories.Categories) == 0 {
 			s += faintStyle.Render("No categories found.") + "\n\n"
 		} else {
@@ -184,14 +176,14 @@ func (m model) View() string {
 		if m.createCategoryField == createCategoryName {
 			nameStyle = activeFieldStyle
 		}
-		s += formLabelStyle.Render("Name:") + nameStyle.Render(m.newCategory.Name) + "\n\n"
+		s += formLabelStyle.Render("Name:") + "\n" + nameStyle.Render(m.newCategory.Name) + "\n\n"
 
 		// Display Name field
 		displayStyle := formFieldStyle
 		if m.createCategoryField == createCategoryDisplayName {
 			displayStyle = activeFieldStyle
 		}
-		s += formLabelStyle.Render("Display Name:") + displayStyle.Render(m.newCategory.DisplayName) + "\n\n"
+		s += formLabelStyle.Render("Display Name:") + "\n" + displayStyle.Render(m.newCategory.DisplayName) + "\n\n"
 
 		s += faintStyle.Render("Up/Down: Navigate fields | Enter: Save | Esc: Cancel")
 	case backupView:
