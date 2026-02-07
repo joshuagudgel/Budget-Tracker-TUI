@@ -601,16 +601,128 @@ func (m model) renderSplitView() string {
 	}
 	s += faintStyle.Render(remainingDisplay) + "\n\n"
 
-	s += faintStyle.Render("Up/Down: Navigate | Enter: Save Split | s: Exit Split Mode | Esc: Cancel")
+	s += faintStyle.Render("Up/Down: Navigate | Enter: Edit Field | Ctrl+S: Save Split | Esc: Cancel Split")
 	return s
 }
 
 func (m model) renderSplitField(label, value string, fieldType uint) string {
 	style := formFieldStyle
-	if m.splitField == fieldType {
-		style = activeFieldStyle
+	isEditing := false
+
+	// Check if this field is being edited and get current editing value
+	var displayValue string
+	switch fieldType {
+	case splitAmount1Field:
+		isEditing = m.isSplitEditingAmount1
+		if isEditing && m.splitEditingAmount1 != "" {
+			displayValue = m.splitEditingAmount1
+		} else {
+			displayValue = value
+		}
+	case splitAmount2Field:
+		isEditing = m.isSplitEditingAmount2
+		if isEditing && m.splitEditingAmount2 != "" {
+			displayValue = m.splitEditingAmount2
+		} else {
+			displayValue = value
+		}
+	case splitDesc1Field:
+		isEditing = m.isSplitEditingDesc1
+		if isEditing && m.splitEditingDesc1 != "" {
+			displayValue = m.splitEditingDesc1
+		} else {
+			displayValue = value
+		}
+	case splitDesc2Field:
+		isEditing = m.isSplitEditingDesc2
+		if isEditing && m.splitEditingDesc2 != "" {
+			displayValue = m.splitEditingDesc2
+		} else {
+			displayValue = value
+		}
+	case splitCategory1Field:
+		isEditing = m.isSplitSelectingCategory1
+		displayValue = value
+	case splitCategory2Field:
+		isEditing = m.isSplitSelectingCategory2
+		displayValue = value
+	default:
+		displayValue = value
 	}
-	return formLabelStyle.Render(label) + style.Render(value)
+
+	if m.splitField == fieldType {
+		if isEditing {
+			style = selectingFieldStyle // Orange border when editing
+		} else {
+			style = activeFieldStyle // Highlighted when selected
+		}
+	}
+
+	// Category specific display logic
+	if fieldType == splitCategory1Field && m.isSplitSelectingCategory1 {
+		displayValue = "▼ Select Category"
+	} else if fieldType == splitCategory2Field && m.isSplitSelectingCategory2 {
+		displayValue = "▼ Select Category"
+	}
+
+	result := formLabelStyle.Render(label) + style.Render(displayValue)
+
+	// Show category dropdown when selecting split categories
+	if fieldType == splitCategory1Field && m.isSplitSelectingCategory1 {
+		result += "\n" + m.renderSplitCategoryOptions(1)
+	} else if fieldType == splitCategory2Field && m.isSplitSelectingCategory2 {
+		result += "\n" + m.renderSplitCategoryOptions(2)
+	}
+
+	return result
+}
+
+func (m model) renderSplitCategoryOptions(splitNumber int) string {
+	var s string
+	s += faintStyle.Render("Categories:") + "\n"
+
+	categories := m.store.categories.Categories
+	maxVisible := 5
+
+	var currentIndex int
+	if splitNumber == 1 {
+		currentIndex = m.splitCat1SelectIndex
+	} else {
+		currentIndex = m.splitCat2SelectIndex
+	}
+
+	startIdx := 0
+	if len(categories) > maxVisible {
+		startIdx = currentIndex - maxVisible/2
+		if startIdx < 0 {
+			startIdx = 0
+		}
+		if startIdx > len(categories)-maxVisible {
+			startIdx = len(categories) - maxVisible
+		}
+	}
+
+	endIdx := startIdx + maxVisible
+	if endIdx > len(categories) {
+		endIdx = len(categories)
+	}
+
+	for i := startIdx; i < endIdx; i++ {
+		cat := categories[i]
+		prefix := "  "
+		if i == currentIndex {
+			prefix = "> "
+			s += enumeratorStyle.Render(prefix) + headerStyle.Render(cat.DisplayName) + "\n"
+		} else {
+			s += faintStyle.Render(prefix+cat.DisplayName) + "\n"
+		}
+	}
+
+	if len(categories) > maxVisible {
+		s += faintStyle.Render(fmt.Sprintf("   (%d/%d categories)", currentIndex+1, len(categories))) + "\n"
+	}
+
+	return s
 }
 
 func (m model) renderNormalEditView() string {
@@ -627,7 +739,7 @@ func (m model) renderNormalEditView() string {
 	}
 
 	amountValue := fmt.Sprintf("%.2f", m.currTransaction.Amount)
-	if m.isEditingAmount {
+	if m.isEditingAmount && m.editingAmountStr != "" {
 		amountValue = m.editingAmountStr
 	}
 
@@ -644,7 +756,7 @@ func (m model) renderNormalEditView() string {
 	}
 
 	descValue := m.currTransaction.Description
-	if m.isEditingDescription {
+	if m.isEditingDescription && m.editingDescStr != "" {
 		descValue = m.editingDescStr
 	}
 
@@ -661,7 +773,7 @@ func (m model) renderNormalEditView() string {
 	}
 
 	dateValue := m.currTransaction.Date
-	if m.isEditingDate {
+	if m.isEditingDate && m.editingDateStr != "" {
 		dateValue = m.editingDateStr
 	}
 
@@ -678,20 +790,20 @@ func (m model) renderNormalEditView() string {
 	}
 
 	typeValue := m.currTransaction.TransactionType
-	if m.isSelectingType {
+	if m.editField == editType && m.isSelectingType {
 		typeValue = "▼ Select Type"
 	}
 
 	s += formLabelStyle.Render("Type:") + "\n" + typeStyle.Render(typeValue) + "\n"
 
 	// Show type options when selecting
-	if m.isSelectingType {
+	if m.editField == editType && m.isSelectingType {
 		s += m.renderTypeOptions() + "\n"
 	}
 
 	s += "\n"
 
-	// Category field with selection
+	// Category field with selection - Fix the dropdown display logic
 	categoryStyle := formFieldStyle
 	if m.editField == editCategory {
 		if m.isSelectingCategory {
@@ -702,14 +814,14 @@ func (m model) renderNormalEditView() string {
 	}
 
 	categoryValue := m.currTransaction.Category
-	if m.isSelectingCategory {
+	if m.editField == editCategory && m.isSelectingCategory {
 		categoryValue = "▼ Select Category"
 	}
 
 	s += formLabelStyle.Render("Category:") + "\n" + categoryStyle.Render(categoryValue) + "\n"
 
-	// Show category options when selecting
-	if m.isSelectingCategory {
+	// Show category options when selecting - Fix this condition
+	if m.editField == editCategory && m.isSelectingCategory {
 		s += m.renderCategoryOptions() + "\n"
 	}
 

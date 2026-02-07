@@ -153,6 +153,10 @@ func (s *Store) SplitTransaction(parentId int64, splits []Transaction) error {
 		return fmt.Errorf("parent transaction not found")
 	}
 
+	if len(splits) != 2 {
+		return fmt.Errorf("exactly 2 splits required")
+	}
+
 	var totalSplit float64
 	for _, split := range splits {
 		totalSplit += split.Amount
@@ -164,16 +168,20 @@ func (s *Store) SplitTransaction(parentId int64, splits []Transaction) error {
 			totalSplit, parent.Amount)
 	}
 
-	// Mark parent as split
+	// Modify existing transaction to become first split
+	parent.Amount = splits[0].Amount
+	parent.Description = splits[0].Description
+	parent.Category = splits[0].Category
 	parent.IsSplit = true
 
-	// Add split transactions
-	for _, split := range splits {
-		split.Id = s.nextId
-		split.ParentId = &parentId
-		s.nextId++
-		s.transactions = append(s.transactions, split)
-	}
+	// Create only the second split as a new transaction
+	secondSplit := splits[1]
+	secondSplit.Id = s.nextId
+	secondSplit.Date = parent.Date                       // Ensure same date as original
+	secondSplit.TransactionType = parent.TransactionType // Ensure same type
+	s.nextId++
+
+	s.transactions = append(s.transactions, secondSplit)
 
 	return s.saveTransactions()
 }
