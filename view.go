@@ -110,7 +110,7 @@ func (m model) View() string {
 		}
 
 		if len(m.transactions) == 0 {
-			s += faintStyle.Render("No transactions found.")
+			s += faintStyle.Render("Import a bank statement to view transactions.")
 		} else {
 			scrollInfo := ""
 			if len(m.transactions) > availableHeight {
@@ -119,7 +119,7 @@ func (m model) View() string {
 
 			// Updated help text based on mode
 			if m.isMultiSelectMode {
-				s += faintStyle.Render("Enter: Toggle Selection | b: Bulk Edit | m: Exit Multi-Select | Esc: Menu" + scrollInfo)
+				s += faintStyle.Render("Enter: Toggle Selection | e: Edit Selected | m: Exit Multi-Select | Esc: Menu" + scrollInfo)
 			} else {
 				s += faintStyle.Render("Up/Down: Navigate | e: Edit | m: Multi-Select | d: Delete | Esc: Menu" + scrollInfo)
 			}
@@ -293,58 +293,25 @@ func (m model) View() string {
 	case bulkEditView:
 		s += headerStyle.Render(fmt.Sprintf("Bulk Edit %d Transactions", len(m.selectedTxIds))) + "\n\n"
 
-		// Category field
-		categoryStyle := formFieldStyle
-		if m.bulkEditField == bulkEditCategory {
-			if m.isBulkSelectingCategory {
-				categoryStyle = selectingFieldStyle
-			} else {
-				categoryStyle = activeFieldStyle
-			}
-		}
+		// Amount field
+		s += m.renderBulkEditField("Amount:", m.bulkAmountValue, m.bulkAmountIsPlaceholder,
+			"Enter new amount", bulkEditAmount, m.isBulkEditingAmount) + "\n"
 
-		categoryValue := m.bulkCategoryValue
-		if m.bulkEditField == bulkEditCategory && m.isBulkSelectingCategory {
-			categoryValue = "▼ Select Category"
-		}
-		if categoryValue == "" {
-			categoryValue = "(No selection)"
-		}
+		// Description field
+		s += m.renderBulkEditField("Description:", m.bulkDescriptionValue, m.bulkDescriptionIsPlaceholder,
+			"Enter new description", bulkEditDescription, m.isBulkEditingDescription) + "\n"
 
-		s += formLabelStyle.Render("Category:") + "\n" + categoryStyle.Render(categoryValue) + "\n"
+		// Date field
+		s += m.renderBulkEditField("Date:", m.bulkDateValue, m.bulkDateIsPlaceholder,
+			"Enter new date", bulkEditDate, m.isBulkEditingDate) + "\n"
 
-		// Show category dropdown when selecting
-		if m.isBulkSelectingCategory {
-			s += m.renderBulkCategoryOptions() + "\n"
-		}
-		s += "\n"
+		// Category dropdown (existing logic)
+		s += m.renderBulkCategoryField() + "\n"
 
-		// Type field
-		typeStyle := formFieldStyle
-		if m.bulkEditField == bulkEditType {
-			if m.isBulkSelectingType {
-				typeStyle = selectingFieldStyle
-			} else {
-				typeStyle = activeFieldStyle
-			}
-		}
+		// Type dropdown (existing logic)
+		s += m.renderBulkTypeField() + "\n"
 
-		typeValue := m.bulkTypeValue
-		if m.bulkEditField == bulkEditType && m.isBulkSelectingType {
-			typeValue = "▼ Select Type"
-		}
-		if typeValue == "" {
-			typeValue = "(No selection)"
-		}
-
-		s += formLabelStyle.Render("Type:") + "\n" + typeStyle.Render(typeValue) + "\n"
-
-		// Show type dropdown when selecting
-		if m.isBulkSelectingType {
-			s += m.renderBulkTypeOptions() + "\n"
-		}
-
-		s += "\n" + faintStyle.Render("Up/Down: Navigate fields | Enter: Select | Ctrl+S: Save | Esc: Cancel")
+		s += faintStyle.Render("Up/Down: Navigate | Enter/Backspace: Edit | Ctrl+S: Apply Changes | Esc: Cancel")
 	case bankStatementView:
 		s += headerStyle.Render("Bank Statement Import") + "\n\n"
 
@@ -485,6 +452,91 @@ func (m model) renderBulkCategoryOptions() string {
 
 	if len(categories) > maxVisible {
 		s += faintStyle.Render(fmt.Sprintf("   (%d/%d categories)", m.bulkCategorySelectIndex+1, len(categories))) + "\n"
+	}
+
+	return s
+}
+
+// Bulk edit
+
+func (m model) renderBulkEditField(label, value string, isPlaceholder bool, placeholder string, fieldType uint, isEditing bool) string {
+	style := formFieldStyle
+	if m.bulkEditField == fieldType {
+		if isEditing {
+			style = selectingFieldStyle
+		} else {
+			style = activeFieldStyle
+		}
+	}
+
+	displayValue := value
+	if isPlaceholder {
+		displayValue = placeholder
+		style = style.Faint(true)
+	}
+
+	return formLabelStyle.Render(label) + "\n" + style.Render(displayValue)
+}
+
+func (m model) renderBulkCategoryField() string {
+	var s string
+
+	// Category dropdown field
+	categoryStyle := formFieldStyle
+	if m.bulkEditField == bulkEditCategory {
+		if m.isBulkSelectingCategory {
+			categoryStyle = selectingFieldStyle
+		} else {
+			categoryStyle = activeFieldStyle
+		}
+	}
+
+	categoryValue := m.bulkCategoryValue
+	if m.bulkEditField == bulkEditCategory && m.isBulkSelectingCategory {
+		categoryValue = "▼ Select Category"
+	}
+	if m.bulkCategoryIsPlaceholder || categoryValue == "" {
+		categoryValue = "Select category to change"
+		categoryStyle = categoryStyle.Faint(true)
+	}
+
+	s += formLabelStyle.Render("Category:") + "\n" + categoryStyle.Render(categoryValue)
+
+	// Show category dropdown when selecting
+	if m.isBulkSelectingCategory {
+		s += "\n" + m.renderBulkCategoryOptions()
+	}
+
+	return s
+}
+
+func (m model) renderBulkTypeField() string {
+	var s string
+
+	// Type dropdown field
+	typeStyle := formFieldStyle
+	if m.bulkEditField == bulkEditType {
+		if m.isBulkSelectingType {
+			typeStyle = selectingFieldStyle
+		} else {
+			typeStyle = activeFieldStyle
+		}
+	}
+
+	typeValue := m.bulkTypeValue
+	if m.bulkEditField == bulkEditType && m.isBulkSelectingType {
+		typeValue = "▼ Select Type"
+	}
+	if m.bulkTypeIsPlaceholder || typeValue == "" {
+		typeValue = "Select type to change"
+		typeStyle = typeStyle.Faint(true)
+	}
+
+	s += formLabelStyle.Render("Type:") + "\n" + typeStyle.Render(typeValue)
+
+	// Show type dropdown when selecting
+	if m.isBulkSelectingType {
+		s += "\n" + m.renderBulkTypeOptions()
 	}
 
 	return s

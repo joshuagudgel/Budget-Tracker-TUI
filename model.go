@@ -58,10 +58,10 @@ const (
 const (
 	createCategoryName uint = iota
 	createCategoryDisplayName
-)
-
-const (
-	bulkEditCategory uint = iota
+	bulkEditAmount uint = iota
+	bulkEditDescription
+	bulkEditDate
+	bulkEditCategory
 	bulkEditType
 )
 
@@ -105,17 +105,29 @@ type model struct {
 	splitField     uint
 	splitMessage   string
 
-	// Multi-select mode
-	isMultiSelectMode       bool
-	selectedTxIds           map[int64]bool
-	bulkEditField           uint
-	bulkEditValue           string
-	isBulkSelectingCategory bool
-	isBulkSelectingType     bool
-	bulkCategorySelectIndex int
-	bulkTypeSelectIndex     int
-	bulkCategoryValue       string
-	bulkTypeValue           string
+	// Multi-select / bulk edit mode
+	isMultiSelectMode        bool
+	selectedTxIds            map[int64]bool
+	bulkEditField            uint
+	bulkEditValue            string
+	isBulkSelectingCategory  bool
+	isBulkSelectingType      bool
+	bulkCategorySelectIndex  int
+	bulkTypeSelectIndex      int
+	bulkCategoryValue        string
+	bulkTypeValue            string
+	bulkAmountValue          string
+	bulkDescriptionValue     string
+	bulkDateValue            string
+	isBulkEditingAmount      bool
+	isBulkEditingDescription bool
+	isBulkEditingDate        bool
+	// Bulk edit placeholder states
+	bulkAmountIsPlaceholder      bool
+	bulkDescriptionIsPlaceholder bool
+	bulkDateIsPlaceholder        bool
+	bulkCategoryIsPlaceholder    bool
+	bulkTypeIsPlaceholder        bool
 
 	// Selection mode fields
 	isSelectingCategory bool
@@ -243,6 +255,16 @@ func (m model) handleListView(key string) (tea.Model, tea.Cmd) {
 			m.listIndex++
 		}
 	case "e":
+		if m.isMultiSelectMode {
+			// Edit all selected records in bulk edit mode
+			if len(m.selectedTxIds) > 0 {
+				m.bulkEditField = bulkEditAmount
+				m.resetBulkEditValues()
+				m.state = bulkEditView
+			}
+			return m, nil
+		}
+		// Single edit mode (existing logic)
 		if len(m.transactions) > 0 {
 			m.currTransaction = m.transactions[m.listIndex]
 			m.editField = editAmount
@@ -250,19 +272,7 @@ func (m model) handleListView(key string) (tea.Model, tea.Cmd) {
 			m.state = editView
 		}
 	case "m":
-		// Toggle multi-select mode
-		if file, err := tea.LogToFile("debug.log", "debug"); err == nil {
-			defer file.Close()
-			log.Printf("M key pressed! Current mode: %v", m.isMultiSelectMode)
-		}
 		return m.handleMultiSelectToggle()
-	case "b":
-		if m.isMultiSelectMode && len(m.selectedTxIds) > 0 {
-			// Enter bulk edit mode
-			m.bulkEditField = bulkEditCategory
-			m.bulkEditValue = ""
-			m.state = bulkEditView
-		}
 	case "enter":
 		if m.isMultiSelectMode && len(m.transactions) > 0 {
 			// Toggle selection for current transaction
@@ -273,7 +283,13 @@ func (m model) handleListView(key string) (tea.Model, tea.Cmd) {
 			// Existing single delete logic
 			m.store.DeleteTransaction(m.transactions[m.listIndex].Id)
 			m.transactions, _ = m.store.GetTransactions()
-			// ...existing bounds checking...
+			// Bounds checking for list index
+			if m.listIndex >= len(m.transactions) && len(m.transactions) > 0 {
+				m.listIndex = len(m.transactions) - 1
+			}
+			if len(m.transactions) == 0 {
+				m.listIndex = 0
+			}
 		}
 	case "esc":
 		if m.isMultiSelectMode {
@@ -638,7 +654,11 @@ func (m model) handleFilePickerView(key string) (tea.Model, tea.Cmd) {
 					m.currentDir = fullPath
 				}
 				m.fileIndex = 0
-				m.loadDirectoryEntries()
+				err = m.loadDirectoryEntries()
+				if err != nil {
+					m.statementMessage = fmt.Sprintf("Error opening directory: %v", err)
+					return m, nil
+				}
 			} else if strings.HasSuffix(strings.ToLower(selected), ".csv") {
 				// CSV file selected - set import path and check for overlaps
 				m.store.importName = fullPath
@@ -1032,44 +1052,14 @@ func (m model) handleSplitFieldNavigation(direction int) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) handleSplitBackspace() (tea.Model, tea.Cmd) {
-	switch m.splitField {
-	case splitAmount1Field:
-		if len(m.splitAmount1) > 0 {
-			m.splitAmount1 = m.splitAmount1[:len(m.splitAmount1)-1]
-		}
-	case splitAmount2Field:
-		if len(m.splitAmount2) > 0 {
-			m.splitAmount2 = m.splitAmount2[:len(m.splitAmount2)-1]
-		}
-	case splitDesc1Field:
-		if len(m.splitDesc1) > 0 {
-			m.splitDesc1 = m.splitDesc1[:len(m.splitDesc1)-1]
-		}
-	case splitDesc2Field:
-		if len(m.splitDesc2) > 0 {
-			m.splitDesc2 = m.splitDesc2[:len(m.splitDesc2)-1]
-		}
-	case splitCategory1Field:
-		if len(m.splitCategory1) > 0 {
-			m.splitCategory1 = m.splitCategory1[:len(m.splitCategory1)-1]
-		}
-	case splitCategory2Field:
-		if len(m.splitCategory2) > 0 {
-			m.splitCategory2 = m.splitCategory2[:len(m.splitCategory2)-1]
-		}
-	}
-	return m, nil
-}
-
 // Bulk Edit View --------------------
 func (m model) handleBulkEditView(key string) (tea.Model, tea.Cmd) {
-	// Handle active selection states first
-	if m.isBulkSelectingCategory {
-		return m.handleBulkCategorySelection(key)
+	// Handle active editing states
+	if m.isBulkEditingAmount || m.isBulkEditingDescription || m.isBulkEditingDate {
+		return m.handleBulkTextEditing(key)
 	}
-	if m.isBulkSelectingType {
-		return m.handleBulkTypeSelection(key)
+	if m.isBulkSelectingCategory || m.isBulkSelectingType {
+		return m.handleBulkDropdownSelection(key)
 	}
 
 	switch key {
@@ -1080,26 +1070,52 @@ func (m model) handleBulkEditView(key string) (tea.Model, tea.Cmd) {
 			m.bulkEditField++
 		}
 	case "up":
-		if m.bulkEditField > bulkEditCategory {
+		if m.bulkEditField > bulkEditAmount {
 			m.bulkEditField--
 		}
-	case "enter":
-		switch m.bulkEditField {
-		case bulkEditCategory:
-			m.isBulkSelectingCategory = true
-			m.bulkCategorySelectIndex = 0
-		case bulkEditType:
-			m.isBulkSelectingType = true
-			m.bulkTypeSelectIndex = 0
-		default:
-			return m.handleSaveBulkEdit()
-		}
+	case "enter", "backspace":
+		return m.handleBulkFieldActivation(key)
 	case "ctrl+s":
 		return m.handleSaveBulkEdit()
+	default:
+		if len(key) == 1 {
+			return m.handleBulkImmediateInput(key)
+		}
 	}
 	return m, nil
 }
 
+func (m model) handleBulkFieldActivation(key string) (tea.Model, tea.Cmd) {
+	switch m.bulkEditField {
+	case bulkEditAmount:
+		return m.enterBulkAmountEditing(key == "backspace")
+	case bulkEditDescription:
+		return m.enterBulkDescriptionEditing(key == "backspace")
+	case bulkEditDate:
+		return m.enterBulkDateEditing(key == "backspace")
+	case bulkEditCategory:
+		m.isBulkSelectingCategory = true
+		m.bulkCategorySelectIndex = 0
+	case bulkEditType:
+		m.isBulkSelectingType = true
+		m.bulkTypeSelectIndex = 0
+	}
+	return m, nil
+}
+
+func (m model) handleBulkImmediateInput(key string) (tea.Model, tea.Cmd) {
+	switch m.bulkEditField {
+	case bulkEditAmount:
+		if m.isValidAmountChar(key) {
+			return m.enterBulkAmountEditing(false)
+		}
+	case bulkEditDescription, bulkEditDate:
+		return m.enterBulkTextEditingWithChar(key)
+	}
+	return m, nil
+}
+
+// Update the existing handleBulkCategorySelection to properly set placeholder state
 func (m model) handleBulkCategorySelection(key string) (tea.Model, tea.Cmd) {
 	categories := m.store.categories.Categories
 
@@ -1118,12 +1134,14 @@ func (m model) handleBulkCategorySelection(key string) (tea.Model, tea.Cmd) {
 		if len(categories) > 0 {
 			selectedCategory := categories[m.bulkCategorySelectIndex]
 			m.bulkCategoryValue = selectedCategory.Name
+			m.bulkCategoryIsPlaceholder = false // Clear placeholder state
 		}
 		m.isBulkSelectingCategory = false
 	}
 	return m, nil
 }
 
+// Update the existing handleBulkTypeSelection to properly set placeholder state
 func (m model) handleBulkTypeSelection(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc":
@@ -1139,6 +1157,7 @@ func (m model) handleBulkTypeSelection(key string) (tea.Model, tea.Cmd) {
 	case "enter":
 		selectedType := m.availableTypes[m.bulkTypeSelectIndex]
 		m.bulkTypeValue = selectedType
+		m.bulkTypeIsPlaceholder = false // Clear placeholder state
 		m.isBulkSelectingType = false
 	}
 	return m, nil
@@ -1148,25 +1167,54 @@ func (m model) handleSaveBulkEdit() (tea.Model, tea.Cmd) {
 	// Update all selected transactions
 	for i := range m.transactions {
 		if m.selectedTxIds[m.transactions[i].Id] {
-			// Apply category if one was selected
-			if strings.TrimSpace(m.bulkCategoryValue) != "" {
+			// Apply amount if modified
+			if !m.bulkAmountIsPlaceholder && strings.TrimSpace(m.bulkAmountValue) != "" {
+				if amount, err := strconv.ParseFloat(m.bulkAmountValue, 64); err == nil {
+					m.transactions[i].Amount = amount
+				}
+			}
+
+			// Apply description if modified
+			if !m.bulkDescriptionIsPlaceholder && strings.TrimSpace(m.bulkDescriptionValue) != "" {
+				m.transactions[i].Description = m.bulkDescriptionValue
+			}
+
+			// Apply date if modified
+			if !m.bulkDateIsPlaceholder && strings.TrimSpace(m.bulkDateValue) != "" {
+				m.transactions[i].Date = m.bulkDateValue
+			}
+
+			// Apply category if modified
+			if !m.bulkCategoryIsPlaceholder && strings.TrimSpace(m.bulkCategoryValue) != "" {
 				m.transactions[i].Category = m.bulkCategoryValue
 			}
 
-			// Apply type if one was selected
-			if strings.TrimSpace(m.bulkTypeValue) != "" {
+			// Apply type if modified
+			if !m.bulkTypeIsPlaceholder && strings.TrimSpace(m.bulkTypeValue) != "" {
 				m.transactions[i].TransactionType = m.bulkTypeValue
 			}
 
-			// Save each transaction
 			m.store.SaveTransaction(m.transactions[i])
 		}
 	}
 
-	// Refresh and exit
 	m.transactions, _ = m.store.GetTransactions()
 	m.state = listView
 	return m.exitMultiSelectMode()
+}
+
+func (m *model) resetBulkEditValues() {
+	m.bulkAmountValue = ""
+	m.bulkDescriptionValue = ""
+	m.bulkDateValue = ""
+	m.bulkCategoryValue = ""
+	m.bulkTypeValue = ""
+
+	m.bulkAmountIsPlaceholder = true
+	m.bulkDescriptionIsPlaceholder = true
+	m.bulkDateIsPlaceholder = true
+	m.bulkCategoryIsPlaceholder = true
+	m.bulkTypeIsPlaceholder = true
 }
 
 func (m model) enterCategorySelection() (tea.Model, tea.Cmd) {
@@ -1403,5 +1451,184 @@ func (m model) handleOverrideImport() (tea.Model, tea.Cmd) {
 
 	m.overlappingStmts = nil
 	m.state = bankStatementView
+	return m, nil
+}
+
+// bulk editing
+
+func (m model) handleBulkTextEditing(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "enter":
+		// Exit editing mode and save current value
+		return m.exitBulkTextEditing()
+	case "backspace":
+		return m.handleBulkTextBackspace()
+	default:
+		if len(key) == 1 {
+			return m.handleBulkTextInput(key)
+		}
+	}
+	return m, nil
+}
+
+func (m model) exitBulkTextEditing() (tea.Model, tea.Cmd) {
+	// Exit all text editing modes
+	m.isBulkEditingAmount = false
+	m.isBulkEditingDescription = false
+	m.isBulkEditingDate = false
+	return m, nil
+}
+
+func (m model) handleBulkTextBackspace() (tea.Model, tea.Cmd) {
+	switch {
+	case m.isBulkEditingAmount:
+		if len(m.bulkAmountValue) > 0 {
+			m.bulkAmountValue = m.bulkAmountValue[:len(m.bulkAmountValue)-1]
+			m.bulkAmountIsPlaceholder = len(m.bulkAmountValue) == 0
+		}
+	case m.isBulkEditingDescription:
+		if len(m.bulkDescriptionValue) > 0 {
+			m.bulkDescriptionValue = m.bulkDescriptionValue[:len(m.bulkDescriptionValue)-1]
+			m.bulkDescriptionIsPlaceholder = len(m.bulkDescriptionValue) == 0
+		}
+	case m.isBulkEditingDate:
+		if len(m.bulkDateValue) > 0 {
+			m.bulkDateValue = m.bulkDateValue[:len(m.bulkDateValue)-1]
+			m.bulkDateIsPlaceholder = len(m.bulkDateValue) == 0
+		}
+	}
+	return m, nil
+}
+
+func (m model) handleBulkTextInput(key string) (tea.Model, tea.Cmd) {
+	switch {
+	case m.isBulkEditingAmount:
+		return m.handleBulkAmountInput(key)
+	case m.isBulkEditingDescription:
+		m.bulkDescriptionValue += key
+		m.bulkDescriptionIsPlaceholder = false
+	case m.isBulkEditingDate:
+		m.bulkDateValue += key
+		m.bulkDateIsPlaceholder = false
+	}
+	return m, nil
+}
+
+func (m model) handleBulkAmountInput(key string) (tea.Model, tea.Cmd) {
+	// Handle negative sign
+	if key == "-" {
+		if len(m.bulkAmountValue) == 0 {
+			m.bulkAmountValue = "-"
+			m.bulkAmountIsPlaceholder = false
+		}
+		return m, nil
+	}
+
+	// Only allow digits and decimal point
+	if (key >= "0" && key <= "9") || key == "." {
+		// Don't allow multiple decimal points
+		if key == "." && strings.Contains(m.bulkAmountValue, ".") {
+			return m, nil
+		}
+
+		newStr := m.bulkAmountValue + key
+
+		// Validate decimal places (max 2)
+		dotIndex := strings.LastIndex(newStr, ".")
+		if dotIndex != -1 && len(newStr)-dotIndex-1 > 2 {
+			return m, nil
+		}
+
+		// Validate it's a valid number format
+		if _, err := strconv.ParseFloat(newStr, 64); err == nil || newStr == "." || newStr == "-." {
+			m.bulkAmountValue = newStr
+			m.bulkAmountIsPlaceholder = false
+		}
+	}
+	return m, nil
+}
+
+func (m model) enterBulkAmountEditing(withBackspace bool) (tea.Model, tea.Cmd) {
+	m.isBulkEditingAmount = true
+	m.bulkAmountIsPlaceholder = false
+
+	// Clear placeholder and start fresh
+	if m.bulkAmountIsPlaceholder {
+		m.bulkAmountValue = ""
+	}
+
+	// Apply backspace immediately if activated with backspace
+	if withBackspace && len(m.bulkAmountValue) > 0 {
+		m.bulkAmountValue = m.bulkAmountValue[:len(m.bulkAmountValue)-1]
+	}
+
+	return m, nil
+}
+
+func (m model) enterBulkDescriptionEditing(withBackspace bool) (tea.Model, tea.Cmd) {
+	m.isBulkEditingDescription = true
+	m.bulkDescriptionIsPlaceholder = false
+
+	// Clear placeholder and start fresh
+	if m.bulkDescriptionIsPlaceholder {
+		m.bulkDescriptionValue = ""
+	}
+
+	// Apply backspace immediately if activated with backspace
+	if withBackspace && len(m.bulkDescriptionValue) > 0 {
+		m.bulkDescriptionValue = m.bulkDescriptionValue[:len(m.bulkDescriptionValue)-1]
+	}
+
+	return m, nil
+}
+
+func (m model) enterBulkDateEditing(withBackspace bool) (tea.Model, tea.Cmd) {
+	m.isBulkEditingDate = true
+	m.bulkDateIsPlaceholder = false
+
+	// Clear placeholder and start fresh
+	if m.bulkDateIsPlaceholder {
+		m.bulkDateValue = ""
+	}
+
+	// Apply backspace immediately if activated with backspace
+	if withBackspace && len(m.bulkDateValue) > 0 {
+		m.bulkDateValue = m.bulkDateValue[:len(m.bulkDateValue)-1]
+	}
+
+	return m, nil
+}
+
+func (m model) enterBulkTextEditingWithChar(key string) (tea.Model, tea.Cmd) {
+	switch m.bulkEditField {
+	case bulkEditDescription:
+		m.isBulkEditingDescription = true
+		m.bulkDescriptionValue = key
+		m.bulkDescriptionIsPlaceholder = false
+	case bulkEditDate:
+		m.isBulkEditingDate = true
+		m.bulkDateValue = key
+		m.bulkDateIsPlaceholder = false
+	case bulkEditAmount:
+		if m.isValidAmountChar(key) {
+			m.isBulkEditingAmount = true
+			m.bulkAmountValue = key
+			m.bulkAmountIsPlaceholder = false
+		}
+	}
+	return m, nil
+}
+
+func (m model) isValidAmountChar(key string) bool {
+	return (key >= "0" && key <= "9") || key == "." || key == "-"
+}
+
+func (m model) handleBulkDropdownSelection(key string) (tea.Model, tea.Cmd) {
+	if m.isBulkSelectingCategory {
+		return m.handleBulkCategorySelection(key)
+	}
+	if m.isBulkSelectingType {
+		return m.handleBulkTypeSelection(key)
+	}
 	return m, nil
 }

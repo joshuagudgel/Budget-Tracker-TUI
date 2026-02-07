@@ -3,8 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -39,7 +39,7 @@ func (s *Store) Init() error {
 
 	s.filename = filepath.Join(appDir, "transactions.json")
 	s.backupName = filepath.Join(appDir, "backup.json")
-	s.profileName = filepath.Join(appDir, "csv-profiles.json")
+	s.profileName = filepath.Join(appDir, "csv-templates.json")
 	s.categoryName = filepath.Join(appDir, "categories.json")
 	s.statementName = filepath.Join(appDir, "bank-statements.json")
 
@@ -290,7 +290,7 @@ func (s *Store) detectOverlap(periodStart, periodEnd string) []BankStatement {
 		}
 
 		// Check for date range overlap
-		if (periodStart <= stmt.PeriodEnd && periodEnd >= stmt.PeriodStart) {
+		if periodStart <= stmt.PeriodEnd && periodEnd >= stmt.PeriodStart {
 			overlaps = append(overlaps, stmt)
 		}
 	}
@@ -501,8 +501,8 @@ type CSVTemplate struct {
 }
 
 type CSVTemplateStore struct {
-	Templates []CSVTemplate `json:"profiles"`
-	Default   string
+	Templates []CSVTemplate `json:"templates"`
+	Default   string        `json:"default"`
 }
 
 func (s *Store) loadCSVProfiles() error {
