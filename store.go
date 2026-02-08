@@ -390,10 +390,6 @@ func (s *Store) loadCategories() error {
 		// Create default categories
 		s.categories = CategoryStore{
 			Categories: []Category{
-				{Name: "food", DisplayName: "Food & Dining"},
-				{Name: "transport", DisplayName: "Transportation"},
-				{Name: "entertainment", DisplayName: "Entertainment"},
-				{Name: "utilities", DisplayName: "Utilities"},
 				{Name: "unsorted", DisplayName: "Unsorted"},
 				{Name: "sorted", DisplayName: "Sorted"},
 			},
