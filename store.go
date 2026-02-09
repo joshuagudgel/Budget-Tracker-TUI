@@ -53,14 +53,19 @@ func (s *Store) Init() error {
 // Transactions --------------------
 
 type Transaction struct {
-	Id              int64   `json:"id"`
-	ParentId        *int64  `json:"parentId,omitempty"`
-	Amount          float64 `json:"amount"`
-	Description     string  `json:"description"`
-	Date            string  `json:"date"`
-	Category        string  `json:"category"`
-	TransactionType string  `json:"transactionType"`
-	IsSplit         bool    `json:"isSplit"`
+	Id               int64   `json:"id"`
+	ParentId         *int64  `json:"parentId,omitempty"`
+	Amount           float64 `json:"amount"`
+	Description      string  `json:"description"`
+	Date             string  `json:"date"`
+	Category         string  `json:"category"`
+	TransactionType  string  `json:"transactionType"`
+	IsSplit          bool    `json:"isSplit"`
+	MerchantName     string  `json:"merchant_name,omitempty"`
+	MerchantCategory string  `json:"merchant_category,omitempty"`
+	RawDescription   string  `json:"raw_description,omitempty"`
+	DetectedCategory string  `json:"detected_category,omitempty"`
+	BankStatementId  string  `json:"bank_statement_id,omitempty"`
 }
 
 func (s *Store) loadTransactions() error {
@@ -261,6 +266,25 @@ func (s *Store) ImportTransactionsFromCSV(templateName string) error {
 	return s.saveTransactions()
 }
 
+// Helper function stubs to be implemented later
+func (s *Store) extractMerchantName(rawDescription string) string {
+	// TODO: Implement merchant name extraction logic
+	// Parse common bank description formats to extract clean merchant names
+	return ""
+}
+
+func (s *Store) extractMerchantCategory(record []string, template CSVTemplate) string {
+	// TODO: Implement merchant category extraction logic
+	// Extract MCC codes or category info if available in CSV columns
+	return ""
+}
+
+func (s *Store) detectCategoryFromTransaction(rawDescription, merchantName string) string {
+	// TODO: Implement auto-categorization logic
+	// Use merchant name, keywords, and patterns to suggest categories
+	return ""
+}
+
 func (s *Store) extractPeriodFromTransactions(transactions []Transaction) (start, end string) {
 	if len(transactions) == 0 {
 		return "", ""
@@ -332,6 +356,12 @@ func (s *Store) parseTransactionFromTemplate(fields []string, template *CSVTempl
 	if err != nil {
 		return transaction, fmt.Errorf("invalid amount: %v", err)
 	}
+
+	transaction.RawDescription = transaction.Description // Should be raw CSV data
+	transaction.MerchantName = s.extractMerchantName(transaction.Description)
+	//transaction.MerchantCategory = s.extractMerchantCategory(fields, template)
+	transaction.DetectedCategory = s.detectCategoryFromTransaction(transaction.Description, transaction.MerchantName)
+	//ion.BankStatementId = fmt.Sprintf("%d", statement.Id) // Link to import
 
 	// Use default category from CategoryStore
 	transaction.Category = s.categories.Default
