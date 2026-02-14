@@ -340,9 +340,10 @@ func (m model) View() string {
 			for i := startIdx; i < len(m.store.statements.Statements); i++ {
 				stmt := m.store.statements.Statements[i]
 				statusIcon := "✓"
-				if stmt.Status == "failed" {
+				switch stmt.Status {
+				case "failed":
 					statusIcon = "✗"
-				} else if stmt.Status == "override" {
+				case "override":
 					statusIcon = "⚠"
 				}
 
@@ -376,10 +377,11 @@ func (m model) View() string {
 
 				statusIcon := "✓"
 				statusColor := "10" // Green
-				if stmt.Status == "failed" {
+				switch stmt.Status {
+				case "failed":
 					statusIcon = "✗"
 					statusColor = "9" // Red
-				} else if stmt.Status == "override" {
+				case "override":
 					statusIcon = "⚠"
 					statusColor = "208" // Orange
 				}
