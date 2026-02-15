@@ -1,0 +1,62 @@
+package main
+
+import (
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+// List view handler
+func (m model) handleListView(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "up":
+		if len(m.transactions) > 0 && m.listIndex > 0 {
+			m.listIndex--
+		}
+	case "down":
+		if len(m.transactions) > 0 && m.listIndex < len(m.transactions)-1 {
+			m.listIndex++
+		}
+	case "e":
+		if m.isMultiSelectMode {
+			// Edit all selected records in bulk edit mode
+			if len(m.selectedTxIds) > 0 {
+				m.bulkEditField = bulkEditAmount
+				m.resetBulkEditValues()
+				m.state = bulkEditView
+			}
+			return m, nil
+		}
+		// Single edit mode (existing logic)
+		if len(m.transactions) > 0 {
+			m.currTransaction = m.transactions[m.listIndex]
+			m.editField = editAmount
+			m.editAmountStr = ""
+			m.state = editView
+		}
+	case "m":
+		return m.handleMultiSelectToggle()
+	case "enter":
+		if m.isMultiSelectMode && len(m.transactions) > 0 {
+			// Toggle selection for current transaction
+			return m.handleToggleSelection()
+		}
+	case "d":
+		if !m.isMultiSelectMode {
+			// Existing single delete logic
+			m.store.DeleteTransaction(m.transactions[m.listIndex].Id)
+			m.transactions, _ = m.store.GetTransactions()
+			// Bounds checking for list index
+			if m.listIndex >= len(m.transactions) && len(m.transactions) > 0 {
+				m.listIndex = len(m.transactions) - 1
+			}
+			if len(m.transactions) == 0 {
+				m.listIndex = 0
+			}
+		}
+	case "esc":
+		if m.isMultiSelectMode {
+			return m.exitMultiSelectMode()
+		}
+		m.state = menuView
+	}
+	return m, nil
+}
