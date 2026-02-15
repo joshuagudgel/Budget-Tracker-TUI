@@ -57,10 +57,18 @@ type Transaction struct {
 	ParentId        *int64  `json:"parentId,omitempty"`
 	Amount          float64 `json:"amount"`
 	Description     string  `json:"description"`
+	RawDescription  string  `json:"rawDescription,omitempty"`
 	Date            string  `json:"date"`
 	Category        string  `json:"category"`
+	AutoCategory    string  `json:"autoCategory,omitempty"`
 	TransactionType string  `json:"transactionType"`
 	IsSplit         bool    `json:"isSplit"`
+	IsRecurring     bool    `json:"isRecurring,omitempty"`
+	StatementId     string  `json:"statementId,omitempty"`
+	Confidence      float64 `json:"confidence,omitempty"`
+	UserModified    bool    `json:"userModified,omitempty"`
+	CreatedAt       string  `json:"createdAt"`
+	UpdatedAt       string  `json:"updatedAt"`
 }
 
 func (s *Store) loadTransactions() error {
@@ -110,6 +118,9 @@ func (s *Store) SaveTransaction(transaction Transaction) error {
 	found := false
 	for i, t := range s.transactions {
 		if t.Id == transaction.Id {
+			// Set UpdatedAt for existing transactions and mark as user modified
+			transaction.UpdatedAt = time.Now().Format(time.RFC3339)
+			transaction.UserModified = true
 			s.transactions[i] = transaction
 			found = true
 			break
@@ -120,6 +131,16 @@ func (s *Store) SaveTransaction(transaction Transaction) error {
 		if transaction.Id == 0 {
 			transaction.Id = s.nextId
 			s.nextId++
+		}
+		// Set CreatedAt and UpdatedAt for new transactions
+		now := time.Now().Format(time.RFC3339)
+		if transaction.CreatedAt == "" {
+			transaction.CreatedAt = now
+		}
+		transaction.UpdatedAt = now
+		// Default confidence to 0.0 if not set
+		if transaction.Confidence == 0.0 {
+			transaction.Confidence = 0.0
 		}
 		s.transactions = append(s.transactions, transaction)
 	}
@@ -173,12 +194,18 @@ func (s *Store) SplitTransaction(parentId int64, splits []Transaction) error {
 	parent.Description = splits[0].Description
 	parent.Category = splits[0].Category
 	parent.IsSplit = true
+	parent.UpdatedAt = time.Now().Format(time.RFC3339)
+	parent.UserModified = true
 
 	// Create only the second split as a new transaction
 	secondSplit := splits[1]
 	secondSplit.Id = s.nextId
 	secondSplit.Date = parent.Date                       // Ensure same date as original
 	secondSplit.TransactionType = parent.TransactionType // Ensure same type
+	now := time.Now().Format(time.RFC3339)
+	secondSplit.CreatedAt = now
+	secondSplit.UpdatedAt = now
+	secondSplit.Confidence = 0.0
 	s.nextId++
 
 	s.transactions = append(s.transactions, secondSplit)
@@ -238,6 +265,11 @@ func (s *Store) ImportTransactionsFromCSV(templateName string) error {
 		transaction.Id = s.nextId
 		s.nextId++
 		transaction.TransactionType = "expense"
+		// Set timestamps for imported transactions
+		now := time.Now().Format(time.RFC3339)
+		transaction.CreatedAt = now
+		transaction.UpdatedAt = now
+		transaction.Confidence = 0.0
 		importedTransactions = append(importedTransactions, transaction)
 	}
 
@@ -310,7 +342,7 @@ func (s *Store) recordBankStatement(filename, periodStart, periodEnd, templateUs
 	statement := BankStatement{
 		Id:           s.statements.NextId,
 		Filename:     filename,
-		ImportDate:   fmt.Sprintf("%d", time.Now().Unix()), // Simple timestamp
+		ImportDate:   time.Now().Format(time.RFC3339), // RFC3339 timestamp
 		PeriodStart:  periodStart,
 		PeriodEnd:    periodEnd,
 		TemplateUsed: templateUsed,
@@ -332,7 +364,9 @@ func (s *Store) parseTransactionFromTemplate(fields []string, template *CSVTempl
 	transaction.Date = strings.Trim(fields[template.DateColumn], "\"")
 
 	// Extract description from specified column
-	transaction.Description = strings.Trim(fields[template.DescColumn], "\"")
+	desc := strings.Trim(fields[template.DescColumn], "\"")
+	transaction.Description = desc
+	transaction.RawDescription = desc // Store original description
 
 	// Extract amount from specified column
 	amountStr := strings.Trim(fields[template.AmountColumn], "\"")
@@ -343,6 +377,7 @@ func (s *Store) parseTransactionFromTemplate(fields []string, template *CSVTempl
 
 	// Use default category from CategoryStore
 	transaction.Category = s.categories.Default
+	transaction.AutoCategory = s.categories.Default // Set auto-category to default initially
 
 	return transaction, nil
 }
@@ -480,13 +515,18 @@ func (s *Store) RestoreFromBackup() error {
 	var newTransactions []Transaction
 	currentId := int64(1)
 	for _, backupTx := range backup.Transactions {
+		now := time.Now().Format(time.RFC3339)
 		transaction := Transaction{
 			Id:              currentId,
 			Amount:          backupTx.Amount,
 			Description:     backupTx.Description,
+			RawDescription:  backupTx.Description,
 			Date:            backupTx.Date,
 			Category:        backupTx.Category,
 			TransactionType: backupTx.TransactionType,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+			Confidence:      0.0,
 		}
 		newTransactions = append(newTransactions, transaction)
 		currentId++

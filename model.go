@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -1827,6 +1828,11 @@ func (m model) handleOverrideImport() (tea.Model, tea.Cmd) {
 		transaction.Id = m.store.nextId
 		m.store.nextId++
 		transaction.TransactionType = "expense"
+		// Set timestamps for imported transactions (matching main import function)
+		now := time.Now().Format(time.RFC3339)
+		transaction.CreatedAt = now
+		transaction.UpdatedAt = now
+		transaction.Confidence = 0.0
 		importedTransactions = append(importedTransactions, transaction)
 	}
 
