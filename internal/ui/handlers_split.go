@@ -1,6 +1,7 @@
-package main
+package ui
 
 import (
+	"budget-tracker-tui/internal/types"
 	"fmt"
 	"math"
 	"strconv"
@@ -344,9 +345,10 @@ func (m model) exitSplitAmountEditing() (tea.Model, tea.Cmd) {
 func (m model) enterSplitCategory1Selection() (tea.Model, tea.Cmd) {
 	m.isSplitSelectingCategory1 = true
 	m.splitCat1SelectIndex = 0
+	categories, _ := m.store.GetCategories()
 
 	// Find current category in list
-	for i, cat := range m.store.categories.Categories {
+	for i, cat := range categories {
 		if cat.Name == m.splitCategory1 {
 			m.splitCat1SelectIndex = i
 			break
@@ -359,9 +361,10 @@ func (m model) enterSplitCategory1Selection() (tea.Model, tea.Cmd) {
 func (m model) enterSplitCategory2Selection() (tea.Model, tea.Cmd) {
 	m.isSplitSelectingCategory2 = true
 	m.splitCat2SelectIndex = 0
+	categories, _ := m.store.GetCategories()
 
 	// Find current category in list
-	for i, cat := range m.store.categories.Categories {
+	for i, cat := range categories {
 		if cat.Name == m.splitCategory2 {
 			m.splitCat2SelectIndex = i
 			break
@@ -372,7 +375,7 @@ func (m model) enterSplitCategory2Selection() (tea.Model, tea.Cmd) {
 
 // handleSplitCategorySelection handles navigation and selection within category dropdowns
 func (m model) handleSplitCategorySelection(key string) (tea.Model, tea.Cmd) {
-	categories := m.store.categories.Categories
+	categories, _ := m.store.GetCategories()
 
 	var currentIndex *int
 	var isSelecting1 bool
@@ -437,7 +440,7 @@ func (m model) handleSaveSplit() (tea.Model, tea.Cmd) {
 	}
 
 	// Create split transactions
-	split1 := Transaction{
+	split1 := types.Transaction{
 		Amount:          amount1,
 		Description:     m.splitDesc1,
 		Date:            m.currTransaction.Date,
@@ -445,7 +448,7 @@ func (m model) handleSaveSplit() (tea.Model, tea.Cmd) {
 		TransactionType: m.currTransaction.TransactionType,
 	}
 
-	split2 := Transaction{
+	split2 := types.Transaction{
 		Amount:          amount2,
 		Description:     m.splitDesc2,
 		Date:            m.currTransaction.Date,
@@ -454,7 +457,7 @@ func (m model) handleSaveSplit() (tea.Model, tea.Cmd) {
 	}
 
 	// Save split using store method
-	err := m.store.SplitTransaction(m.currTransaction.Id, []Transaction{split1, split2})
+	err := m.store.SplitTransaction(m.currTransaction.Id, []types.Transaction{split1, split2})
 	if err != nil {
 		m.splitMessage = fmt.Sprintf("Error saving split: %v", err)
 		return m, nil

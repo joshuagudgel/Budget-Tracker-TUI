@@ -1,6 +1,10 @@
-package main
+package ui
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	"budget-tracker-tui/internal/types"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 // Category management handlers
 func (m model) handleCategoryView(key string) (tea.Model, tea.Cmd) {
@@ -19,18 +23,18 @@ func (m model) handleCategoryView(key string) (tea.Model, tea.Cmd) {
 		categories, _ := m.store.GetCategories()
 		if len(categories) > 0 && m.categoryIndex < len(categories) {
 			selectedCategory := categories[m.categoryIndex]
-			m.store.categories.Default = selectedCategory.Name
-			err := m.store.saveCategories()
-			if err != nil {
-				m.categoryMessage = "Error setting default: " + err.Error()
+
+			result := m.store.SetDefaultCategory(selectedCategory.Name)
+			if result.Success {
+				m.categoryMessage = result.Message
 			} else {
-				m.categoryMessage = "Default category updated"
+				m.categoryMessage = result.Message
 			}
 		}
 	case "c":
 		m.state = createCategoryView
 		m.createCategoryField = createCategoryName
-		m.newCategory = Category{}
+		m.newCategory = types.Category{}
 		m.categoryMessage = ""
 	case "esc":
 		m.state = menuView
@@ -43,7 +47,13 @@ func (m model) handleCreateCategoryView(key string) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.state = categoryView
 	case "enter":
-		return m.handleSaveCategory()
+		result := m.store.CreateCategory(m.newCategory.Name, m.newCategory.DisplayName)
+		if result.Success {
+			m.categoryMessage = result.Message
+			m.state = categoryView
+		} else {
+			m.categoryMessage = result.Message
+		}
 	case "up":
 		if m.createCategoryField > createCategoryName {
 			m.createCategoryField--

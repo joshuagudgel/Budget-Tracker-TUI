@@ -1,7 +1,10 @@
-package main
+package ui
 
 import (
+	"budget-tracker-tui/internal/storage"
 	"log"
+
+	"budget-tracker-tui/internal/types"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -10,9 +13,9 @@ import (
 type model struct {
 	// Core state
 	state           uint
-	store           *Store
-	transactions    []Transaction
-	currTransaction Transaction
+	store           *storage.Store
+	transactions    []types.Transaction
+	currTransaction types.Transaction
 	listIndex       int
 	windowHeight    int
 
@@ -44,14 +47,14 @@ type model struct {
 	// CSV template management
 	templateIndex    int
 	selectedTemplate string
-	newTemplate      CSVTemplate
+	newTemplate      types.CSVTemplate
 	createField      uint
 	createMessage    string
 
 	// Category management
 	categoryIndex       int
 	selectedCategory    string
-	newCategory         Category
+	newCategory         types.Category
 	createCategoryField uint
 	categoryMessage     string
 
@@ -115,8 +118,8 @@ type model struct {
 
 	// Bank statement fields
 	statementIndex   int
-	overlappingStmts []BankStatement
-	pendingStatement BankStatement
+	overlappingStmts []types.BankStatement
+	pendingStatement types.BankStatement
 	statementMessage string
 
 	// Messages
@@ -125,7 +128,7 @@ type model struct {
 }
 
 // NewModel creates a new model instance
-func NewModel(store *Store) model {
+func NewModel(store *storage.Store) model {
 	transactions, err := store.GetTransactions()
 	if err != nil {
 		log.Fatalf("unable to get transactions: %v", err)

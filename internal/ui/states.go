@@ -1,4 +1,4 @@
-package main
+package ui
 
 // Application state constants
 const (

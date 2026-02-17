@@ -1,4 +1,4 @@
-package main
+package ui
 
 import (
 	"log"
@@ -123,7 +123,7 @@ func (m model) handleBulkImmediateInput(key string) (tea.Model, tea.Cmd) {
 
 // handleBulkCategorySelection handles category selection dropdown navigation
 func (m model) handleBulkCategorySelection(key string) (tea.Model, tea.Cmd) {
-	categories := m.store.categories.Categories
+	categories, _ := m.store.GetCategories()
 
 	switch key {
 	case "esc":

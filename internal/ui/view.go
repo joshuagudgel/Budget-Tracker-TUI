@@ -1,4 +1,4 @@
-package main
+package ui
 
 import (
 	"fmt"
@@ -137,14 +137,15 @@ func (m model) View() string {
 		s += headerStyle.Render("Category Management") + "\n\n"
 
 		// Show current default category
-		currentDefault := m.store.categories.Default
+		currentDefault := m.store.GetDefaultCategory()
 		s += faintStyle.Render(fmt.Sprintf("Current Default: %s", currentDefault)) + "\n\n"
 
-		if len(m.store.categories.Categories) == 0 {
+		categories, _ := m.store.GetCategories()
+		if len(categories) == 0 {
 			s += faintStyle.Render("No categories found.") + "\n\n"
 		} else {
 			// Display available categories
-			for i, category := range m.store.categories.Categories {
+			for i, category := range categories {
 				prefix := "  "
 				if i == m.categoryIndex {
 					prefix = "> "
@@ -152,7 +153,7 @@ func (m model) View() string {
 
 				// Show default indicator
 				suffix := ""
-				if category.Name == m.store.categories.Default {
+				if category.Name == currentDefault {
 					suffix = " (default)"
 				}
 
@@ -218,11 +219,13 @@ func (m model) View() string {
 	case csvTemplateView:
 		s += headerStyle.Render("Select CSV Template") + "\n\n"
 
-		if len(m.store.csvTemplates.Templates) == 0 {
+		templates := m.store.GetCSVTemplates()
+		currentDefaultTemplate := m.store.GetDefaultTemplate()
+		if len(templates) == 0 {
 			s += faintStyle.Render("No CSV templates found.") + "\n\n"
 		} else {
 			// Display available templates
-			for i, template := range m.store.csvTemplates.Templates {
+			for i, template := range templates {
 				prefix := "  "
 				if i == m.templateIndex {
 					prefix = "> "
@@ -230,7 +233,7 @@ func (m model) View() string {
 
 				// Show current default
 				suffix := ""
-				if template.Name == m.store.csvTemplates.Default {
+				if template.Name == currentDefaultTemplate {
 					suffix = " (current)"
 				}
 
@@ -315,8 +318,10 @@ func (m model) View() string {
 	case bankStatementView:
 		s += headerStyle.Render("Bank Statement Import") + "\n\n"
 
+		statements := m.store.GetStatementHistory()
+
 		// Current configuration status
-		currentTemplate := m.store.csvTemplates.Default
+		currentTemplate := m.store.GetDefaultTemplate()
 		if currentTemplate != "" {
 			s += formLabelStyle.Render("CSV Template:") + " " + headerStyle.Render(currentTemplate) + " ✓\n"
 		} else {
@@ -330,15 +335,15 @@ func (m model) View() string {
 		}
 
 		// Recent statement history (last 3)
-		if len(m.store.statements.Statements) > 0 {
+		if len(statements) > 0 {
 			s += headerStyle.Render("Recent Imports:") + "\n"
-			startIdx := len(m.store.statements.Statements) - 3
+			startIdx := len(statements) - 3
 			if startIdx < 0 {
 				startIdx = 0
 			}
 
-			for i := startIdx; i < len(m.store.statements.Statements); i++ {
-				stmt := m.store.statements.Statements[i]
+			for i := startIdx; i < len(statements); i++ {
+				stmt := statements[i]
 				statusIcon := "✓"
 				switch stmt.Status {
 				case "failed":
@@ -366,10 +371,12 @@ func (m model) View() string {
 	case statementHistoryView:
 		s += headerStyle.Render("Bank Statement History") + "\n\n"
 
-		if len(m.store.statements.Statements) == 0 {
+		statements := m.store.GetStatementHistory()
+
+		if len(statements) == 0 {
 			s += faintStyle.Render("No import history found.") + "\n\n"
 		} else {
-			for i, stmt := range m.store.statements.Statements {
+			for i, stmt := range statements {
 				prefix := "  "
 				if i == m.statementIndex {
 					prefix = "> "
@@ -422,7 +429,7 @@ func (m model) renderBulkCategoryOptions() string {
 	var s string
 	s += faintStyle.Render("Categories:") + "\n"
 
-	categories := m.store.categories.Categories
+	categories, _ := m.store.GetCategories()
 	maxVisible := 5
 
 	startIdx := 0
@@ -683,7 +690,7 @@ func (m model) renderSplitCategoryOptions(splitNumber int) string {
 	var s string
 	s += faintStyle.Render("Categories:") + "\n"
 
-	categories := m.store.categories.Categories
+	categories, _ := m.store.GetCategories()
 	maxVisible := 5
 
 	var currentIndex int
@@ -837,7 +844,7 @@ func (m model) renderCategoryOptions() string {
 
 	// Calculate available height for scrolling
 	maxVisible := 5
-	categories := m.store.categories.Categories
+	categories, _ := m.store.GetCategories()
 
 	// Scroll logic for large category lists
 	startIdx := 0
