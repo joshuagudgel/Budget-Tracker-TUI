@@ -1,4 +1,4 @@
-module brainstorm
+module budget-tracker-tui
 
 go 1.24.2
 
