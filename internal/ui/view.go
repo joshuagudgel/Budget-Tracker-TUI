@@ -683,7 +683,7 @@ func (m model) renderSplitField(label, value string, fieldType uint) string {
 		displayValue += " ▼"
 	}
 
-	result := formLabelStyle.Render(label) + style.Render(displayValue)
+	result := formLabelStyle.Render(label) + "\n" + style.Render(displayValue)
 
 	// Show category dropdown when selecting split categories
 	if fieldType == splitCategory1Field && m.isSplitSelectingCategory1 {
