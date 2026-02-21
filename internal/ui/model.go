@@ -143,6 +143,25 @@ func NewModel(store *storage.Store) model {
 	}
 }
 
+// getCategoryDisplayName returns the display name for a category name, or the name itself if not found
+func (m model) getCategoryDisplayName(categoryName string) string {
+	categories, err := m.store.GetCategories()
+	if err != nil {
+		return categoryName // Fallback to category name
+	}
+
+	for _, category := range categories {
+		if category.Name == categoryName {
+			if category.DisplayName != "" {
+				return category.DisplayName
+			}
+			return category.Name // Fallback if DisplayName is empty
+		}
+	}
+
+	return categoryName // Category not found, return original name
+}
+
 // Init initializes the model
 func (m model) Init() tea.Cmd {
 	return nil

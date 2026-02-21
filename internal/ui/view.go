@@ -100,7 +100,7 @@ func (m model) View() string {
 			s += enumeratorStyle.Render(prefix) + t.Date + " | " +
 				t.Description + " | " +
 				fmt.Sprintf("%.2f", t.Amount) + " | " +
-				t.Category + " | " +
+				m.getCategoryDisplayName(t.Category) + " | " +
 				t.TransactionType + "\n"
 		}
 
@@ -651,10 +651,10 @@ func (m model) renderSplitField(label, value string, fieldType uint) string {
 		}
 	case splitCategory1Field:
 		isEditing = m.isSplitSelectingCategory1
-		displayValue = value
+		displayValue = m.getCategoryDisplayName(value)
 	case splitCategory2Field:
 		isEditing = m.isSplitSelectingCategory2
-		displayValue = value
+		displayValue = m.getCategoryDisplayName(value)
 	default:
 		displayValue = value
 	}
@@ -822,7 +822,7 @@ func (m model) renderNormalEditView() string {
 		}
 	}
 
-	categoryValue := m.currTransaction.Category
+	categoryValue := m.getCategoryDisplayName(m.currTransaction.Category)
 	if m.editField == editCategory && m.isSelectingCategory {
 		categoryValue = "▼ Select Category"
 	}
