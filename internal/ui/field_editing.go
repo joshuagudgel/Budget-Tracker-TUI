@@ -10,7 +10,7 @@ import (
 // Field navigation helpers
 
 func (m model) handleFieldNavigation(direction int) (tea.Model, tea.Cmd) {
-	if direction > 0 && m.editField < editSplit {
+	if direction > 0 && m.editField < editCategory {
 		m.editField++
 	} else if direction < 0 && m.editField > 0 {
 		m.editField--
