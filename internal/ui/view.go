@@ -507,6 +507,9 @@ func (m model) renderBulkCategoryField() string {
 	if m.bulkCategoryIsPlaceholder || categoryValue == "" {
 		categoryValue = "Select category to change"
 		categoryStyle = categoryStyle.Faint(true)
+	} else if !(m.bulkEditField == bulkEditCategory && m.isBulkSelectingCategory) {
+		// Add dropdown indicator when not actively selecting
+		categoryValue += " ▼"
 	}
 
 	s += formLabelStyle.Render("Category:") + "\n" + categoryStyle.Render(categoryValue)
@@ -539,6 +542,9 @@ func (m model) renderBulkTypeField() string {
 	if m.bulkTypeIsPlaceholder || typeValue == "" {
 		typeValue = "Select type to change"
 		typeStyle = typeStyle.Faint(true)
+	} else if !(m.bulkEditField == bulkEditType && m.isBulkSelectingType) {
+		// Add dropdown indicator when not actively selecting
+		typeValue += " ▼"
 	}
 
 	s += formLabelStyle.Render("Type:") + "\n" + typeStyle.Render(typeValue)
@@ -672,6 +678,9 @@ func (m model) renderSplitField(label, value string, fieldType uint) string {
 		displayValue = "▼ Select Category"
 	} else if fieldType == splitCategory2Field && m.isSplitSelectingCategory2 {
 		displayValue = "▼ Select Category"
+	} else if fieldType == splitCategory1Field || fieldType == splitCategory2Field {
+		// Add dropdown indicator to category fields when not selecting
+		displayValue += " ▼"
 	}
 
 	result := formLabelStyle.Render(label) + style.Render(displayValue)
@@ -801,6 +810,8 @@ func (m model) renderNormalEditView() string {
 	typeValue := m.currTransaction.TransactionType
 	if m.editField == editType && m.isSelectingType {
 		typeValue = "▼ Select Type"
+	} else {
+		typeValue += " ▼"
 	}
 
 	s += formLabelStyle.Render("Type:") + "\n" + typeStyle.Render(typeValue) + "\n"
@@ -825,6 +836,8 @@ func (m model) renderNormalEditView() string {
 	categoryValue := m.getCategoryDisplayName(m.currTransaction.Category)
 	if m.editField == editCategory && m.isSelectingCategory {
 		categoryValue = "▼ Select Category"
+	} else {
+		categoryValue += " ▼"
 	}
 
 	s += formLabelStyle.Render("Category:") + "\n" + categoryStyle.Render(categoryValue) + "\n"
