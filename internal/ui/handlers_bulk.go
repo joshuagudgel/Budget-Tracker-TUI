@@ -231,6 +231,9 @@ func (m model) handleBulkTextEditing(key string) (tea.Model, tea.Cmd) {
 	case "enter":
 		// Exit editing mode and save current value
 		return m.exitBulkTextEditing()
+	case "esc":
+		// Cancel editing and reset to placeholder state
+		return m.cancelBulkTextEditing()
 	case "backspace":
 		return m.handleBulkTextBackspace()
 	default:
@@ -243,10 +246,51 @@ func (m model) handleBulkTextEditing(key string) (tea.Model, tea.Cmd) {
 
 // exitBulkTextEditing exits all bulk text editing modes
 func (m model) exitBulkTextEditing() (tea.Model, tea.Cmd) {
-	// Exit all text editing modes
-	m.isBulkEditingAmount = false
-	m.isBulkEditingDescription = false
-	m.isBulkEditingDate = false
+	// Check if fields are empty and reset to placeholder state if needed
+	switch {
+	case m.isBulkEditingAmount:
+		if strings.TrimSpace(m.bulkAmountValue) == "" {
+			m.bulkAmountValue = ""
+			m.bulkAmountIsPlaceholder = true
+		}
+		m.isBulkEditingAmount = false
+	case m.isBulkEditingDescription:
+		if strings.TrimSpace(m.bulkDescriptionValue) == "" {
+			m.bulkDescriptionValue = ""
+			m.bulkDescriptionIsPlaceholder = true
+		}
+		m.isBulkEditingDescription = false
+	case m.isBulkEditingDate:
+		if strings.TrimSpace(m.bulkDateValue) == "" {
+			m.bulkDateValue = ""
+			m.bulkDateIsPlaceholder = true
+		}
+		m.isBulkEditingDate = false
+	default:
+		// Exit all text editing modes (fallback)
+		m.isBulkEditingAmount = false
+		m.isBulkEditingDescription = false
+		m.isBulkEditingDate = false
+	}
+	return m, nil
+}
+
+// cancelBulkTextEditing cancels text editing and resets current field to placeholder state
+func (m model) cancelBulkTextEditing() (tea.Model, tea.Cmd) {
+	switch {
+	case m.isBulkEditingAmount:
+		m.bulkAmountValue = ""
+		m.bulkAmountIsPlaceholder = true
+		m.isBulkEditingAmount = false
+	case m.isBulkEditingDescription:
+		m.bulkDescriptionValue = ""
+		m.bulkDescriptionIsPlaceholder = true
+		m.isBulkEditingDescription = false
+	case m.isBulkEditingDate:
+		m.bulkDateValue = ""
+		m.bulkDateIsPlaceholder = true
+		m.isBulkEditingDate = false
+	}
 	return m, nil
 }
 
