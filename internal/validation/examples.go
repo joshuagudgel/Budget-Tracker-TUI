@@ -153,7 +153,7 @@ func ValidationUsageInUI() {
 	} else {
 		fmt.Println("✗ Form has validation errors:")
 		for _, err := range result.Errors {
-			fmt.Printf("  Field '%s': %s\n", err.Field, GetUserFriendlyMessage(fmt.Errorf(err.Message)))
+			fmt.Printf("  Field '%s': %s\n", err.Field, GetUserFriendlyMessage(fmt.Errorf("%s", err.Message)))
 		}
 	}
 }
