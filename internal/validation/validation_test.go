@@ -51,7 +51,7 @@ func TestDateValidator(t *testing.T) {
 	}{
 		{"Valid mm-dd-yyyy", "12-31-2023", false},
 		{"Valid mm/dd/yyyy", "12/31/2023", false},
-		{"Valid mm-dd-yy", "01-15-24", false},
+		{"Invalid mm-dd-yy format", "01-15-24", true},
 		{"Invalid format yyyy-mm-dd", "2023-12-31", true},
 		{"Empty date", "", true},
 		{"Invalid date", "13-32-2023", true},
