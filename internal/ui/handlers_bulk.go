@@ -82,10 +82,6 @@ func (m model) handleBulkEditView(key string) (tea.Model, tea.Cmd) {
 		return m.handleBulkFieldActivation(key)
 	case "ctrl+s":
 		return m.handleSaveBulkEdit()
-	default:
-		if len(key) == 1 {
-			return m.handleBulkImmediateInput(key)
-		}
 	}
 	return m, nil
 }
@@ -105,19 +101,6 @@ func (m model) handleBulkFieldActivation(key string) (tea.Model, tea.Cmd) {
 	case bulkEditType:
 		m.isBulkSelectingType = true
 		m.bulkTypeSelectIndex = 0
-	}
-	return m, nil
-}
-
-// handleBulkImmediateInput handles immediate character input for bulk fields
-func (m model) handleBulkImmediateInput(key string) (tea.Model, tea.Cmd) {
-	switch m.bulkEditField {
-	case bulkEditAmount:
-		if (key >= "0" && key <= "9") || key == "." || key == "-" {
-			return m.enterBulkAmountEditing(false)
-		}
-	case bulkEditDescription, bulkEditDate:
-		return m.enterBulkTextEditingWithChar(key)
 	}
 	return m, nil
 }
@@ -481,27 +464,6 @@ func (m model) enterBulkDateEditing(withBackspace bool) (tea.Model, tea.Cmd) {
 		m.bulkDateValue = m.bulkDateValue[:len(m.bulkDateValue)-1]
 	}
 
-	return m, nil
-}
-
-// enterBulkTextEditingWithChar enters bulk text editing with initial character
-func (m model) enterBulkTextEditingWithChar(key string) (tea.Model, tea.Cmd) {
-	switch m.bulkEditField {
-	case bulkEditDescription:
-		m.isBulkEditingDescription = true
-		m.bulkDescriptionValue = key
-		m.bulkDescriptionIsPlaceholder = false
-	case bulkEditDate:
-		m.isBulkEditingDate = true
-		m.bulkDateValue = key
-		m.bulkDateIsPlaceholder = false
-	case bulkEditAmount:
-		if (key >= "0" && key <= "9") || key == "." || key == "-" {
-			m.isBulkEditingAmount = true
-			m.bulkAmountValue = key
-			m.bulkAmountIsPlaceholder = false
-		}
-	}
 	return m, nil
 }
 
