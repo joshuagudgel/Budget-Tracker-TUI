@@ -65,6 +65,14 @@ func (m model) handleEditView(key string) (tea.Model, tea.Cmd) {
 
 // Save transaction
 func (m model) handleSaveTransaction() (tea.Model, tea.Cmd) {
+	// First validate current transaction
+	m.validateCurrentTransaction()
+
+	// Block save if validation errors exist
+	if m.hasValidationErrors {
+		return m, nil
+	}
+
 	// Validate and save amount from edit string with proper formatting
 	if m.editField == editAmount && m.editAmountStr != "" {
 		if amount, err := strconv.ParseFloat(m.editAmountStr, 64); err == nil {

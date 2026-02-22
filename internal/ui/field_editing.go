@@ -80,6 +80,8 @@ func (m model) handleAmountEditing(key string) (tea.Model, tea.Cmd) {
 		if key == "enter" && m.editingAmountStr != "" {
 			if amount, err := strconv.ParseFloat(m.editingAmountStr, 64); err == nil {
 				m.currTransaction.Amount = amount
+				// Validate field on enter (field commit)
+				m.validateCurrentTransaction()
 			}
 		}
 		return m, nil
@@ -144,6 +146,8 @@ func (m model) handleDescriptionEditing(key string) (tea.Model, tea.Cmd) {
 		m.isEditingDescription = false
 		if key == "enter" {
 			m.currTransaction.Description = m.editingDescStr
+			// Validate field on enter (field commit)
+			m.validateCurrentTransaction()
 		}
 		return m, nil
 	case "backspace":
@@ -183,6 +187,8 @@ func (m model) handleDateEditing(key string) (tea.Model, tea.Cmd) {
 		m.isEditingDate = false
 		if key == "enter" {
 			m.currTransaction.Date = m.editingDateStr
+			// Validate field on enter (field commit)
+			m.validateCurrentTransaction()
 		}
 		return m, nil
 	case "backspace":
@@ -230,6 +236,8 @@ func (m model) handleCategorySelection(key string) (tea.Model, tea.Cmd) {
 	case "enter":
 		if len(categories) > 0 {
 			m.currTransaction.Category = categories[m.categorySelectIndex].Name
+			// Validate field on selection commit
+			m.validateCurrentTransaction()
 		}
 		m.isSelectingCategory = false
 	case "esc":
@@ -264,6 +272,8 @@ func (m model) handleTypeSelection(key string) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		m.currTransaction.TransactionType = m.availableTypes[m.typeSelectIndex]
+		// Validate transaction type selection
+		m.validateCurrentTransaction()
 		m.isSelectingType = false
 	case "esc":
 		m.isSelectingType = false

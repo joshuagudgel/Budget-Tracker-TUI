@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -141,6 +142,8 @@ func (m model) handleBulkCategorySelection(key string) (tea.Model, tea.Cmd) {
 			selectedCategory := categories[m.bulkCategorySelectIndex]
 			m.bulkCategoryValue = selectedCategory.Name
 			m.bulkCategoryIsPlaceholder = false // Clear placeholder state
+			// Validate bulk edit data on category selection
+			m.validateBulkEditData()
 		}
 		m.isBulkSelectingCategory = false
 	}
@@ -164,6 +167,7 @@ func (m model) handleBulkTypeSelection(key string) (tea.Model, tea.Cmd) {
 		selectedType := m.availableTypes[m.bulkTypeSelectIndex]
 		m.bulkTypeValue = selectedType
 		m.bulkTypeIsPlaceholder = false // Clear placeholder state
+		// Note: Transaction type doesn't require validation as it's from predefined list
 		m.isBulkSelectingType = false
 	}
 	return m, nil
@@ -171,7 +175,61 @@ func (m model) handleBulkTypeSelection(key string) (tea.Model, tea.Cmd) {
 
 // handleSaveBulkEdit saves bulk edit changes to all selected transactions
 func (m model) handleSaveBulkEdit() (tea.Model, tea.Cmd) {
-	// Update all selected transactions
+	// Validate bulk edit data first
+	m.validateBulkEditData()
+
+	// Block save if validation errors exist
+	if m.hasValidationErrors {
+		return m, nil
+	}
+
+	// Validate individual transactions that will be modified
+	var brokenTransactions []int64
+	for i := range m.transactions {
+		if m.selectedTxIds[m.transactions[i].Id] {
+			tempTx := m.transactions[i] // Copy current transaction
+
+			// Apply changes to temp transaction for validation
+			if !m.bulkAmountIsPlaceholder && strings.TrimSpace(m.bulkAmountValue) != "" {
+				if amount, err := strconv.ParseFloat(m.bulkAmountValue, 64); err == nil {
+					tempTx.Amount = amount
+				}
+			}
+			if !m.bulkDescriptionIsPlaceholder && strings.TrimSpace(m.bulkDescriptionValue) != "" {
+				tempTx.Description = m.bulkDescriptionValue
+			}
+			if !m.bulkDateIsPlaceholder && strings.TrimSpace(m.bulkDateValue) != "" {
+				tempTx.Date = m.bulkDateValue
+			}
+			if !m.bulkCategoryIsPlaceholder && strings.TrimSpace(m.bulkCategoryValue) != "" {
+				tempTx.Category = m.bulkCategoryValue
+			}
+			if !m.bulkTypeIsPlaceholder && strings.TrimSpace(m.bulkTypeValue) != "" {
+				tempTx.TransactionType = m.bulkTypeValue
+			}
+
+			// Validate the modified transaction
+			categories, _ := m.store.GetCategories()
+			categoryNames := make([]string, len(categories))
+			for j, category := range categories {
+				categoryNames[j] = category.Name
+			}
+
+			result := m.validator.ValidateTransaction(&tempTx, categoryNames)
+			if !result.IsValid {
+				brokenTransactions = append(brokenTransactions, tempTx.Id)
+			}
+		}
+	}
+
+	// If any transactions would be invalid, prevent save and show error
+	if len(brokenTransactions) > 0 {
+		m.validationNotification = fmt.Sprintf("⚠ %d transactions would become invalid", len(brokenTransactions))
+		m.hasValidationErrors = true
+		return m, nil
+	}
+
+	// All validations passed, proceed with save
 	for i := range m.transactions {
 		if m.selectedTxIds[m.transactions[i].Id] {
 			// Apply amount if modified
@@ -254,18 +312,24 @@ func (m model) exitBulkTextEditing() (tea.Model, tea.Cmd) {
 			m.bulkAmountIsPlaceholder = true
 		}
 		m.isBulkEditingAmount = false
+		// Validate bulk edit data on field commit
+		m.validateBulkEditData()
 	case m.isBulkEditingDescription:
 		if strings.TrimSpace(m.bulkDescriptionValue) == "" {
 			m.bulkDescriptionValue = ""
 			m.bulkDescriptionIsPlaceholder = true
 		}
 		m.isBulkEditingDescription = false
+		// Validate bulk edit data on field commit
+		m.validateBulkEditData()
 	case m.isBulkEditingDate:
 		if strings.TrimSpace(m.bulkDateValue) == "" {
 			m.bulkDateValue = ""
 			m.bulkDateIsPlaceholder = true
 		}
 		m.isBulkEditingDate = false
+		// Validate bulk edit data on field commit
+		m.validateBulkEditData()
 	default:
 		// Exit all text editing modes (fallback)
 		m.isBulkEditingAmount = false

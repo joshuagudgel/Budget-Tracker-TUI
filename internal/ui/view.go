@@ -26,6 +26,11 @@ var (
 
 	// Selection mode indicators (add these)
 	selectingFieldStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("208")).Padding(0, 1).Width(30) // Orange border for selecting
+
+	// Notification styles
+	notificationStyle = lipgloss.NewStyle().Background(lipgloss.Color("196")).Foreground(lipgloss.Color("15")).Padding(0, 1).MarginBottom(1)
+	warningStyle      = lipgloss.NewStyle().Background(lipgloss.Color("214")).Foreground(lipgloss.Color("0")).Padding(0, 1).MarginBottom(1)
+	successStyle      = lipgloss.NewStyle().Background(lipgloss.Color("46")).Foreground(lipgloss.Color("0")).Padding(0, 1).MarginBottom(1)
 )
 
 func (m model) View() string {
@@ -296,6 +301,9 @@ func (m model) View() string {
 	case bulkEditView:
 		s += headerStyle.Render(fmt.Sprintf("Bulk Edit %d Transactions", len(m.selectedTxIds))) + "\n\n"
 
+		// Add validation notification
+		s += m.renderValidationNotification()
+
 		// Amount field
 		s += m.renderBulkEditField("Amount:", m.bulkAmountValue, m.bulkAmountIsPlaceholder,
 			"Enter new amount", bulkEditAmount, m.isBulkEditingAmount) + "\n"
@@ -314,7 +322,12 @@ func (m model) View() string {
 		// Type dropdown (existing logic)
 		s += m.renderBulkTypeField() + "\n"
 
-		s += faintStyle.Render("Up/Down: Navigate | Enter/Backspace: Edit | Ctrl+S: Apply Changes | Esc: Cancel")
+		applyInstruction := "Ctrl+S: Apply Changes"
+		if m.hasValidationErrors {
+			applyInstruction = faintStyle.Render("Ctrl+S: Apply (fix errors first)")
+		}
+
+		s += faintStyle.Render("Up/Down: Navigate | Enter/Backspace: Edit | " + applyInstruction + " | Esc: Cancel")
 	case bankStatementView:
 		s += headerStyle.Render("Bank Statement Import") + "\n\n"
 
@@ -469,14 +482,18 @@ func (m model) renderBulkCategoryOptions() string {
 // Bulk edit
 
 func (m model) renderBulkEditField(label, value string, isPlaceholder bool, placeholder string, fieldType uint, isEditing bool) string {
-	style := formFieldStyle
-	if m.bulkEditField == fieldType {
-		if isEditing {
-			style = selectingFieldStyle
-		} else {
-			style = activeFieldStyle
-		}
+	// Map fieldType to validation field name
+	fieldName := ""
+	switch fieldType {
+	case bulkEditAmount:
+		fieldName = "amount"
+	case bulkEditDescription:
+		fieldName = "description"
+	case bulkEditDate:
+		fieldName = "date"
 	}
+
+	style := m.getFieldStyle(fieldName, m.bulkEditField == fieldType, isEditing)
 
 	displayValue := value
 	if isPlaceholder {
@@ -484,21 +501,23 @@ func (m model) renderBulkEditField(label, value string, isPlaceholder bool, plac
 		style = style.Faint(true)
 	}
 
-	return formLabelStyle.Render(label) + "\n" + style.Render(displayValue)
+	result := formLabelStyle.Render(label) + "\n" + style.Render(displayValue)
+
+	// Add field-specific error message if any
+	if fieldName != "" {
+		if err, hasErr := m.fieldErrors[fieldName]; hasErr {
+			result += "\n" + faintStyle.Render("  ⚠ "+err)
+		}
+	}
+
+	return result
 }
 
 func (m model) renderBulkCategoryField() string {
 	var s string
 
 	// Category dropdown field
-	categoryStyle := formFieldStyle
-	if m.bulkEditField == bulkEditCategory {
-		if m.isBulkSelectingCategory {
-			categoryStyle = selectingFieldStyle
-		} else {
-			categoryStyle = activeFieldStyle
-		}
-	}
+	categoryStyle := m.getFieldStyle("category", m.bulkEditField == bulkEditCategory, m.isBulkSelectingCategory)
 
 	categoryValue := m.bulkCategoryValue
 	if m.bulkEditField == bulkEditCategory && m.isBulkSelectingCategory {
@@ -513,6 +532,11 @@ func (m model) renderBulkCategoryField() string {
 	}
 
 	s += formLabelStyle.Render("Category:") + "\n" + categoryStyle.Render(categoryValue)
+
+	// Add field-specific error message if any
+	if err, hasErr := m.fieldErrors["category"]; hasErr {
+		s += "\n" + faintStyle.Render("  ⚠ "+err)
+	}
 
 	// Show category dropdown when selecting
 	if m.isBulkSelectingCategory {
@@ -583,6 +607,9 @@ func (m model) renderSplitView() string {
 
 	s += headerStyle.Render(fmt.Sprintf("Split Transaction: %s", amountDisplay)) + "\n\n"
 
+	// Add validation notification
+	s += m.renderValidationNotification()
+
 	if m.splitMessage != "" {
 		if strings.Contains(m.splitMessage, "Error") {
 			s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.splitMessage) + "\n\n"
@@ -616,12 +643,33 @@ func (m model) renderSplitView() string {
 	}
 	s += faintStyle.Render(remainingDisplay) + "\n\n"
 
-	s += faintStyle.Render("Up/Down: Navigate | Enter: Edit Field | Ctrl+S: Save Split | Esc: Cancel Split")
+	saveInstruction := "Ctrl+S: Save Split"
+	if m.hasValidationErrors {
+		saveInstruction = faintStyle.Render("Ctrl+S: Save (fix errors first)")
+	}
+
+	s += faintStyle.Render("Up/Down: Navigate | Enter: Edit Field | " + saveInstruction + " | Esc: Cancel Split")
 	return s
 }
 
 func (m model) renderSplitField(label, value string, fieldType uint) string {
-	style := formFieldStyle
+	// Map split field types to validation field names
+	var validationFieldName string
+	switch fieldType {
+	case splitAmount1Field:
+		validationFieldName = "splitAmount1"
+	case splitAmount2Field:
+		validationFieldName = "splitAmount2"
+	case splitDesc1Field:
+		validationFieldName = "splitDesc1"
+	case splitDesc2Field:
+		validationFieldName = "splitDesc2"
+	case splitCategory1Field:
+		validationFieldName = "splitCategory1"
+	case splitCategory2Field:
+		validationFieldName = "splitCategory2"
+	}
+
 	isEditing := false
 
 	// Check if this field is being edited and get current editing value
@@ -665,13 +713,8 @@ func (m model) renderSplitField(label, value string, fieldType uint) string {
 		displayValue = value
 	}
 
-	if m.splitField == fieldType {
-		if isEditing {
-			style = selectingFieldStyle // Orange border when editing
-		} else {
-			style = activeFieldStyle // Highlighted when selected
-		}
-	}
+	// Use validation-aware styling
+	style := m.getFieldStyle(validationFieldName, m.splitField == fieldType, isEditing)
 
 	// Category specific display logic
 	if fieldType == splitCategory1Field && m.isSplitSelectingCategory1 {
@@ -684,6 +727,13 @@ func (m model) renderSplitField(label, value string, fieldType uint) string {
 	}
 
 	result := formLabelStyle.Render(label) + "\n" + style.Render(displayValue)
+
+	// Add field-specific error message if any
+	if validationFieldName != "" {
+		if err, hasErr := m.fieldErrors[validationFieldName]; hasErr {
+			result += "\n" + faintStyle.Render("  ⚠ "+err)
+		}
+	}
 
 	// Show category dropdown when selecting split categories
 	if fieldType == splitCategory1Field && m.isSplitSelectingCategory1 {
@@ -746,56 +796,56 @@ func (m model) renderSplitCategoryOptions(splitNumber int) string {
 func (m model) renderNormalEditView() string {
 	var s string
 
+	// Add validation notification at the top
+	s += m.renderValidationNotification()
+
 	// Amount field
-	amountStyle := formFieldStyle
-	if m.editField == editAmount {
-		if m.isEditingAmount {
-			amountStyle = selectingFieldStyle
-		} else {
-			amountStyle = activeFieldStyle
-		}
-	}
+	amountStyle := m.getFieldStyle("amount", m.editField == editAmount, m.isEditingAmount)
 
 	amountValue := fmt.Sprintf("%.2f", m.currTransaction.Amount)
 	if m.isEditingAmount && m.editingAmountStr != "" {
 		amountValue = m.editingAmountStr
 	}
 
-	s += formLabelStyle.Render("Amount:") + "\n" + amountStyle.Render(amountValue) + "\n\n"
+	s += formLabelStyle.Render("Amount:") + "\n" + amountStyle.Render(amountValue) + "\n"
+
+	// Add field-specific error message if any
+	if err, hasErr := m.fieldErrors["amount"]; hasErr {
+		s += faintStyle.Render("  ⚠ "+err) + "\n"
+	}
+	s += "\n"
 
 	// Description field
-	descStyle := formFieldStyle
-	if m.editField == editDescription {
-		if m.isEditingDescription {
-			descStyle = selectingFieldStyle
-		} else {
-			descStyle = activeFieldStyle
-		}
-	}
+	descStyle := m.getFieldStyle("description", m.editField == editDescription, m.isEditingDescription)
 
 	descValue := m.currTransaction.Description
 	if m.isEditingDescription && m.editingDescStr != "" {
 		descValue = m.editingDescStr
 	}
 
-	s += formLabelStyle.Render("Description:") + "\n" + descStyle.Render(descValue) + "\n\n"
+	s += formLabelStyle.Render("Description:") + "\n" + descStyle.Render(descValue) + "\n"
+
+	// Add field-specific error message if any
+	if err, hasErr := m.fieldErrors["description"]; hasErr {
+		s += faintStyle.Render("  ⚠ "+err) + "\n"
+	}
+	s += "\n"
 
 	// Date field
-	dateStyle := formFieldStyle
-	if m.editField == editDate {
-		if m.isEditingDate {
-			dateStyle = selectingFieldStyle
-		} else {
-			dateStyle = activeFieldStyle
-		}
-	}
+	dateStyle := m.getFieldStyle("date", m.editField == editDate, m.isEditingDate)
 
 	dateValue := m.currTransaction.Date
 	if m.isEditingDate && m.editingDateStr != "" {
 		dateValue = m.editingDateStr
 	}
 
-	s += formLabelStyle.Render("Date:") + "\n" + dateStyle.Render(dateValue) + "\n\n"
+	s += formLabelStyle.Render("Date:") + "\n" + dateStyle.Render(dateValue) + "\n"
+
+	// Add field-specific error message if any
+	if err, hasErr := m.fieldErrors["date"]; hasErr {
+		s += faintStyle.Render("  ⚠ "+err) + "\n"
+	}
+	s += "\n"
 
 	// Transaction Type field with selection
 	typeStyle := formFieldStyle
@@ -824,14 +874,7 @@ func (m model) renderNormalEditView() string {
 	s += "\n"
 
 	// Category field with selection - Fix the dropdown display logic
-	categoryStyle := formFieldStyle
-	if m.editField == editCategory {
-		if m.isSelectingCategory {
-			categoryStyle = selectingFieldStyle
-		} else {
-			categoryStyle = activeFieldStyle
-		}
-	}
+	categoryStyle := m.getFieldStyle("category", m.editField == editCategory, m.isSelectingCategory)
 
 	categoryValue := m.getCategoryDisplayName(m.currTransaction.Category)
 	if m.editField == editCategory && m.isSelectingCategory {
@@ -842,12 +885,22 @@ func (m model) renderNormalEditView() string {
 
 	s += formLabelStyle.Render("Category:") + "\n" + categoryStyle.Render(categoryValue) + "\n"
 
+	// Add field-specific error message if any
+	if err, hasErr := m.fieldErrors["category"]; hasErr {
+		s += faintStyle.Render("  ⚠ "+err) + "\n"
+	}
+
 	// Show category options when selecting - Fix this condition
 	if m.editField == editCategory && m.isSelectingCategory {
 		s += m.renderCategoryOptions() + "\n"
 	}
 
-	s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: Edit Field | Ctrl+S: Save Transaction | s: Split | Esc: Cancel")
+	saveInstruction := "Ctrl+S: Save Transaction"
+	if m.hasValidationErrors {
+		saveInstruction = faintStyle.Render("Ctrl+S: Save (fix errors first)")
+	}
+
+	s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: Edit Field | "+saveInstruction+" | s: Split | Esc: Cancel")
 	return s
 }
 
@@ -909,4 +962,29 @@ func (m model) renderTypeOptions() string {
 		}
 	}
 	return s
+}
+
+// renderValidationNotification renders validation errors if any exist
+func (m model) renderValidationNotification() string {
+	if m.validationNotification == "" {
+		return ""
+	}
+
+	return warningStyle.Render(m.validationNotification) + "\n"
+}
+
+// getFieldStyle returns the appropriate style for a field based on its state (errors shown in notification area only)
+func (m model) getFieldStyle(fieldName string, isActive bool, isEditing bool) lipgloss.Style {
+	// Check editing state first
+	if isEditing {
+		return selectingFieldStyle
+	}
+
+	// Then check active state
+	if isActive {
+		return activeFieldStyle
+	}
+
+	// Default state
+	return formFieldStyle
 }

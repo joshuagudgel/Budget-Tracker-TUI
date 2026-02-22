@@ -205,11 +205,15 @@ func (m model) exitSplitDescEditing() (tea.Model, tea.Cmd) {
 		m.splitDesc1 = m.splitEditingDesc1
 		m.isSplitEditingDesc1 = false
 		m.splitEditingDesc1 = ""
+		// Validate split on description field commit
+		m.validateSplitTransaction()
 	}
 	if m.isSplitEditingDesc2 {
 		m.splitDesc2 = m.splitEditingDesc2
 		m.isSplitEditingDesc2 = false
 		m.splitEditingDesc2 = ""
+		// Validate split on description field commit
+		m.validateSplitTransaction()
 	}
 	return m, nil
 }
@@ -330,11 +334,15 @@ func (m model) exitSplitAmountEditing() (tea.Model, tea.Cmd) {
 		m.splitAmount1 = m.splitEditingAmount1
 		m.isSplitEditingAmount1 = false
 		m.splitEditingAmount1 = ""
+		// Validate split on amount field commit
+		m.validateSplitTransaction()
 	}
 	if m.isSplitEditingAmount2 {
 		m.splitAmount2 = m.splitEditingAmount2
 		m.isSplitEditingAmount2 = false
 		m.splitEditingAmount2 = ""
+		// Validate split on amount field commit
+		m.validateSplitTransaction()
 	}
 	return m, nil
 }
@@ -409,6 +417,8 @@ func (m model) handleSplitCategorySelection(key string) (tea.Model, tea.Cmd) {
 				m.splitCategory2 = selectedCategory.Name
 				m.isSplitSelectingCategory2 = false
 			}
+			// Validate split on category selection commit
+			m.validateSplitTransaction()
 		}
 	case "esc":
 		// Exit category selection without saving changes
@@ -422,6 +432,14 @@ func (m model) handleSplitCategorySelection(key string) (tea.Model, tea.Cmd) {
 
 // handleSaveSplit validates and saves the split transaction
 func (m model) handleSaveSplit() (tea.Model, tea.Cmd) {
+	// First validate split transaction fields
+	m.validateSplitTransaction()
+
+	// Block save if validation errors exist
+	if m.hasValidationErrors {
+		return m, nil
+	}
+
 	// Parse amounts
 	amount1, err1 := strconv.ParseFloat(m.splitAmount1, 64)
 	amount2, err2 := strconv.ParseFloat(m.splitAmount2, 64)
@@ -454,6 +472,21 @@ func (m model) handleSaveSplit() (tea.Model, tea.Cmd) {
 		Date:            m.currTransaction.Date,
 		Category:        m.splitCategory2,
 		TransactionType: m.currTransaction.TransactionType,
+	}
+
+	// Validate both split transactions before saving
+	categories, _ := m.store.GetCategories()
+	categoryNames := make([]string, len(categories))
+	for i, category := range categories {
+		categoryNames[i] = category.Name
+	}
+
+	result1 := m.validator.ValidateTransaction(&split1, categoryNames)
+	result2 := m.validator.ValidateTransaction(&split2, categoryNames)
+
+	if !result1.IsValid || !result2.IsValid {
+		m.splitMessage = "Error: Split transactions contain validation errors"
+		return m, nil
 	}
 
 	// Save split using store method
