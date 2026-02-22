@@ -27,11 +27,14 @@ type Transaction struct {
 }
 
 type Category struct {
+	Id          int64  `json:"id"`
 	Name        string `json:"name"`
 	DisplayName string `json:"displayName"`
 	ParentId    *int64 `json:"parentId,omitempty"`
-	IsDefault   bool   `json:"isDefault,omitempty"`
 	Color       string `json:"color,omitempty"`
+	IsActive    bool   `json:"isActive"`
+	CreatedAt   string `json:"createdAt"`
+	UpdatedAt   string `json:"updatedAt"`
 }
 
 type BankStatement struct {
