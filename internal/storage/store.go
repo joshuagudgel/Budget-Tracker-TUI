@@ -860,6 +860,237 @@ func (s *Store) MigrateTransactionCategories() error {
 	return nil
 }
 
+// Phase 2: Enhanced Category CRUD Operations --------------------
+
+// CreateCategoryFull creates a new category with full category object support
+func (s *Store) CreateCategoryFull(category *types.Category) error {
+	// Validate the category using built-in validation
+	existingCategories, _ := s.GetCategories()
+	result := category.Validate(existingCategories)
+	if !result.IsValid {
+		// Return the first validation error
+		return fmt.Errorf("%s", result.Errors[0].Message)
+	}
+
+	// Check for duplicates by display name
+	for _, cat := range s.categories.Categories {
+		if strings.EqualFold(cat.DisplayName, strings.TrimSpace(category.DisplayName)) {
+			return fmt.Errorf("category '%s' already exists", category.DisplayName)
+		}
+	}
+
+	// Set metadata
+	now := time.Now().Format(time.RFC3339)
+	category.Id = s.categories.NextId
+	category.CreatedAt = now
+	category.UpdatedAt = now
+	category.IsActive = true
+
+	// Add to store
+	s.categories.Categories = append(s.categories.Categories, *category)
+	s.categories.NextId++
+	
+	return s.SaveCategories()
+}
+
+// UpdateCategory updates an existing category
+func (s *Store) UpdateCategory(category *types.Category) error {
+	// Validate the category using built-in validation
+	existingCategories, _ := s.GetCategories()
+	result := category.Validate(existingCategories)
+	if !result.IsValid {
+		// Return the first validation error
+		return fmt.Errorf("%s", result.Errors[0].Message)
+	}
+
+	// Find the category to update
+	categoryIndex := -1
+	for i, cat := range s.categories.Categories {
+		if cat.Id == category.Id {
+			categoryIndex = i
+			break
+		}
+	}
+
+	if categoryIndex == -1 {
+		return fmt.Errorf("category with ID %d not found", category.Id)
+	}
+
+	// Check for duplicate display name (excluding current category)
+	for i, cat := range s.categories.Categories {
+		if i != categoryIndex && strings.EqualFold(cat.DisplayName, strings.TrimSpace(category.DisplayName)) {
+			return fmt.Errorf("category '%s' already exists", category.DisplayName)
+		}
+	}
+
+	// Preserve original creation time and update timestamp
+	existingCategory := s.categories.Categories[categoryIndex]
+	category.CreatedAt = existingCategory.CreatedAt
+	category.UpdatedAt = time.Now().Format(time.RFC3339)
+
+	// Update the category
+	s.categories.Categories[categoryIndex] = *category
+	
+	return s.SaveCategories()
+}
+
+// DeleteCategory deletes a category with safety checks
+func (s *Store) DeleteCategory(categoryId int64) error {
+	// Find the category to delete
+	categoryIndex := -1
+	for i, cat := range s.categories.Categories {
+		if cat.Id == categoryId {
+			categoryIndex = i
+			break
+		}
+	}
+
+	if categoryIndex == -1 {
+		return fmt.Errorf("category with ID %d not found", categoryId)
+	}
+
+	// Check if category is in use by transactions
+	for _, tx := range s.transactions {
+		if tx.CategoryId == categoryId {
+			return fmt.Errorf("cannot delete category: it is being used by transactions")
+		}
+	}
+
+	// Check if category has subcategories
+	for _, cat := range s.categories.Categories {
+		if cat.ParentId != nil && *cat.ParentId == categoryId {
+			return fmt.Errorf("cannot delete category: it has subcategories. Delete or reassign subcategories first")
+		}
+	}
+
+	// Check if this is the default category
+	if s.categories.DefaultId == categoryId {
+		return fmt.Errorf("cannot delete the default category. Set a different default category first")
+	}
+
+	// Remove the category
+	s.categories.Categories = append(
+		s.categories.Categories[:categoryIndex], 
+		s.categories.Categories[categoryIndex+1:]...,
+	)
+
+	return s.SaveCategories()
+}
+
+// GetCategoryHierarchy returns categories sorted by parent-child relationship
+func (s *Store) GetCategoryHierarchy() []types.Category {
+	var result []types.Category
+	
+	// Helper function to recursively add children
+	var addChildren func(parentId *int64, level int)
+	addChildren = func(parentId *int64, level int) {
+		for _, cat := range s.categories.Categories {
+			// Check if this category belongs at this level
+			if (parentId == nil && cat.ParentId == nil) ||
+			   (parentId != nil && cat.ParentId != nil && *cat.ParentId == *parentId) {
+				result = append(result, cat)
+				// Recursively add children of this category
+				addChildren(&cat.Id, level+1)
+			}
+		}
+	}
+	
+	// Start with top-level categories (no parent)
+	addChildren(nil, 0)
+	return result
+}
+
+// getNextCategoryId returns the next available category ID (alias for existing method)
+func (s *Store) GetNextCategoryId() int64 {
+	return s.calculateNextCategoryId()
+}
+
+// ValidateCategoryForDeletion validates if a category can be safely deleted
+func (s *Store) ValidateCategoryForDeletion(categoryId int64) error {
+	// Find the category
+	var targetCategory *types.Category
+	for _, cat := range s.categories.Categories {
+		if cat.Id == categoryId {
+			targetCategory = &cat
+			break
+		}
+	}
+
+	if targetCategory == nil {
+		return fmt.Errorf("category with ID %d not found", categoryId)
+	}
+
+	// Check if category is in use by transactions
+	transactionCount := 0
+	for _, tx := range s.transactions {
+		if tx.CategoryId == categoryId {
+			transactionCount++
+		}
+	}
+
+	if transactionCount > 0 {
+		return fmt.Errorf("cannot delete category '%s': it is being used by %d transaction(s)", 
+			targetCategory.DisplayName, transactionCount)
+	}
+
+	// Check if category has subcategories
+	subcategoryCount := 0
+	var subcategoryNames []string
+	for _, cat := range s.categories.Categories {
+		if cat.ParentId != nil && *cat.ParentId == categoryId {
+			subcategoryCount++
+			subcategoryNames = append(subcategoryNames, cat.DisplayName)
+		}
+	}
+
+	if subcategoryCount > 0 {
+		return fmt.Errorf("cannot delete category '%s': it has %d subcategorie(s) (%s). Delete or reassign subcategories first",
+			targetCategory.DisplayName, subcategoryCount, strings.Join(subcategoryNames, ", "))
+	}
+
+	// Check if this is the default category
+	if s.categories.DefaultId == categoryId {
+		return fmt.Errorf("cannot delete category '%s': it is the default category. Set a different default category first",
+			targetCategory.DisplayName)
+	}
+
+	return nil
+}
+
+// GetCategoriesForParentSelection returns categories suitable for parent selection
+// (excludes the category itself and its descendants to prevent circular references)
+func (s *Store) GetCategoriesForParentSelection(excludeCategoryId int64) []types.Category {
+	var result []types.Category
+	
+	// Get all descendants of the excluded category
+	excludeIds := make(map[int64]bool)
+	excludeIds[excludeCategoryId] = true
+	
+	// Helper to find all descendants
+	var findDescendants func(parentId int64)
+	findDescendants = func(parentId int64) {
+		for _, cat := range s.categories.Categories {
+			if cat.ParentId != nil && *cat.ParentId == parentId {
+				if !excludeIds[cat.Id] {
+					excludeIds[cat.Id] = true
+					findDescendants(cat.Id) // Recursively find deeper descendants
+				}
+			}
+		}
+	}
+	
+	findDescendants(excludeCategoryId)
+	
+	// Return categories not in the exclude list
+	for _, cat := range s.categories.Categories {
+		if !excludeIds[cat.Id] {
+			result = append(result, cat)
+		}
+	}
+	
+	return result
+}
+
 // Restore --------------------
 
 type BackupTransaction struct {

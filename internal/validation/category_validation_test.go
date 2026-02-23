@@ -135,9 +135,9 @@ func TestCategoryCRUDValidation(t *testing.T) {
 
 	invalidCategory := &types.Category{
 		Id:          4,
-		DisplayName: "",                // Invalid: empty name
-		Color:       "invalid-color",   // Invalid: wrong format
-		ParentId:    &[]int64{99}[0],   // Invalid: non-existent parent
+		DisplayName: "",              // Invalid: empty name
+		Color:       "invalid-color", // Invalid: wrong format
+		ParentId:    &[]int64{99}[0], // Invalid: non-existent parent
 	}
 
 	t.Run("Valid category", func(t *testing.T) {
@@ -173,7 +173,7 @@ func TestCategoryCRUDValidation(t *testing.T) {
 
 func TestCategoryFieldValidation(t *testing.T) {
 	validator := validation.NewCategoryManagementValidator()
-	
+
 	categories := []types.Category{
 		{Id: 1, DisplayName: "Parent", ParentId: nil},
 	}
@@ -186,9 +186,9 @@ func TestCategoryFieldValidation(t *testing.T) {
 	}
 
 	tests := []struct {
-		name         string
-		field        string
-		expectError  bool
+		name           string
+		field          string
+		expectError    bool
 		modifyCategory func(*types.Category)
 	}{
 		{
@@ -239,7 +239,7 @@ func TestCategoryFieldValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			testCategory := *category // Copy category
 			tt.modifyCategory(&testCategory)
-			
+
 			err := validator.ValidateCategoryField(&testCategory, tt.field, categories)
 			if tt.expectError {
 				if err == nil {
@@ -304,12 +304,12 @@ func TestCategoryNameSuggestions(t *testing.T) {
 	}
 
 	tests := []struct {
-		name            string
-		partial         string
-		expectedCount   int
+		name             string
+		partial          string
+		expectedCount    int
 		shouldNotContain []string
 	}{
-		{"Food suggestions", "food", 0, []string{"Food & Dining"}}, // Already exists
+		{"Food suggestions", "food", 0, []string{"Food & Dining"}},        // Already exists
 		{"Transport suggestions", "trans", 0, []string{"Transportation"}}, // Already exists
 		{"Entertainment suggestions", "enter", 1, []string{}},
 		{"Utility suggestions", "util", 1, []string{}},
@@ -319,7 +319,7 @@ func TestCategoryNameSuggestions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			suggestions := validator.GetCategoryNameSuggestions(tt.partial, existingCategories)
-			
+
 			if len(suggestions) != tt.expectedCount {
 				t.Errorf("Expected %d suggestions but got %d", tt.expectedCount, len(suggestions))
 			}
