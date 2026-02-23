@@ -168,20 +168,22 @@ func (m model) View() string {
 		}
 
 		// Category Name field
-		nameStyle := formFieldStyle
-		if m.createCategoryField == createCategoryName {
-			nameStyle = activeFieldStyle
+		nameValue := m.newCategory.Name
+		if m.isEditingCategoryName {
+			nameValue = m.editingCategoryNameStr
 		}
-		s += formLabelStyle.Render("Name:") + "\n" + nameStyle.Render(m.newCategory.Name) + "\n\n"
+		nameStyle := m.getCategoryFieldStyle(createCategoryName, m.isEditingCategoryName)
+		s += formLabelStyle.Render("Name:") + "\n" + nameStyle.Render(nameValue) + "\n\n"
 
 		// Display Name field
-		displayStyle := formFieldStyle
-		if m.createCategoryField == createCategoryDisplayName {
-			displayStyle = activeFieldStyle
+		displayValue := m.newCategory.DisplayName
+		if m.isEditingCategoryDisplayName {
+			displayValue = m.editingCategoryDisplayNameStr
 		}
-		s += formLabelStyle.Render("Display Name:") + "\n" + displayStyle.Render(m.newCategory.DisplayName) + "\n\n"
+		displayStyle := m.getCategoryFieldStyle(createCategoryDisplayName, m.isEditingCategoryDisplayName)
+		s += formLabelStyle.Render("Display Name:") + "\n" + displayStyle.Render(displayValue) + "\n\n"
 
-		s += faintStyle.Render("Up/Down: Navigate fields | Enter: Save | Esc: Cancel")
+		s += faintStyle.Render("Up/Down: Navigate | Enter/Backspace: Edit | Ctrl+S: Save | Esc: Cancel")
 	case backupView:
 		s += headerStyle.Render("Backup Options:") + "\n\n"
 
@@ -977,4 +979,10 @@ func (m model) getFieldStyle(fieldName string, isActive bool, isEditing bool) li
 
 	// Default state
 	return formFieldStyle
+}
+
+// getCategoryFieldStyle returns the appropriate style for category creation fields
+func (m model) getCategoryFieldStyle(fieldType uint, isEditing bool) lipgloss.Style {
+	isActive := m.createCategoryField == fieldType
+	return m.getFieldStyle("category", isActive, isEditing)
 }

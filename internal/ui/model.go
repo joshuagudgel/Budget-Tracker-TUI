@@ -60,6 +60,12 @@ type model struct {
 	createCategoryField uint
 	categoryMessage     string
 
+	// Category creation editing state
+	isEditingCategoryName         bool
+	isEditingCategoryDisplayName  bool
+	editingCategoryNameStr        string
+	editingCategoryDisplayNameStr string
+
 	// Split transaction fields
 	isSplitMode    bool
 	splitAmount1   string
