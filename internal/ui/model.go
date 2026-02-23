@@ -159,23 +159,9 @@ func NewModel(store *storage.Store) model {
 	}
 }
 
-// getCategoryDisplayName returns the display name for a category name, or the name itself if not found
-func (m model) getCategoryDisplayName(categoryName string) string {
-	categories, err := m.store.GetCategories()
-	if err != nil {
-		return categoryName // Fallback to category name
-	}
-
-	for _, category := range categories {
-		if category.Name == categoryName {
-			if category.DisplayName != "" {
-				return category.DisplayName
-			}
-			return category.Name // Fallback if DisplayName is empty
-		}
-	}
-
-	return categoryName // Category not found, return original name
+// getCategoryDisplayName returns the display name for a category ID, or empty string if not found
+func (m model) getCategoryDisplayName(categoryId int64) string {
+	return m.store.GetCategoryDisplayName(categoryId)
 }
 
 // Init initializes the model
@@ -243,12 +229,7 @@ func (m *model) validateCurrentTransaction() {
 		return
 	}
 
-	categoryNames := make([]string, len(categories))
-	for i, category := range categories {
-		categoryNames[i] = category.Name
-	}
-
-	result := m.validator.ValidateTransaction(&m.currTransaction, categoryNames)
+	result := m.validator.ValidateTransaction(&m.currTransaction, categories)
 
 	// Clear existing errors
 	m.fieldErrors = make(map[string]string)
@@ -272,17 +253,12 @@ func (m *model) validateBulkEditData() {
 		return
 	}
 
-	categoryNames := make([]string, len(categories))
-	for i, category := range categories {
-		categoryNames[i] = category.Name
-	}
-
 	// Create temporary transaction with bulk edit values
 	tempTx := types.Transaction{
 		Amount:      0, // Will be parsed from string
 		Description: m.bulkDescriptionValue,
 		Date:        m.bulkDateValue,
-		Category:    m.bulkCategoryValue,
+		CategoryId:  0, // Will be set based on category value
 	}
 
 	// Parse amount if not placeholder
@@ -292,34 +268,41 @@ func (m *model) validateBulkEditData() {
 		}
 	}
 
+	// Find category ID from display name if not placeholder
+	if !m.bulkCategoryIsPlaceholder && m.bulkCategoryValue != "" {
+		if category := m.store.GetCategoryByDisplayName(m.bulkCategoryValue); category != nil {
+			tempTx.CategoryId = category.Id
+		}
+	}
+
 	// Only validate fields that are not placeholders
 	m.fieldErrors = make(map[string]string)
 	m.hasValidationErrors = false
 	m.validationNotification = ""
 
 	if !m.bulkAmountIsPlaceholder {
-		if err := m.validator.ValidateField(&tempTx, "amount", categoryNames); err != nil {
+		if err := m.validator.ValidateField(&tempTx, "amount", categories); err != nil {
 			m.fieldErrors["amount"] = err.Error()
 			m.hasValidationErrors = true
 		}
 	}
 
 	if !m.bulkDescriptionIsPlaceholder {
-		if err := m.validator.ValidateField(&tempTx, "description", categoryNames); err != nil {
+		if err := m.validator.ValidateField(&tempTx, "description", categories); err != nil {
 			m.fieldErrors["description"] = err.Error()
 			m.hasValidationErrors = true
 		}
 	}
 
 	if !m.bulkDateIsPlaceholder {
-		if err := m.validator.ValidateField(&tempTx, "date", categoryNames); err != nil {
+		if err := m.validator.ValidateField(&tempTx, "date", categories); err != nil {
 			m.fieldErrors["date"] = err.Error()
 			m.hasValidationErrors = true
 		}
 	}
 
 	if !m.bulkCategoryIsPlaceholder {
-		if err := m.validator.ValidateField(&tempTx, "category", categoryNames); err != nil {
+		if err := m.validator.ValidateField(&tempTx, "categoryId", categories); err != nil {
 			m.fieldErrors["category"] = err.Error()
 			m.hasValidationErrors = true
 		}
@@ -337,11 +320,6 @@ func (m *model) validateSplitTransaction() {
 		return
 	}
 
-	categoryNames := make([]string, len(categories))
-	for i, category := range categories {
-		categoryNames[i] = category.Name
-	}
-
 	// Clear existing errors
 	m.fieldErrors = make(map[string]string)
 	m.hasValidationErrors = false
@@ -353,7 +331,7 @@ func (m *model) validateSplitTransaction() {
 		m.hasValidationErrors = true
 	} else {
 		tempTx1 := types.Transaction{Amount: amount1}
-		if err := m.validator.ValidateField(&tempTx1, "amount", categoryNames); err != nil {
+		if err := m.validator.ValidateField(&tempTx1, "amount", categories); err != nil {
 			m.fieldErrors["splitAmount1"] = err.Error()
 			m.hasValidationErrors = true
 		}
@@ -365,7 +343,7 @@ func (m *model) validateSplitTransaction() {
 		m.hasValidationErrors = true
 	} else {
 		tempTx2 := types.Transaction{Amount: amount2}
-		if err := m.validator.ValidateField(&tempTx2, "amount", categoryNames); err != nil {
+		if err := m.validator.ValidateField(&tempTx2, "amount", categories); err != nil {
 			m.fieldErrors["splitAmount2"] = err.Error()
 			m.hasValidationErrors = true
 		}
@@ -373,27 +351,37 @@ func (m *model) validateSplitTransaction() {
 
 	// Validate descriptions
 	tempTx := types.Transaction{Description: m.splitDesc1}
-	if err := m.validator.ValidateField(&tempTx, "description", categoryNames); err != nil {
+	if err := m.validator.ValidateField(&tempTx, "description", categories); err != nil {
 		m.fieldErrors["splitDesc1"] = err.Error()
 		m.hasValidationErrors = true
 	}
 
 	tempTx.Description = m.splitDesc2
-	if err := m.validator.ValidateField(&tempTx, "description", categoryNames); err != nil {
+	if err := m.validator.ValidateField(&tempTx, "description", categories); err != nil {
 		m.fieldErrors["splitDesc2"] = err.Error()
 		m.hasValidationErrors = true
 	}
 
-	// Validate categories
-	tempTx.Category = m.splitCategory1
-	if err := m.validator.ValidateField(&tempTx, "category", categoryNames); err != nil {
-		m.fieldErrors["splitCategory1"] = err.Error()
+	// Validate categories by finding their IDs from display names
+	if category1 := m.store.GetCategoryByDisplayName(m.splitCategory1); category1 != nil {
+		tempTx.CategoryId = category1.Id
+		if err := m.validator.ValidateField(&tempTx, "categoryId", categories); err != nil {
+			m.fieldErrors["splitCategory1"] = err.Error()
+			m.hasValidationErrors = true
+		}
+	} else if m.splitCategory1 != "" {
+		m.fieldErrors["splitCategory1"] = "Invalid category"
 		m.hasValidationErrors = true
 	}
 
-	tempTx.Category = m.splitCategory2
-	if err := m.validator.ValidateField(&tempTx, "category", categoryNames); err != nil {
-		m.fieldErrors["splitCategory2"] = err.Error()
+	if category2 := m.store.GetCategoryByDisplayName(m.splitCategory2); category2 != nil {
+		tempTx.CategoryId = category2.Id
+		if err := m.validator.ValidateField(&tempTx, "categoryId", categories); err != nil {
+			m.fieldErrors["splitCategory2"] = err.Error()
+			m.hasValidationErrors = true
+		}
+	} else if m.splitCategory2 != "" {
+		m.fieldErrors["splitCategory2"] = "Invalid category"
 		m.hasValidationErrors = true
 	}
 

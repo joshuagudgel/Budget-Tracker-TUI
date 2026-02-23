@@ -123,7 +123,7 @@ func (m model) handleBulkCategorySelection(key string) (tea.Model, tea.Cmd) {
 	case "enter":
 		if len(categories) > 0 {
 			selectedCategory := categories[m.bulkCategorySelectIndex]
-			m.bulkCategoryValue = selectedCategory.Name
+			m.bulkCategoryValue = selectedCategory.DisplayName
 			m.bulkCategoryIsPlaceholder = false // Clear placeholder state
 			// Validate bulk edit data on category selection
 			m.validateBulkEditData()
@@ -185,7 +185,10 @@ func (m model) handleSaveBulkEdit() (tea.Model, tea.Cmd) {
 				tempTx.Date = m.bulkDateValue
 			}
 			if !m.bulkCategoryIsPlaceholder && strings.TrimSpace(m.bulkCategoryValue) != "" {
-				tempTx.Category = m.bulkCategoryValue
+				// Find category by display name
+				if category := m.store.GetCategoryByDisplayName(m.bulkCategoryValue); category != nil {
+					tempTx.CategoryId = category.Id
+				}
 			}
 			if !m.bulkTypeIsPlaceholder && strings.TrimSpace(m.bulkTypeValue) != "" {
 				tempTx.TransactionType = m.bulkTypeValue
@@ -193,12 +196,8 @@ func (m model) handleSaveBulkEdit() (tea.Model, tea.Cmd) {
 
 			// Validate the modified transaction
 			categories, _ := m.store.GetCategories()
-			categoryNames := make([]string, len(categories))
-			for j, category := range categories {
-				categoryNames[j] = category.Name
-			}
 
-			result := m.validator.ValidateTransaction(&tempTx, categoryNames)
+			result := m.validator.ValidateTransaction(&tempTx, categories)
 			if !result.IsValid {
 				brokenTransactions = append(brokenTransactions, tempTx.Id)
 			}
@@ -234,7 +233,10 @@ func (m model) handleSaveBulkEdit() (tea.Model, tea.Cmd) {
 
 			// Apply category if modified
 			if !m.bulkCategoryIsPlaceholder && strings.TrimSpace(m.bulkCategoryValue) != "" {
-				m.transactions[i].Category = m.bulkCategoryValue
+				// Find category by display name
+				if category := m.store.GetCategoryByDisplayName(m.bulkCategoryValue); category != nil {
+					m.transactions[i].CategoryId = category.Id
+				}
 			}
 
 			// Apply type if modified

@@ -27,8 +27,10 @@ func (m model) enterSplitMode() (tea.Model, tea.Cmd) {
 	m.splitDesc1 = m.currTransaction.Description + " (part 1)"
 	m.splitDesc2 = m.currTransaction.Description + " (part 2)"
 
-	m.splitCategory1 = m.currTransaction.Category
-	m.splitCategory2 = m.currTransaction.Category
+	// Pre-populate categories with current transaction's category
+	categoryDisplayName := m.store.GetCategoryDisplayName(m.currTransaction.CategoryId)
+	m.splitCategory1 = categoryDisplayName
+	m.splitCategory2 = categoryDisplayName
 
 	return m, nil
 }
@@ -357,7 +359,7 @@ func (m model) enterSplitCategory1Selection() (tea.Model, tea.Cmd) {
 
 	// Find current category in list
 	for i, cat := range categories {
-		if cat.Name == m.splitCategory1 {
+		if cat.DisplayName == m.splitCategory1 {
 			m.splitCat1SelectIndex = i
 			break
 		}
@@ -373,7 +375,7 @@ func (m model) enterSplitCategory2Selection() (tea.Model, tea.Cmd) {
 
 	// Find current category in list
 	for i, cat := range categories {
-		if cat.Name == m.splitCategory2 {
+		if cat.DisplayName == m.splitCategory2 {
 			m.splitCat2SelectIndex = i
 			break
 		}
@@ -411,10 +413,10 @@ func (m model) handleSplitCategorySelection(key string) (tea.Model, tea.Cmd) {
 		if len(categories) > 0 && *currentIndex < len(categories) {
 			selectedCategory := categories[*currentIndex]
 			if isSelecting1 {
-				m.splitCategory1 = selectedCategory.Name
+				m.splitCategory1 = selectedCategory.DisplayName
 				m.isSplitSelectingCategory1 = false
 			} else {
-				m.splitCategory2 = selectedCategory.Name
+				m.splitCategory2 = selectedCategory.DisplayName
 				m.isSplitSelectingCategory2 = false
 			}
 			// Validate split on category selection commit
@@ -458,11 +460,21 @@ func (m model) handleSaveSplit() (tea.Model, tea.Cmd) {
 	}
 
 	// Create split transactions
+	// Find category IDs from display names
+	category1Id := int64(0)
+	if category1 := m.store.GetCategoryByDisplayName(m.splitCategory1); category1 != nil {
+		category1Id = category1.Id
+	}
+	category2Id := int64(0)
+	if category2 := m.store.GetCategoryByDisplayName(m.splitCategory2); category2 != nil {
+		category2Id = category2.Id
+	}
+
 	split1 := types.Transaction{
 		Amount:          amount1,
 		Description:     m.splitDesc1,
 		Date:            m.currTransaction.Date,
-		Category:        m.splitCategory1,
+		CategoryId:      category1Id,
 		TransactionType: m.currTransaction.TransactionType,
 	}
 
@@ -470,19 +482,15 @@ func (m model) handleSaveSplit() (tea.Model, tea.Cmd) {
 		Amount:          amount2,
 		Description:     m.splitDesc2,
 		Date:            m.currTransaction.Date,
-		Category:        m.splitCategory2,
+		CategoryId:      category2Id,
 		TransactionType: m.currTransaction.TransactionType,
 	}
 
 	// Validate both split transactions before saving
 	categories, _ := m.store.GetCategories()
-	categoryNames := make([]string, len(categories))
-	for i, category := range categories {
-		categoryNames[i] = category.Name
-	}
 
-	result1 := m.validator.ValidateTransaction(&split1, categoryNames)
-	result2 := m.validator.ValidateTransaction(&split2, categoryNames)
+	result1 := m.validator.ValidateTransaction(&split1, categories)
+	result2 := m.validator.ValidateTransaction(&split2, categories)
 
 	if !result1.IsValid || !result2.IsValid {
 		m.splitMessage = "Error: Split transactions contain validation errors"

@@ -28,7 +28,6 @@ type Store struct {
 }
 
 func (s *Store) Init() error {
-	var err error
 	homeDir, err := os.UserHomeDir()
 
 	if err != nil {
@@ -48,7 +47,13 @@ func (s *Store) Init() error {
 	s.loadCategories()
 	s.loadBankStatements()
 
-	return s.loadTransactions()
+	err = s.loadTransactions()
+	if err != nil {
+		return err
+	}
+
+	// Migrate existing data to new category system
+	return s.MigrateTransactionCategories()
 }
 
 // Transactions --------------------
@@ -184,7 +189,7 @@ func (s *Store) SplitTransaction(parentId int64, splits []types.Transaction) err
 	// Modify existing transaction to become first split
 	parent.Amount = splits[0].Amount
 	parent.Description = splits[0].Description
-	parent.Category = splits[0].Category
+	parent.CategoryId = splits[0].CategoryId
 	parent.IsSplit = true
 	parent.UpdatedAt = time.Now().Format(time.RFC3339)
 	parent.UserModified = true
@@ -596,8 +601,7 @@ func (s *Store) ParseTransactionFromTemplate(fields []string, template *types.CS
 	}
 
 	// Use default category from CategoryStore
-	transaction.Category = s.categories.Default
-	transaction.AutoCategory = s.categories.Default // Set auto-category to default initially
+	transaction.CategoryId = s.categories.DefaultId
 
 	return transaction, nil
 }
@@ -641,7 +645,7 @@ func (s *Store) ParseAmount(amountStr string) (float64, error) {
 
 type CategoryStore struct {
 	Categories []types.Category `json:"categories"`
-	Default    string           `json:"default"`
+	DefaultId  int64            `json:"defaultId"`
 	NextId     int64            `json:"nextId"`
 }
 
@@ -651,33 +655,28 @@ type CategoryResult struct {
 }
 
 // Category Access Methods --------------------
-func (s *Store) GetDefaultCategory() string {
-	return s.categories.Default
+func (s *Store) GetDefaultCategoryId() int64 {
+	return s.categories.DefaultId
 }
 
-func (s *Store) CreateCategory(name, displayName string) *CategoryResult {
+func (s *Store) CreateCategory(displayName string) *CategoryResult {
 	result := &CategoryResult{}
 
 	// Validate inputs
-	if strings.TrimSpace(name) == "" {
-		result.Message = "Category name cannot be empty"
-		return result
-	}
-
 	if strings.TrimSpace(displayName) == "" {
 		result.Message = "Display name cannot be empty"
 		return result
 	}
 
-	// Check for duplicates
+	// Check for duplicates by display name
 	for _, cat := range s.categories.Categories {
-		if cat.Name == name {
-			result.Message = "Category name already exists"
+		if strings.EqualFold(cat.DisplayName, strings.TrimSpace(displayName)) {
+			result.Message = "Category display name already exists"
 			return result
 		}
 	}
 
-	err := s.AddCategory(name, displayName)
+	err := s.AddCategory(displayName)
 	if err != nil {
 		result.Message = fmt.Sprintf("Failed to add category: %v", err)
 		return result
@@ -688,13 +687,13 @@ func (s *Store) CreateCategory(name, displayName string) *CategoryResult {
 	return result
 }
 
-func (s *Store) SetDefaultCategory(categoryName string) *CategoryResult {
+func (s *Store) SetDefaultCategory(categoryId int64) *CategoryResult {
 	result := &CategoryResult{}
 
 	// Verify category exists
 	found := false
 	for _, cat := range s.categories.Categories {
-		if cat.Name == categoryName {
+		if cat.Id == categoryId {
 			found = true
 			break
 		}
@@ -705,13 +704,14 @@ func (s *Store) SetDefaultCategory(categoryName string) *CategoryResult {
 		return result
 	}
 
-	s.categories.Default = categoryName
+	s.categories.DefaultId = categoryId
 	err := s.SaveCategories()
 	if err != nil {
 		result.Message = fmt.Sprintf("Failed to save: %v", err)
 		return result
 	}
 
+	categoryName := s.GetCategoryDisplayName(categoryId)
 	result.Success = true
 	result.Message = fmt.Sprintf("Default category set to '%s'", categoryName)
 	return result
@@ -723,15 +723,15 @@ func (s *Store) loadCategories() error {
 		now := time.Now().Format(time.RFC3339)
 		s.categories = CategoryStore{
 			Categories: []types.Category{
-				{Id: 1, Name: "food", DisplayName: "Food & Dining", IsActive: true, CreatedAt: now, UpdatedAt: now},
-				{Id: 2, Name: "transport", DisplayName: "Transportation", IsActive: true, CreatedAt: now, UpdatedAt: now},
-				{Id: 3, Name: "entertainment", DisplayName: "Entertainment", IsActive: true, CreatedAt: now, UpdatedAt: now},
-				{Id: 4, Name: "utilities", DisplayName: "Utilities", IsActive: true, CreatedAt: now, UpdatedAt: now},
-				{Id: 5, Name: "unsorted", DisplayName: "Unsorted", IsActive: true, CreatedAt: now, UpdatedAt: now},
-				{Id: 6, Name: "sorted", DisplayName: "Sorted", IsActive: true, CreatedAt: now, UpdatedAt: now},
+				{Id: 1, DisplayName: "Food & Dining", IsActive: true, CreatedAt: now, UpdatedAt: now},
+				{Id: 2, DisplayName: "Transportation", IsActive: true, CreatedAt: now, UpdatedAt: now},
+				{Id: 3, DisplayName: "Entertainment", IsActive: true, CreatedAt: now, UpdatedAt: now},
+				{Id: 4, DisplayName: "Utilities", IsActive: true, CreatedAt: now, UpdatedAt: now},
+				{Id: 5, DisplayName: "Unsorted", IsActive: true, CreatedAt: now, UpdatedAt: now},
+				{Id: 6, DisplayName: "Sorted", IsActive: true, CreatedAt: now, UpdatedAt: now},
 			},
-			Default: "unsorted",
-			NextId:  7,
+			DefaultId: 5, // Unsorted
+			NextId:    7,
 		}
 		return s.SaveCategories()
 	}
@@ -766,19 +766,18 @@ func (s *Store) GetCategories() ([]types.Category, error) {
 	return s.categories.Categories, nil
 }
 
-func (s *Store) AddCategory(name, displayName string) error {
-	// Check for duplicates
+func (s *Store) AddCategory(displayName string) error {
+	// Check for duplicates by display name
 	for _, cat := range s.categories.Categories {
-		if cat.Name == name {
-			return fmt.Errorf("category '%s' already exists", name)
+		if strings.EqualFold(cat.DisplayName, strings.TrimSpace(displayName)) {
+			return fmt.Errorf("category '%s' already exists", displayName)
 		}
 	}
 
 	now := time.Now().Format(time.RFC3339)
 	category := types.Category{
 		Id:          s.categories.NextId,
-		Name:        name,
-		DisplayName: displayName,
+		DisplayName: strings.TrimSpace(displayName),
 		IsActive:    true,
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -787,6 +786,78 @@ func (s *Store) AddCategory(name, displayName string) error {
 	s.categories.Categories = append(s.categories.Categories, category)
 	s.categories.NextId++
 	return s.SaveCategories()
+}
+
+// GetCategoryDisplayName returns the display name for a category ID, or empty string if not found
+func (s *Store) GetCategoryDisplayName(categoryId int64) string {
+	for _, category := range s.categories.Categories {
+		if category.Id == categoryId {
+			return category.DisplayName
+		}
+	}
+	return ""
+}
+
+// GetCategoryById returns a category by its ID, or nil if not found
+func (s *Store) GetCategoryById(categoryId int64) *types.Category {
+	for _, category := range s.categories.Categories {
+		if category.Id == categoryId {
+			return &category
+		}
+	}
+	return nil
+}
+
+// GetCategoryByDisplayName returns a category by its display name (case insensitive), or nil if not found
+func (s *Store) GetCategoryByDisplayName(displayName string) *types.Category {
+	trimmed := strings.TrimSpace(displayName)
+	for _, category := range s.categories.Categories {
+		if strings.EqualFold(category.DisplayName, trimmed) {
+			return &category
+		}
+	}
+	return nil
+}
+
+// MigrateTransactionCategories migrates old string-based categories to category IDs
+// This function should be called during application startup to handle legacy data
+func (s *Store) MigrateTransactionCategories() error {
+	needsMigration := false
+
+	// For now, set default category ID for transactions that have CategoryId = 0
+	for i := range s.transactions {
+		if s.transactions[i].CategoryId == 0 {
+			s.transactions[i].CategoryId = s.categories.DefaultId
+			needsMigration = true
+		}
+	}
+
+	// Handle migration of legacy CategoryStore format
+	// If DefaultId is 0 but we have categories, set it to first category or Unsorted (id 5)
+	if s.categories.DefaultId == 0 && len(s.categories.Categories) > 0 {
+		// Try to find Unsorted category (our default)
+		found := false
+		for _, cat := range s.categories.Categories {
+			if cat.DisplayName == "Unsorted" {
+				s.categories.DefaultId = cat.Id
+				found = true
+				break
+			}
+		}
+		// If no Unsorted category, use the first one
+		if !found {
+			s.categories.DefaultId = s.categories.Categories[0].Id
+		}
+		if err := s.SaveCategories(); err != nil {
+			return err
+		}
+	}
+
+	if needsMigration {
+		return s.SaveTransactions()
+	}
+
+	return nil
 }
 
 // Restore --------------------
@@ -837,14 +908,19 @@ func (s *Store) RestoreTransactionsFromBackup() *RestoreResult {
 	now := time.Now().Format(time.RFC3339)
 
 	for i, backupTx := range backup.Transactions {
+		// Try to find category by display name, fallback to default
+		categoryId := s.categories.DefaultId
+		if category := s.GetCategoryByDisplayName(backupTx.Category); category != nil {
+			categoryId = category.Id
+		}
+
 		transaction := types.Transaction{
 			Id:              int64(i + 1),
 			Amount:          backupTx.Amount,
 			Description:     backupTx.Description,
 			RawDescription:  backupTx.Description,
 			Date:            backupTx.Date,
-			Category:        backupTx.Category,
-			AutoCategory:    backupTx.Category,
+			CategoryId:      categoryId,
 			TransactionType: backupTx.TransactionType,
 			CreatedAt:       now,
 			UpdatedAt:       now,
@@ -895,13 +971,19 @@ func (s *Store) RestoreFromBackup() error {
 	currentId := int64(1)
 	for _, backupTx := range backup.Transactions {
 		now := time.Now().Format(time.RFC3339)
+		// Try to find category by display name, fallback to default
+		categoryId := s.categories.DefaultId
+		if category := s.GetCategoryByDisplayName(backupTx.Category); category != nil {
+			categoryId = category.Id
+		}
+
 		transaction := types.Transaction{
 			Id:              currentId,
 			Amount:          backupTx.Amount,
 			Description:     backupTx.Description,
 			RawDescription:  backupTx.Description,
 			Date:            backupTx.Date,
-			Category:        backupTx.Category,
+			CategoryId:      categoryId,
 			TransactionType: backupTx.TransactionType,
 			CreatedAt:       now,
 			UpdatedAt:       now,
@@ -1070,24 +1152,24 @@ func (s *Store) LoadDirectoryEntriesWithFallback(currentDir string) *DirectoryRe
 // Initialize default categories if none exist
 func (s *Store) ensureDefaultCategories() error {
 	if len(s.categories.Categories) == 0 {
-		defaultCategories := []types.Category{
-			{Name: "uncategorized", DisplayName: "Uncategorized"},
-			{Name: "groceries", DisplayName: "Groceries"},
-			{Name: "utilities", DisplayName: "Utilities"},
-			{Name: "entertainment", DisplayName: "Entertainment"},
-			{Name: "transport", DisplayName: "Transportation"},
+		defaultCategories := []string{
+			"Uncategorized",
+			"Groceries",
+			"Utilities",
+			"Entertainment",
+			"Transportation",
 		}
 
-		for _, cat := range defaultCategories {
-			err := s.AddCategory(cat.Name, cat.DisplayName)
+		for _, displayName := range defaultCategories {
+			err := s.AddCategory(displayName)
 			if err != nil {
 				return err
 			}
 		}
 
-		// Set default category
-		if s.categories.Default == "" {
-			s.categories.Default = "uncategorized"
+		// Set default category to first category (Uncategorized)
+		if s.categories.DefaultId == 0 && len(s.categories.Categories) > 0 {
+			s.categories.DefaultId = s.categories.Categories[0].Id
 			return s.SaveCategories()
 		}
 	}

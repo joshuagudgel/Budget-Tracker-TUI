@@ -212,7 +212,7 @@ func (m model) enterCategorySelection() (tea.Model, tea.Cmd) {
 	// Find current category in list for initial position
 	categories, _ := m.store.GetCategories()
 	for i, cat := range categories {
-		if cat.Name == m.currTransaction.Category {
+		if cat.Id == m.currTransaction.CategoryId {
 			m.categorySelectIndex = i
 			break
 		}
@@ -235,7 +235,7 @@ func (m model) handleCategorySelection(key string) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		if len(categories) > 0 {
-			m.currTransaction.Category = categories[m.categorySelectIndex].Name
+			m.currTransaction.CategoryId = categories[m.categorySelectIndex].Id
 			// Validate field on selection commit
 			m.validateCurrentTransaction()
 		}

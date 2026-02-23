@@ -105,7 +105,7 @@ func (m model) View() string {
 			s += enumeratorStyle.Render(prefix) + t.Date + " | " +
 				t.Description + " | " +
 				fmt.Sprintf("%.2f", t.Amount) + " | " +
-				m.getCategoryDisplayName(t.Category) + " | " +
+				m.getCategoryDisplayName(t.CategoryId) + " | " +
 				t.TransactionType + "\n"
 		}
 
@@ -152,8 +152,8 @@ func (m model) View() string {
 					prefix = "> "
 				}
 
-				// Show category details
-				categoryDetails := fmt.Sprintf("%s - %s", category.Name, category.DisplayName)
+				// Show category details - now just display name since Name field removed
+				categoryDetails := fmt.Sprintf("%d - %s", category.Id, category.DisplayName)
 				s += enumeratorStyle.Render(prefix) + categoryDetails + "\n"
 			}
 		}
@@ -167,21 +167,13 @@ func (m model) View() string {
 			s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.categoryMessage) + "\n\n"
 		}
 
-		// Category Name field
-		nameValue := m.newCategory.Name
-		if m.isEditingCategoryName {
-			nameValue = m.editingCategoryNameStr
-		}
-		nameStyle := m.getCategoryFieldStyle(createCategoryName, m.isEditingCategoryName)
-		s += formLabelStyle.Render("Name:") + "\n" + nameStyle.Render(nameValue) + "\n\n"
-
-		// Display Name field
+		// Display Name field (now the only field needed)
 		displayValue := m.newCategory.DisplayName
 		if m.isEditingCategoryDisplayName {
 			displayValue = m.editingCategoryDisplayNameStr
 		}
 		displayStyle := m.getCategoryFieldStyle(createCategoryDisplayName, m.isEditingCategoryDisplayName)
-		s += formLabelStyle.Render("Display Name:") + "\n" + displayStyle.Render(displayValue) + "\n\n"
+		s += formLabelStyle.Render("Category Name:") + "\n" + displayStyle.Render(displayValue) + "\n\n"
 
 		s += faintStyle.Render("Up/Down: Navigate | Enter/Backspace: Edit | Ctrl+S: Save | Esc: Cancel")
 	case backupView:
@@ -697,10 +689,10 @@ func (m model) renderSplitField(label, value string, fieldType uint) string {
 		}
 	case splitCategory1Field:
 		isEditing = m.isSplitSelectingCategory1
-		displayValue = m.getCategoryDisplayName(value)
+		displayValue = value // value is already the display name for split categories
 	case splitCategory2Field:
 		isEditing = m.isSplitSelectingCategory2
-		displayValue = m.getCategoryDisplayName(value)
+		displayValue = value // value is already the display name for split categories
 	default:
 		displayValue = value
 	}
@@ -868,7 +860,7 @@ func (m model) renderNormalEditView() string {
 	// Category field with selection - Fix the dropdown display logic
 	categoryStyle := m.getFieldStyle("category", m.editField == editCategory, m.isSelectingCategory)
 
-	categoryValue := m.getCategoryDisplayName(m.currTransaction.Category)
+	categoryValue := m.getCategoryDisplayName(m.currTransaction.CategoryId)
 	if m.editField == editCategory && m.isSelectingCategory {
 		categoryValue = "▼ Select Category"
 	} else {

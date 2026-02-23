@@ -107,34 +107,32 @@ func (dv DescriptionValidator) Validate(description string) error {
 	return nil
 }
 
-// CategoryValidator provides validation for category fields
+// CategoryValidator provides validation for category ID fields
 type CategoryValidator struct{}
 
-// Validate validates a category against available categories
-func (cv CategoryValidator) Validate(category string, availableCategories []string) error {
-	trimmedCategory := strings.TrimSpace(category)
-
-	if trimmedCategory == "" {
-		return fmt.Errorf("category cannot be empty")
+// Validate validates a category ID against available categories
+func (cv CategoryValidator) Validate(categoryId int64, availableCategories []types.Category) error {
+	if categoryId == 0 {
+		return fmt.Errorf("category must be selected")
 	}
 
-	// Check if category exists in available categories
-	for _, availableCategory := range availableCategories {
-		if strings.EqualFold(availableCategory, trimmedCategory) {
+	// Check if category ID exists in available categories
+	for _, category := range availableCategories {
+		if category.Id == categoryId {
 			return nil
 		}
 	}
 
-	return fmt.Errorf("category '%s' is not available", trimmedCategory)
+	return fmt.Errorf("category ID %d is not available", categoryId)
 }
 
-// GetSuggestions returns category suggestions for a partial match
-func (cv CategoryValidator) GetSuggestions(partial string, availableCategories []string) []string {
-	var suggestions []string
+// GetSuggestions returns category suggestions for a partial display name match
+func (cv CategoryValidator) GetSuggestions(partial string, availableCategories []types.Category) []types.Category {
+	var suggestions []types.Category
 	lowerPartial := strings.ToLower(strings.TrimSpace(partial))
 
 	for _, category := range availableCategories {
-		if strings.Contains(strings.ToLower(category), lowerPartial) {
+		if strings.Contains(strings.ToLower(category.DisplayName), lowerPartial) {
 			suggestions = append(suggestions, category)
 		}
 	}
@@ -161,7 +159,7 @@ func NewTransactionValidator() *TransactionValidator {
 }
 
 // ValidateTransaction validates an entire transaction
-func (tv *TransactionValidator) ValidateTransaction(transaction *types.Transaction, availableCategories []string) types.ValidationResult {
+func (tv *TransactionValidator) ValidateTransaction(transaction *types.Transaction, availableCategories []types.Category) types.ValidationResult {
 	result := types.ValidationResult{IsValid: true}
 
 	// Validate Amount
@@ -179,16 +177,16 @@ func (tv *TransactionValidator) ValidateTransaction(transaction *types.Transacti
 		result.AddError("description", err.Error())
 	}
 
-	// Validate Category
-	if err := tv.Category.Validate(transaction.Category, availableCategories); err != nil {
-		result.AddError("category", err.Error())
+	// Validate CategoryId
+	if err := tv.Category.Validate(transaction.CategoryId, availableCategories); err != nil {
+		result.AddError("categoryId", err.Error())
 	}
 
 	return result
 }
 
 // ValidateField validates a single field of a transaction
-func (tv *TransactionValidator) ValidateField(transaction *types.Transaction, field string, availableCategories []string) error {
+func (tv *TransactionValidator) ValidateField(transaction *types.Transaction, field string, availableCategories []types.Category) error {
 	switch strings.ToLower(field) {
 	case "amount":
 		return tv.Amount.Validate(transaction.Amount)
@@ -196,15 +194,15 @@ func (tv *TransactionValidator) ValidateField(transaction *types.Transaction, fi
 		return tv.Date.Validate(transaction.Date)
 	case "description":
 		return tv.Description.Validate(transaction.Description)
-	case "category":
-		return tv.Category.Validate(transaction.Category, availableCategories)
+	case "categoryid", "category":
+		return tv.Category.Validate(transaction.CategoryId, availableCategories)
 	default:
 		return fmt.Errorf("unknown field: %s", field)
 	}
 }
 
 // ValidateBulkEdit validates multiple transactions for bulk editing
-func (tv *TransactionValidator) ValidateBulkEdit(transactions []*types.Transaction, availableCategories []string) map[int64]types.ValidationResult {
+func (tv *TransactionValidator) ValidateBulkEdit(transactions []*types.Transaction, availableCategories []types.Category) map[int64]types.ValidationResult {
 	results := make(map[int64]types.ValidationResult)
 
 	for _, transaction := range transactions {

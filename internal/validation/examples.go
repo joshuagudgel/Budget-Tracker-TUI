@@ -8,7 +8,13 @@ import (
 // Example demonstrates how to use the validation system
 func Example() {
 	// Available categories for this example
-	categories := []string{"Food", "Transportation", "Entertainment", "Utilities", "Shopping"}
+	categories := []types.Category{
+		{Id: 1, DisplayName: "Food"},
+		{Id: 2, DisplayName: "Transportation"},
+		{Id: 3, DisplayName: "Entertainment"},
+		{Id: 4, DisplayName: "Utilities"},
+		{Id: 5, DisplayName: "Shopping"},
+	}
 
 	// Create a transaction validator
 	validator := NewTransactionValidator()
@@ -18,7 +24,7 @@ func Example() {
 		Amount:      45.99,
 		Description: "Lunch at downtown cafe",
 		Date:        "02-22-2024",
-		Category:    "Food",
+		CategoryId:  1, // Food
 	}
 
 	fmt.Println("=== Validating Valid Transaction ===")
@@ -34,10 +40,10 @@ func Example() {
 
 	// Example 2: Invalid transaction
 	invalidTx := &types.Transaction{
-		Amount:      0,             // Error: zero amount
-		Description: "",            // Error: empty description
-		Date:        "2024-02-22",  // Error: wrong date format
-		Category:    "NonExistent", // Error: category doesn't exist
+		Amount:      0,            // Error: zero amount
+		Description: "",           // Error: empty description
+		Date:        "2024-02-22", // Error: wrong date format
+		CategoryId:  99,           // Error: category ID doesn't exist
 	}
 
 	fmt.Println("\n=== Validating Invalid Transaction ===")
@@ -57,7 +63,7 @@ func Example() {
 		Amount:      123.456, // Too many decimals
 		Description: "Valid description",
 		Date:        "12-31-2024",
-		Category:    "Food",
+		CategoryId:  1, // Food
 	}
 
 	if err := validator.ValidateField(testTx, "amount", categories); err != nil {
@@ -92,14 +98,22 @@ func Example() {
 	categoryValidator := CategoryValidator{}
 	suggestions := categoryValidator.GetSuggestions("foo", categories)
 	if len(suggestions) > 0 {
-		fmt.Printf("Suggestions for 'foo': %v\n", suggestions)
+		fmt.Print("Suggestions for 'foo': ")
+		for _, cat := range suggestions {
+			fmt.Printf("%s ", cat.DisplayName)
+		}
+		fmt.Println()
 	} else {
 		fmt.Println("No suggestions found for 'foo'")
 	}
 
 	suggestions = categoryValidator.GetSuggestions("trans", categories)
 	if len(suggestions) > 0 {
-		fmt.Printf("Suggestions for 'trans': %v\n", suggestions)
+		fmt.Print("Suggestions for 'trans': ")
+		for _, cat := range suggestions {
+			fmt.Printf("%s ", cat.DisplayName)
+		}
+		fmt.Println()
 	}
 
 	// Example 6: Parsing and validating amounts
@@ -127,7 +141,11 @@ func ValidationUsageInUI() {
 		"category":    "Food",
 	}
 
-	categories := []string{"Food", "Transportation", "Entertainment"}
+	categories := []types.Category{
+		{Id: 1, DisplayName: "Food"},
+		{Id: 2, DisplayName: "Transportation"},
+		{Id: 3, DisplayName: "Entertainment"},
+	}
 	validator := NewTransactionValidator()
 
 	// Create transaction from form data
@@ -143,7 +161,8 @@ func ValidationUsageInUI() {
 
 	tx.Description = formData["description"]
 	tx.Date = formData["date"]
-	tx.Category = formData["category"]
+	// In real app, would find category by display name
+	tx.CategoryId = 1 // Food category
 
 	// Validate the transaction
 	result := validator.ValidateTransaction(tx, categories)
@@ -162,13 +181,16 @@ func ValidationUsageInUI() {
 func BulkValidationExample() {
 	fmt.Println("\n=== Bulk Validation Example ===")
 
-	categories := []string{"Food", "Transportation"}
+	categories := []types.Category{
+		{Id: 1, DisplayName: "Food"},
+		{Id: 2, DisplayName: "Transportation"},
+	}
 	validator := NewTransactionValidator()
 
 	transactions := []*types.Transaction{
-		{Id: 1, Amount: 25.50, Description: "Lunch", Date: "02-22-2024", Category: "Food"},
-		{Id: 2, Amount: 0, Description: "", Date: "invalid", Category: "Invalid"}, // Invalid
-		{Id: 3, Amount: 15.99, Description: "Bus fare", Date: "02-21-2024", Category: "Transportation"},
+		{Id: 1, Amount: 25.50, Description: "Lunch", Date: "02-22-2024", CategoryId: 1},    // Food
+		{Id: 2, Amount: 0, Description: "", Date: "invalid", CategoryId: 99},               // Invalid
+		{Id: 3, Amount: 15.99, Description: "Bus fare", Date: "02-21-2024", CategoryId: 2}, // Transportation
 	}
 
 	results := validator.ValidateBulkEdit(transactions, categories)

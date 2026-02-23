@@ -14,7 +14,7 @@ type Transaction struct {
 	Description     string  `json:"description"`
 	RawDescription  string  `json:"rawDescription"`
 	Date            string  `json:"date"`
-	Category        string  `json:"category"`
+	CategoryId      int64   `json:"categoryId"`
 	AutoCategory    string  `json:"autoCategory"`
 	TransactionType string  `json:"transactionType"`
 	IsSplit         bool    `json:"isSplit"`
@@ -28,7 +28,6 @@ type Transaction struct {
 
 type Category struct {
 	Id          int64  `json:"id"`
-	Name        string `json:"name"`
 	DisplayName string `json:"displayName"`
 	ParentId    *int64 `json:"parentId,omitempty"`
 	Color       string `json:"color,omitempty"`
@@ -114,7 +113,7 @@ func (vr *ValidationResult) GetError(field string) string {
 }
 
 // Validate validates the transaction and returns a ValidationResult
-func (t *Transaction) Validate(availableCategories []string) ValidationResult {
+func (t *Transaction) Validate(availableCategories []Category) ValidationResult {
 	result := ValidationResult{IsValid: true}
 
 	// Validate Amount
@@ -132,9 +131,9 @@ func (t *Transaction) Validate(availableCategories []string) ValidationResult {
 		result.AddError("description", err.Error())
 	}
 
-	// Validate Category
-	if err := t.validateCategory(availableCategories); err != nil {
-		result.AddError("category", err.Error())
+	// Validate CategoryId
+	if err := t.validateCategoryId(availableCategories); err != nil {
+		result.AddError("categoryId", err.Error())
 	}
 
 	return result
@@ -191,26 +190,24 @@ func (t *Transaction) validateDescription() error {
 	return nil
 }
 
-// validateCategory validates the category field
-func (t *Transaction) validateCategory(availableCategories []string) error {
-	trimmedCategory := strings.TrimSpace(t.Category)
-
-	if trimmedCategory == "" {
-		return fmt.Errorf("category cannot be empty")
+// validateCategoryId validates the categoryId field
+func (t *Transaction) validateCategoryId(availableCategories []Category) error {
+	if t.CategoryId == 0 {
+		return fmt.Errorf("category must be selected")
 	}
 
-	// Check if category exists in available categories
+	// Check if category ID exists in available categories
 	for _, category := range availableCategories {
-		if strings.EqualFold(category, trimmedCategory) {
+		if category.Id == t.CategoryId {
 			return nil
 		}
 	}
 
-	return fmt.Errorf("category '%s' is not available", trimmedCategory)
+	return fmt.Errorf("category ID %d is not available", t.CategoryId)
 }
 
 // ValidateField validates a single field and returns any error
-func (t *Transaction) ValidateField(field string, availableCategories []string) error {
+func (t *Transaction) ValidateField(field string, availableCategories []Category) error {
 	switch strings.ToLower(field) {
 	case "amount":
 		return t.validateAmount()
@@ -218,8 +215,8 @@ func (t *Transaction) ValidateField(field string, availableCategories []string) 
 		return t.validateDate()
 	case "description":
 		return t.validateDescription()
-	case "category":
-		return t.validateCategory(availableCategories)
+	case "categoryid", "category":
+		return t.validateCategoryId(availableCategories)
 	default:
 		return fmt.Errorf("unknown field: %s", field)
 	}
