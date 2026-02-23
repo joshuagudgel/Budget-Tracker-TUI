@@ -221,3 +221,113 @@ func (t *Transaction) ValidateField(field string, availableCategories []Category
 		return fmt.Errorf("unknown field: %s", field)
 	}
 }
+
+// Category validation methods
+
+// Validate validates the category and returns a ValidationResult
+func (c *Category) Validate(availableCategories []Category) ValidationResult {
+	result := ValidationResult{IsValid: true}
+
+	// Validate DisplayName
+	if err := c.validateDisplayName(); err != nil {
+		result.AddError("displayName", err.Error())
+	}
+
+	// Validate Color (optional field)
+	if err := c.validateColor(); err != nil {
+		result.AddError("color", err.Error())
+	}
+
+	// Validate ParentId
+	if err := c.validateParentId(availableCategories); err != nil {
+		result.AddError("parentId", err.Error())
+	}
+
+	return result
+}
+
+// validateDisplayName validates the category name
+func (c *Category) validateDisplayName() error {
+	trimmed := strings.TrimSpace(c.DisplayName)
+	if trimmed == "" {
+		return fmt.Errorf("category name cannot be empty")
+	}
+	if len(c.DisplayName) > 100 {
+		return fmt.Errorf("category name cannot exceed 100 characters")
+	}
+	return nil
+}
+
+// validateColor validates the color field (hex format)
+func (c *Category) validateColor() error {
+	if c.Color == "" {
+		return nil // Color is optional
+	}
+
+	if len(c.Color) != 7 || c.Color[0] != '#' {
+		return fmt.Errorf("color must be in format #RRGGBB")
+	}
+
+	for i := 1; i < 7; i++ {
+		ch := c.Color[i]
+		if !((ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'F') || (ch >= 'a' && ch <= 'f')) {
+			return fmt.Errorf("color must be a valid hex code")
+		}
+	}
+	return nil
+}
+
+// validateParentId validates the parent category relationship
+func (c *Category) validateParentId(availableCategories []Category) error {
+	if c.ParentId == nil {
+		return nil // Top-level category is valid
+	}
+
+	// Check if parent exists
+	parentExists := false
+	for _, cat := range availableCategories {
+		if cat.Id == *c.ParentId {
+			parentExists = true
+			break
+		}
+	}
+
+	if !parentExists {
+		return fmt.Errorf("selected parent category does not exist")
+	}
+
+	// Prevent circular reference
+	if *c.ParentId == c.Id {
+		return fmt.Errorf("category cannot be its own parent")
+	}
+
+	return nil
+}
+
+// ValidateField validates a single field and returns any error
+func (c *Category) ValidateField(field string, availableCategories []Category) error {
+	switch strings.ToLower(field) {
+	case "displayname", "name":
+		return c.validateDisplayName()
+	case "color":
+		return c.validateColor()
+	case "parentid", "parent":
+		return c.validateParentId(availableCategories)
+	default:
+		return fmt.Errorf("unknown field: %s", field)
+	}
+}
+
+// isValidHexColor is a helper function for hex color validation
+func isValidHexColor(color string) bool {
+	if len(color) != 7 || color[0] != '#' {
+		return false
+	}
+	for i := 1; i < 7; i++ {
+		c := color[i]
+		if !((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
+}

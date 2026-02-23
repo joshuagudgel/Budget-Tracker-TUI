@@ -211,3 +211,206 @@ func (tv *TransactionValidator) ValidateBulkEdit(transactions []*types.Transacti
 
 	return results
 }
+
+// CategoryManagementValidator provides validation for category CRUD operations
+type CategoryManagementValidator struct{}
+
+// NewCategoryManagementValidator creates a new category management validator
+func NewCategoryManagementValidator() *CategoryManagementValidator {
+	return &CategoryManagementValidator{}
+}
+
+// ValidateDisplayName validates a category display name
+func (cmv *CategoryManagementValidator) ValidateDisplayName(name string) error {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return fmt.Errorf("category name cannot be empty")
+	}
+	if len(name) > 100 {
+		return fmt.Errorf("category name cannot exceed 100 characters")
+	}
+	return nil
+}
+
+// ValidateColor validates a category color (hex format)
+func (cmv *CategoryManagementValidator) ValidateColor(color string) error {
+	if color == "" {
+		return nil // Color is optional
+	}
+
+	if len(color) != 7 || color[0] != '#' {
+		return fmt.Errorf("color must be in format #RRGGBB")
+	}
+
+	for i := 1; i < 7; i++ {
+		c := color[i]
+		if !((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')) {
+			return fmt.Errorf("color must be a valid hex code")
+		}
+	}
+	return nil
+}
+
+// ValidateParent validates parent category relationship
+func (cmv *CategoryManagementValidator) ValidateParent(parentId *int64, availableCategories []types.Category, currentId int64) error {
+	if parentId == nil {
+		return nil // Top-level category is valid
+	}
+
+	// Check if parent exists
+	parentExists := false
+	for _, cat := range availableCategories {
+		if cat.Id == *parentId {
+			parentExists = true
+			break
+		}
+	}
+
+	if !parentExists {
+		return fmt.Errorf("selected parent category does not exist")
+	}
+
+	// Prevent circular reference
+	if *parentId == currentId {
+		return fmt.Errorf("category cannot be its own parent")
+	}
+
+	// Check for deeper circular references (parent's parent chain)
+	if cmv.hasCircularReference(*parentId, currentId, availableCategories) {
+		return fmt.Errorf("circular reference detected in parent hierarchy")
+	}
+
+	return nil
+}
+
+// hasCircularReference checks for circular references in the parent hierarchy
+func (cmv *CategoryManagementValidator) hasCircularReference(parentId, targetId int64, categories []types.Category) bool {
+	visited := make(map[int64]bool)
+	current := parentId
+
+	for current != 0 {
+		if visited[current] {
+			return true // Circular reference detected
+		}
+		if current == targetId {
+			return true // Would create circular reference
+		}
+
+		visited[current] = true
+
+		// Find parent of current category
+		found := false
+		for _, cat := range categories {
+			if cat.Id == current {
+				if cat.ParentId != nil {
+					current = *cat.ParentId
+				} else {
+					current = 0 // Top-level category
+				}
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			break // Category not found, break loop
+		}
+	}
+
+	return false
+}
+
+// ValidateCategory validates an entire category for create/update operations
+func (cmv *CategoryManagementValidator) ValidateCategory(category *types.Category, availableCategories []types.Category) types.ValidationResult {
+	result := types.ValidationResult{IsValid: true}
+
+	// Validate DisplayName
+	if err := cmv.ValidateDisplayName(category.DisplayName); err != nil {
+		result.AddError("displayName", err.Error())
+	}
+
+	// Validate Color
+	if err := cmv.ValidateColor(category.Color); err != nil {
+		result.AddError("color", err.Error())
+	}
+
+	// Validate Parent relationship
+	if err := cmv.ValidateParent(category.ParentId, availableCategories, category.Id); err != nil {
+		result.AddError("parentId", err.Error())
+	}
+
+	return result
+}
+
+// ValidateCategoryField validates a single field of a category
+func (cmv *CategoryManagementValidator) ValidateCategoryField(category *types.Category, field string, availableCategories []types.Category) error {
+	switch strings.ToLower(field) {
+	case "displayname", "name":
+		return cmv.ValidateDisplayName(category.DisplayName)
+	case "color":
+		return cmv.ValidateColor(category.Color)
+	case "parentid", "parent":
+		return cmv.ValidateParent(category.ParentId, availableCategories, category.Id)
+	default:
+		return fmt.Errorf("unknown field: %s", field)
+	}
+}
+
+// ValidateForDeletion validates if a category can be safely deleted
+func (cmv *CategoryManagementValidator) ValidateForDeletion(categoryId int64, transactions []types.Transaction, categories []types.Category) error {
+	// Check if category is in use by transactions
+	for _, tx := range transactions {
+		if tx.CategoryId == categoryId {
+			return fmt.Errorf("cannot delete category: it is being used by transactions")
+		}
+	}
+
+	// Check if category has subcategories
+	for _, cat := range categories {
+		if cat.ParentId != nil && *cat.ParentId == categoryId {
+			return fmt.Errorf("cannot delete category: it has subcategories. Delete or reassign subcategories first")
+		}
+	}
+
+	return nil
+}
+
+// GetCategoryNameSuggestions returns category name suggestions based on partial input
+func (cmv *CategoryManagementValidator) GetCategoryNameSuggestions(partial string, existingCategories []types.Category) []string {
+	var suggestions []string
+	lowerPartial := strings.ToLower(strings.TrimSpace(partial))
+
+	// Common category names
+	commonCategories := []string{
+		"Food & Dining", "Transportation", "Entertainment", "Utilities", "Shopping",
+		"Healthcare", "Insurance", "Education", "Personal Care", "Home Improvement",
+		"Travel", "Subscriptions", "Income", "Investment", "Business",
+	}
+
+	for _, common := range commonCategories {
+		if strings.Contains(strings.ToLower(common), lowerPartial) {
+			// Check if not already exists
+			exists := false
+			for _, existing := range existingCategories {
+				if strings.EqualFold(existing.DisplayName, common) {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				suggestions = append(suggestions, common)
+			}
+		}
+	}
+
+	return suggestions
+}
+
+// GetColorSuggestions returns common color suggestions
+func (cmv *CategoryManagementValidator) GetColorSuggestions() []string {
+	return []string{
+		"#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FECA57",
+		"#FF9FF3", "#54A0FF", "#5F27CD", "#00D2D3", "#FF9F43",
+		"#FC427B", "#BDC3C7", "#6C5CE7", "#A29BFE", "#FD79A8",
+	}
+}
