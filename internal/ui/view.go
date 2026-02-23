@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"budget-tracker-tui/internal/types"
+
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -32,6 +34,17 @@ var (
 	notificationStyle = lipgloss.NewStyle().Background(lipgloss.Color("196")).Foreground(lipgloss.Color("15")).Padding(0, 1).MarginBottom(1)
 	warningStyle      = lipgloss.NewStyle().Background(lipgloss.Color("214")).Foreground(lipgloss.Color("0")).Padding(0, 1).MarginBottom(1)
 	successStyle      = lipgloss.NewStyle().Background(lipgloss.Color("46")).Foreground(lipgloss.Color("0")).Padding(0, 1).MarginBottom(1)
+
+	// Phase 4: Enhanced Category Management Styles
+	categoryHeaderStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("33")).Background(lipgloss.Color("240")).Padding(0, 1)
+	categorySelectedStyle  = lipgloss.NewStyle().Background(lipgloss.Color("99")).Foreground(lipgloss.Color("15")).Padding(0, 1)
+	categoryParentStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Faint(true)
+	categoryColorBadge     = lipgloss.NewStyle().Bold(true).Padding(0, 1).MarginRight(1)
+	categoryIdStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Width(4)
+	categoryHierarchyStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("99")).MarginRight(1)
+	formSectionStyle       = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240")).Padding(1).MarginBottom(1)
+	helpTextStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true).MarginTop(1)
+	statusIconStyle        = lipgloss.NewStyle().Bold(true).MarginRight(1)
 )
 
 func (m model) View() string {
@@ -991,67 +1004,70 @@ func (m model) getCategoryFieldStyle(fieldType uint, isEditing bool) lipgloss.St
 
 // Phase 3: New Category View Rendering Methods
 
-// renderCategoryListView renders the main category list view
+// renderCategoryListView renders the main category list view with enhanced styling
 func (m model) renderCategoryListView() string {
-	s := headerStyle.Render("Category Management") + "\n\n"
+	s := categoryHeaderStyle.Render("📂 Category Management") + "\n\n"
 
-	// Show validation notification if present
+	// Show status notification with appropriate styling
 	if m.categoryMessage != "" {
-		s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.categoryMessage) + "\n\n"
+		s += m.renderCategoryNotification(m.categoryMessage) + "\n\n"
 	}
 
 	if len(m.categories) == 0 {
-		s += faintStyle.Render("No categories found. Press 'n' to create your first category.") + "\n\n"
+		emptyMsg := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("244")).
+			Italic(true).
+			Align(lipgloss.Center).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("240")).
+			Padding(2, 4).
+			Render("📝 No categories found\n\nPress 'n' to create your first category")
+		s += emptyMsg + "\n\n"
 	} else {
-		s += "Categories:\n\n"
-		for i, category := range m.categories {
-			prefix := "  "
-			if i == m.selectedCategoryIdx {
-				prefix = "> "
+		// Category count and stats
+		topLevelCount := 0
+		childCount := 0
+		for _, cat := range m.categories {
+			if cat.ParentId == nil {
+				topLevelCount++
+			} else {
+				childCount++
 			}
+		}
+		statsText := fmt.Sprintf("📊 %d categories (%d top-level, %d subcategories)",
+			len(m.categories), topLevelCount, childCount)
+		s += faintStyle.Render(statsText) + "\n\n"
 
-			// Show hierarchy with indentation
-			indent := ""
-			if category.ParentId != nil {
-				indent = "    "
-			}
-
-			// Format category display
-			displayName := category.DisplayName
-			if category.Color != "" {
-				displayName = fmt.Sprintf("%s [%s]", displayName, category.Color)
-			}
-			
-			categoryLine := fmt.Sprintf("%s%s%d - %s", indent, prefix, category.Id, displayName)
-			
-			// Highlight selected category
-			if i == m.selectedCategoryIdx {
-				categoryLine = lipgloss.NewStyle().
-					Background(lipgloss.Color("240")).
-					Foreground(lipgloss.Color("15")).
-					Render(categoryLine)
-			}
-			
-			s += categoryLine + "\n"
+		// Categories list with hierarchical styling
+		hierarchicalCategories := m.getHierarchicalCategoryList()
+		for _, categoryItem := range hierarchicalCategories {
+			isSelected := m.categories[m.selectedCategoryIdx].Id == categoryItem.category.Id
+			s += m.renderHierarchicalCategoryItem(categoryItem, isSelected) + "\n"
 		}
 	}
 
-	s += "\n" + faintStyle.Render("Up/Down: Navigate | n: New Category | e: Edit | d: Delete | Esc: Return to menu")
+	// Enhanced help text with icons
+	helpText := "⌨️  Navigation: " + lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Render("↑↓") + " Navigate | " +
+		lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Render("n") + " New | " +
+		lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render("e") + " Edit | " +
+		lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("d") + " Delete | " +
+		lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render("Esc") + " Menu"
+	s += "\n" + helpTextStyle.Render(helpText)
 	return s
 }
 
-// renderCategoryEditView renders the category editing form
+// renderCategoryEditView renders the category editing form with enhanced styling
 func (m model) renderCategoryEditView() string {
-	title := "Edit Category"
+	title := "✏️  Edit Category"
 	if m.editingCategory.Id == 0 {
-		title = "Create Category"
+		title = "➕ Create New Category"
 	}
-	
-	s := headerStyle.Render(title) + "\n\n"
+
+	s := categoryHeaderStyle.Render(title) + "\n\n"
 
 	// Show validation notification if present
 	if m.categoryMessage != "" {
-		s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.categoryMessage) + "\n\n"
+		s += m.renderCategoryNotification(m.categoryMessage) + "\n\n"
 	}
 
 	// Parent selection mode
@@ -1059,58 +1075,37 @@ func (m model) renderCategoryEditView() string {
 		return s + m.renderParentCategorySelection()
 	}
 
-	// Display Name field
-	displayName := m.categoryFieldValues[categoryFieldDisplayName]
-	if m.categoryEditingField && m.categoryActiveField == categoryFieldDisplayName {
-		displayName = m.categoryEditingStr
-	}
-	displayStyle := m.getCategoryEditFieldStyle(categoryFieldDisplayName)
-	s += formLabelStyle.Render("Display Name:") + "\n" + displayStyle.Render(displayName) + "\n"
-	
-	// Show field error if present
-	if err, exists := m.categoryFieldErrors["displayName"]; exists {
-		s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(err) + "\n"
-	}
-	s += "\n"
+	// Form sections with enhanced styling
+	s += m.renderCategoryFormSection("Basic Information", []categoryFormField{
+		{
+			label:    "Display Name",
+			value:    m.categoryFieldValues[categoryFieldDisplayName],
+			field:    categoryFieldDisplayName,
+			required: true,
+			help:     "Unique name for this category",
+		},
+		{
+			label:    "Color Code",
+			value:    m.categoryFieldValues[categoryFieldColor],
+			field:    categoryFieldColor,
+			required: false,
+			help:     "Hex color code (e.g., #FF5733) for visual identification",
+		},
+	})
 
-	// Color field
-	color := m.categoryFieldValues[categoryFieldColor]
-	if m.categoryEditingField && m.categoryActiveField == categoryFieldColor {
-		color = m.categoryEditingStr
-	}
-	colorStyle := m.getCategoryEditFieldStyle(categoryFieldColor)
-	s += formLabelStyle.Render("Color (hex):") + "\n" + colorStyle.Render(color) + "\n"
-	
-	// Show field error if present
-	if err, exists := m.categoryFieldErrors["color"]; exists {
-		s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(err) + "\n"
-	}
-	s += "\n"
+	s += m.renderCategoryFormSection("Hierarchy", []categoryFormField{
+		{
+			label:    "Parent Category",
+			value:    m.getCategoryParentDisplay(),
+			field:    categoryFieldParent,
+			required: false,
+			help:     "Select a parent to create a subcategory",
+		},
+	})
 
-	// Parent field
-	parentDisplay := "None"
-	if m.selectedParentId != nil {
-		if parent := m.findCategoryById(*m.selectedParentId); parent != nil {
-			parentDisplay = parent.DisplayName
-		}
-	}
-	if m.categoryEditingField && m.categoryActiveField == categoryFieldParent {
-		parentDisplay = "[Selecting Parent...]"
-	}
-	parentStyle := m.getCategoryEditFieldStyle(categoryFieldParent)
-	s += formLabelStyle.Render("Parent Category:") + "\n" + parentStyle.Render(parentDisplay) + "\n"
-	
-	// Show field error if present
-	if err, exists := m.categoryFieldErrors["parentId"]; exists {
-		s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(err) + "\n"
-	}
-	s += "\n"
-
-	instructions := "Up/Down: Navigate | Enter/Backspace: Edit | Ctrl+S: Save | Esc: Cancel"
-	if m.categoryEditingField {
-		instructions = "Type to edit | Enter: Confirm | Esc: Cancel edit"
-	}
-	s += faintStyle.Render(instructions)
+	// Instructions with enhanced styling
+	instructions := m.renderCategoryFormInstructions()
+	s += "\n" + helpTextStyle.Render(instructions)
 
 	return s
 }
@@ -1120,28 +1115,61 @@ func (m model) renderCategoryCreateView() string {
 	return m.renderCategoryEditView()
 }
 
-// renderParentCategorySelection renders the parent selection interface
+// renderParentCategorySelection renders the parent selection interface with enhanced styling
 func (m model) renderParentCategorySelection() string {
-	s := "Select Parent Category:\n\n"
+	s := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("99")).
+		Background(lipgloss.Color("240")).
+		Padding(0, 1).
+		Render("🔍 Select Parent Category") + "\n\n"
 
-	// Add "None" option
-	prefix := "  "
+	// Selection instructions
+	s += faintStyle.Render("Choose a parent category or select 'None' for top-level category") + "\n\n"
+
+	// "None" option with enhanced styling
+	noneStyle := lipgloss.NewStyle()
 	if m.selectedParentIdx == -1 {
-		prefix = "> "
+		noneStyle = categorySelectedStyle.Width(50)
+		s += noneStyle.Render("▶ 🏠 None (Top Level Category)") + "\n"
+	} else {
+		s += "   🏠 None (Top Level Category)\n"
 	}
-	s += enumeratorStyle.Render(prefix) + "None (Top Level)\n"
 
-	// Show available parent categories (excluding self and children)
+	// Available parent categories
 	availableParents := m.getAvailableParentCategories()
-	for i, category := range availableParents {
-		prefix = "  "
-		if i == m.selectedParentIdx {
-			prefix = "> "
+	if len(availableParents) == 0 {
+		s += "\n" + faintStyle.Render("💡 No other categories available as parents")
+	} else {
+		s += "\n"
+		for i, category := range availableParents {
+			var line string
+
+			// Color indicator if available
+			colorIndicator := ""
+			if category.Color != "" && strings.HasPrefix(category.Color, "#") && len(category.Color) == 7 {
+				colorIndicator = categoryColorBadge.
+					Background(lipgloss.Color(category.Color[1:])).
+					Foreground(lipgloss.Color("15")).
+					Render("●") + " "
+			}
+
+			// Format the option
+			if i == m.selectedParentIdx {
+				line = categorySelectedStyle.Width(50).Render(fmt.Sprintf("▶ 📁 %s%s", colorIndicator, category.DisplayName))
+			} else {
+				line = fmt.Sprintf("   📁 %s%s", colorIndicator, category.DisplayName)
+			}
+			s += line + "\n"
 		}
-		s += enumeratorStyle.Render(prefix) + fmt.Sprintf("%d - %s\n", category.Id, category.DisplayName)
 	}
 
-	s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: Select | Esc: Cancel")
+	// Enhanced instructions
+	s += "\n" + helpTextStyle.Render(
+		"⌨️  "+lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Render("↑↓")+" Navigate • "+
+			lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Render("Enter")+" Select • "+
+			lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("Esc")+" Cancel")
+
 	return s
 }
 
@@ -1149,7 +1177,7 @@ func (m model) renderParentCategorySelection() string {
 func (m model) getCategoryEditFieldStyle(field int) lipgloss.Style {
 	isActive := m.categoryActiveField == field
 	isEditing := m.categoryEditingField && isActive
-	
+
 	// Convert field constant to field name
 	fieldName := ""
 	switch field {
@@ -1160,7 +1188,7 @@ func (m model) getCategoryEditFieldStyle(field int) lipgloss.Style {
 	case categoryFieldParent:
 		fieldName = "parentId"
 	}
-	
+
 	// Check for validation errors first
 	if _, hasError := m.categoryFieldErrors[fieldName]; hasError {
 		return errorFieldStyle
@@ -1178,4 +1206,283 @@ func (m model) getCategoryEditFieldStyle(field int) lipgloss.Style {
 
 	// Default state
 	return formFieldStyle
+}
+
+// Phase 4: Enhanced Category Rendering Helper Methods
+
+// renderCategoryNotification renders category status messages with appropriate styling
+func (m model) renderCategoryNotification(message string) string {
+	if message == "" {
+		return ""
+	}
+
+	// Determine notification type based on message content
+	if strings.Contains(message, "successfully") || strings.Contains(message, "created") || strings.Contains(message, "updated") {
+		return statusIconStyle.Foreground(lipgloss.Color("46")).Render("✅") +
+			successStyle.Render(message)
+	} else if strings.Contains(message, "Error") || strings.Contains(message, "error") || strings.Contains(message, "Cannot") {
+		return statusIconStyle.Foreground(lipgloss.Color("9")).Render("❌") +
+			notificationStyle.Render(message)
+	} else if strings.Contains(message, "validation") || strings.Contains(message, "fix") {
+		return statusIconStyle.Foreground(lipgloss.Color("214")).Render("⚠️") +
+			warningStyle.Render(message)
+	} else {
+		return statusIconStyle.Foreground(lipgloss.Color("33")).Render("ℹ️") +
+			lipgloss.NewStyle().Foreground(lipgloss.Color("33")).Render(message)
+	}
+}
+
+// renderCategoryItem renders a single category item with enhanced styling
+func (m model) renderCategoryItem(category types.Category, index int, isSelected bool) string {
+	var parts []string
+
+	// Hierarchy indicator
+	hierarchyIcon := ""
+	indent := ""
+	if category.ParentId != nil {
+		hierarchyIcon = categoryHierarchyStyle.Render("├─")
+		indent = "   "
+	} else {
+		hierarchyIcon = categoryHierarchyStyle.Render("📁")
+	}
+
+	// Selection indicator
+	selector := "   "
+	if isSelected {
+		selector = categorySelectedStyle.Render(" ▶ ")
+	}
+
+	// Category ID (right-aligned in fixed width)
+	idDisplay := categoryIdStyle.Render(fmt.Sprintf("%3d", category.Id))
+
+	// Color badge if color is set
+	colorBadge := ""
+	if category.Color != "" {
+		// Parse hex color for display
+		if strings.HasPrefix(category.Color, "#") && len(category.Color) == 7 {
+			colorBadge = categoryColorBadge.
+				Background(lipgloss.Color(category.Color[1:])).
+				Foreground(lipgloss.Color("15")).
+				Render("●")
+		} else {
+			colorBadge = categoryColorBadge.
+				Foreground(lipgloss.Color("244")).
+				Render(fmt.Sprintf("[%s]", category.Color))
+		}
+	}
+
+	// Category name with appropriate styling
+	nameStyle := lipgloss.NewStyle()
+	if isSelected {
+		nameStyle = nameStyle.Bold(true).Foreground(lipgloss.Color("15"))
+	} else if category.ParentId != nil {
+		nameStyle = categoryParentStyle
+	}
+
+	categoryName := nameStyle.Render(category.DisplayName)
+
+	// Combine all parts
+	parts = append(parts, indent+hierarchyIcon, selector, idDisplay, colorBadge, categoryName)
+
+	line := strings.Join(parts, " ")
+
+	// Apply selection styling to entire line if selected
+	if isSelected {
+		return categorySelectedStyle.Width(60).Render(line)
+	}
+
+	return line
+}
+
+// renderHierarchicalCategoryItem renders a category item with proper hierarchical indentation
+func (m model) renderHierarchicalCategoryItem(item hierarchicalCategoryItem, isSelected bool) string {
+	var parts []string
+	category := item.category
+
+	// Calculate indentation based on level
+	baseIndent := strings.Repeat("  ", item.level)
+	hierarchyIcon := ""
+
+	if item.level == 0 {
+		// Top-level category
+		hierarchyIcon = categoryHierarchyStyle.Render("📁")
+	} else {
+		// Subcategory - use different icons based on level
+		if item.level == 1 {
+			hierarchyIcon = categoryHierarchyStyle.Render("├─")
+		} else {
+			// Deeper nesting
+			hierarchyIcon = categoryHierarchyStyle.Render("  └─")
+		}
+	}
+
+	// Selection indicator
+	selector := "   "
+	if isSelected {
+		selector = categorySelectedStyle.Render(" ▶ ")
+	}
+
+	// Category ID (right-aligned in fixed width)
+	idDisplay := categoryIdStyle.Render(fmt.Sprintf("%3d", category.Id))
+
+	// Color badge if color is set
+	colorBadge := ""
+	if category.Color != "" {
+		// Parse hex color for display
+		if strings.HasPrefix(category.Color, "#") && len(category.Color) == 7 {
+			colorBadge = categoryColorBadge.
+				Background(lipgloss.Color(category.Color[1:])).
+				Foreground(lipgloss.Color("15")).
+				Render("●")
+		} else {
+			colorBadge = categoryColorBadge.
+				Foreground(lipgloss.Color("244")).
+				Render(fmt.Sprintf("[%s]", category.Color))
+		}
+	}
+
+	// Category name with appropriate styling
+	nameStyle := lipgloss.NewStyle()
+	if isSelected {
+		nameStyle = nameStyle.Bold(true).Foreground(lipgloss.Color("15"))
+	} else if item.level > 0 {
+		nameStyle = categoryParentStyle
+	}
+
+	categoryName := nameStyle.Render(category.DisplayName)
+
+	// Combine all parts with proper indentation
+	parts = append(parts, baseIndent+hierarchyIcon, selector, idDisplay, colorBadge, categoryName)
+
+	line := strings.Join(parts, " ")
+
+	// Apply selection styling to entire line if selected
+	if isSelected {
+		return categorySelectedStyle.Width(60 + len(baseIndent)).Render(line)
+	}
+
+	return line
+}
+
+// categoryFormField represents a form field for category editing
+type categoryFormField struct {
+	label    string
+	value    string
+	field    int
+	required bool
+	help     string
+}
+
+// renderCategoryFormSection renders a form section with enhanced styling
+func (m model) renderCategoryFormSection(sectionTitle string, fields []categoryFormField) string {
+	s := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("33")).
+		MarginTop(1).
+		Render("📋 "+sectionTitle) + "\n\n"
+
+	for _, fieldDef := range fields {
+		s += m.renderCategoryFormField(fieldDef) + "\n"
+	}
+
+	return s
+}
+
+// renderCategoryFormField renders a single form field with enhanced styling
+func (m model) renderCategoryFormField(fieldDef categoryFormField) string {
+	var s string
+
+	// Field label with required indicator
+	label := fieldDef.label
+	if fieldDef.required {
+		label += " *"
+	}
+	labelStyle := formLabelStyle
+	if m.categoryActiveField == fieldDef.field {
+		labelStyle = labelStyle.Foreground(lipgloss.Color("99")).Bold(true)
+	}
+	s += labelStyle.Render(label+":") + "\n"
+
+	// Field value
+	value := fieldDef.value
+	if m.categoryEditingField && m.categoryActiveField == fieldDef.field {
+		value = m.categoryEditingStr
+	}
+
+	// Special handling for parent field
+	if fieldDef.field == categoryFieldParent && m.categoryEditingField && m.categoryActiveField == categoryFieldParent {
+		value = "🔍 [Selecting Parent...]"
+	}
+
+	// Field styling
+	fieldStyle := m.getCategoryEditFieldStyle(fieldDef.field)
+
+	// Color preview for color field
+	if fieldDef.field == categoryFieldColor && value != "" && strings.HasPrefix(value, "#") && len(value) == 7 {
+		colorPreview := categoryColorBadge.
+			Background(lipgloss.Color(value[1:])).
+			Foreground(lipgloss.Color("15")).
+			Render("●")
+		s += fieldStyle.Render(value) + " " + colorPreview + "\n"
+	} else {
+		s += fieldStyle.Render(value) + "\n"
+	}
+
+	// Field error
+	fieldName := m.getFieldNameFromConstant(fieldDef.field)
+	if err, exists := m.categoryFieldErrors[fieldName]; exists {
+		s += statusIconStyle.Foreground(lipgloss.Color("9")).Render("❌") +
+			lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(" "+err) + "\n"
+	}
+
+	// Field help text (only show when field is active)
+	if m.categoryActiveField == fieldDef.field && fieldDef.help != "" && !m.categoryEditingField {
+		s += lipgloss.NewStyle().
+			Foreground(lipgloss.Color("244")).
+			Italic(true).
+			MarginLeft(2).
+			Render("💡 "+fieldDef.help) + "\n"
+	}
+
+	s += "\n"
+	return s
+}
+
+// getCategoryParentDisplay gets the display text for parent field
+func (m model) getCategoryParentDisplay() string {
+	if m.selectedParentId != nil {
+		if parent := m.findCategoryById(*m.selectedParentId); parent != nil {
+			return "📁 " + parent.DisplayName
+		}
+	}
+	return "🏠 None (Top Level)"
+}
+
+// renderCategoryFormInstructions renders context-sensitive instructions
+func (m model) renderCategoryFormInstructions() string {
+	if m.categoryEditingField {
+		return "⌨️  Type to edit • " +
+			lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Render("Enter") + " Confirm • " +
+			lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("Esc") + " Cancel"
+	} else {
+		return "⌨️  Navigation: " +
+			lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Render("↑↓") + " Fields • " +
+			lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render("Enter/Backspace") + " Edit • " +
+			lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Render("Ctrl+S") + " Save • " +
+			lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("Esc") + " Cancel"
+	}
+}
+
+// getFieldNameFromConstant converts field constant to string name
+func (m model) getFieldNameFromConstant(field int) string {
+	switch field {
+	case categoryFieldDisplayName:
+		return "displayName"
+	case categoryFieldColor:
+		return "color"
+	case categoryFieldParent:
+		return "parentId"
+	default:
+		return ""
+	}
 }

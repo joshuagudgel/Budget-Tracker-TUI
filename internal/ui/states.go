@@ -18,9 +18,9 @@ const (
 	statementHistoryView      = 13
 	statementOverlapView      = 14
 	// Phase 3: Enhanced Category Management States
-	categoryListView          = 15
-	categoryEditView          = 16
-	categoryCreateView        = 17
+	categoryListView   = 15
+	categoryEditView   = 16
+	categoryCreateView = 17
 )
 
 // Edit field constants

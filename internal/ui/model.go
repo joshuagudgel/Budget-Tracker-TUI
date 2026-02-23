@@ -100,23 +100,23 @@ type model struct {
 	splitEditingCategory2 string
 
 	// Phase 3: Enhanced Category Management State
-	categories           []types.Category        // All available categories
-	selectedCategoryIdx  int                     // Currently selected category in list
-	editingCategory      types.Category          // Category being edited/created
-	categoryActiveField  int                     // Currently active field index
-	categoryEditingField bool                    // Whether currently editing a field
-	categoryFieldErrors  map[string]string       // Field-specific validation errors
-	categoryFields       []string                // Field names for category editing
-	categoryFieldValues  map[int]string          // Current field values indexed by field constant
-	categoryEditingStr   string                  // Current editing text for active field
+	categories           []types.Category                        // All available categories
+	selectedCategoryIdx  int                                     // Currently selected category in list
+	editingCategory      types.Category                          // Category being edited/created
+	categoryActiveField  int                                     // Currently active field index
+	categoryEditingField bool                                    // Whether currently editing a field
+	categoryFieldErrors  map[string]string                       // Field-specific validation errors
+	categoryFields       []string                                // Field names for category editing
+	categoryFieldValues  map[int]string                          // Current field values indexed by field constant
+	categoryEditingStr   string                                  // Current editing text for active field
 	validator            *validation.TransactionValidator        // Transaction validator instance
 	categoryValidator    *validation.CategoryManagementValidator // Category validator instance
 
 	// Category selection and hierarchy
-	selectedParentId     *int64                  // Selected parent category ID
-	selectedParentIdx    int                     // Index for parent category selection  
-	isSelectingParent    bool                    // Whether in parent selection mode
-	availableParents     []types.Category        // Categories available for parent selection
+	selectedParentId  *int64           // Selected parent category ID
+	selectedParentIdx int              // Index for parent category selection
+	isSelectingParent bool             // Whether in parent selection mode
+	availableParents  []types.Category // Categories available for parent selection
 
 	// Multi-select / bulk edit mode
 	isMultiSelectMode        bool
@@ -738,7 +738,7 @@ func (m *model) deleteCategoryWithValidation() tea.Cmd {
 	}
 
 	categoryToDelete := m.categories[m.selectedCategoryIdx]
-	
+
 	// Check if category can be deleted
 	err := m.store.ValidateCategoryForDeletion(categoryToDelete.Id)
 	if err != nil {
@@ -762,6 +762,145 @@ func (m *model) deleteCategoryWithValidation() tea.Cmd {
 	}
 
 	return m.loadCategories()
+}
+
+// Phase 4: Hierarchical Navigation Methods
+
+// hierarchicalCategoryItem represents a category with its nesting level
+type hierarchicalCategoryItem struct {
+	category types.Category
+	level    int // 0 for top-level, 1+ for nested levels
+}
+
+// getHierarchicalCategoryList returns categories organized hierarchically
+func (m model) getHierarchicalCategoryList() []hierarchicalCategoryItem {
+	var hierarchical []hierarchicalCategoryItem
+
+	// First, add all top-level categories
+	for _, category := range m.categories {
+		if category.ParentId == nil {
+			hierarchical = append(hierarchical, hierarchicalCategoryItem{
+				category: category,
+				level:    0,
+			})
+
+			// Then add all children of this category
+			children := m.getCategoryChildren(category.Id, 1)
+			hierarchical = append(hierarchical, children...)
+		}
+	}
+
+	return hierarchical
+}
+
+// getCategoryChildren recursively gets all children of a category at the specified level
+func (m model) getCategoryChildren(parentId int64, level int) []hierarchicalCategoryItem {
+	var children []hierarchicalCategoryItem
+
+	for _, category := range m.categories {
+		if category.ParentId != nil && *category.ParentId == parentId {
+			children = append(children, hierarchicalCategoryItem{
+				category: category,
+				level:    level,
+			})
+
+			// Recursively get children of this category
+			grandchildren := m.getCategoryChildren(category.Id, level+1)
+			children = append(children, grandchildren...)
+		}
+	}
+
+	return children
+}
+
+// navigateCategoryUp moves selection up in the hierarchical category list
+func (m *model) navigateCategoryUp() {
+	if len(m.categories) == 0 {
+		return
+	}
+
+	// Ensure selectedCategoryIdx is within bounds
+	if m.selectedCategoryIdx < 0 {
+		m.selectedCategoryIdx = 0
+		return
+	}
+	if m.selectedCategoryIdx >= len(m.categories) {
+		m.selectedCategoryIdx = len(m.categories) - 1
+		return
+	}
+
+	hierarchical := m.getHierarchicalCategoryList()
+	if len(hierarchical) == 0 {
+		return
+	}
+
+	currentId := m.categories[m.selectedCategoryIdx].Id
+	currentPos := -1
+
+	// Find current position in hierarchical list
+	for i, item := range hierarchical {
+		if item.category.Id == currentId {
+			currentPos = i
+			break
+		}
+	}
+
+	// Move to previous item if possible
+	if currentPos > 0 {
+		newCategory := hierarchical[currentPos-1].category
+		// Find the index in the flat categories array
+		for i, cat := range m.categories {
+			if cat.Id == newCategory.Id {
+				m.selectedCategoryIdx = i
+				break
+			}
+		}
+	}
+}
+
+// navigateCategoryDown moves selection down in the hierarchical category list
+func (m *model) navigateCategoryDown() {
+	if len(m.categories) == 0 {
+		return
+	}
+
+	// Ensure selectedCategoryIdx is within bounds
+	if m.selectedCategoryIdx < 0 {
+		m.selectedCategoryIdx = 0
+		return
+	}
+	if m.selectedCategoryIdx >= len(m.categories) {
+		m.selectedCategoryIdx = len(m.categories) - 1
+		return
+	}
+
+	hierarchical := m.getHierarchicalCategoryList()
+	if len(hierarchical) == 0 {
+		return
+	}
+
+	currentId := m.categories[m.selectedCategoryIdx].Id
+	currentPos := -1
+
+	// Find current position in hierarchical list
+	for i, item := range hierarchical {
+		if item.category.Id == currentId {
+			currentPos = i
+			break
+		}
+	}
+
+	// Move to next item if possible
+	if currentPos >= 0 && currentPos < len(hierarchical)-1 {
+		newCategory := hierarchical[currentPos+1].category
+		// Find the index in the flat categories array
+		for i, cat := range m.categories {
+			if cat.Id == newCategory.Id {
+				m.selectedCategoryIdx = i
+				break
+			}
+		}
+	}
 }
 
 // handleCategoryFieldBackspace handles backspace during field editing

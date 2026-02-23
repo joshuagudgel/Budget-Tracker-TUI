@@ -12,13 +12,9 @@ import (
 func (m model) handleCategoryListView(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "up":
-		if m.selectedCategoryIdx > 0 {
-			m.selectedCategoryIdx--
-		}
+		m.navigateCategoryUp()
 	case "down":
-		if m.selectedCategoryIdx < len(m.categories)-1 {
-			m.selectedCategoryIdx++
-		}
+		m.navigateCategoryDown()
 	case "n":
 		// Create new category
 		m.state = categoryCreateView
@@ -79,7 +75,7 @@ func (m model) handleCategoryEditView(key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleCategoryCreateView handles category creation 
+// handleCategoryCreateView handles category creation
 func (m model) handleCategoryCreateView(key string) (tea.Model, tea.Cmd) {
 	// Delegate to edit view handler since they use the same logic
 	return m.handleCategoryEditView(key)
