@@ -141,10 +141,6 @@ func (m model) View() string {
 	case categoryView:
 		s += headerStyle.Render("Category Management") + "\n\n"
 
-		// Show current default category
-		currentDefault := m.store.GetDefaultCategory()
-		s += faintStyle.Render(fmt.Sprintf("Current Default: %s", currentDefault)) + "\n\n"
-
 		categories, _ := m.store.GetCategories()
 		if len(categories) == 0 {
 			s += faintStyle.Render("No categories found.") + "\n\n"
@@ -156,19 +152,13 @@ func (m model) View() string {
 					prefix = "> "
 				}
 
-				// Show default indicator
-				suffix := ""
-				if category.Name == currentDefault {
-					suffix = " (default)"
-				}
-
 				// Show category details
-				categoryDetails := fmt.Sprintf("%s - %s%s", category.Name, category.DisplayName, suffix)
+				categoryDetails := fmt.Sprintf("%s - %s", category.Name, category.DisplayName)
 				s += enumeratorStyle.Render(prefix) + categoryDetails + "\n"
 			}
 		}
 
-		s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: Set Default | c: Create Category | Esc: Return to menu")
+		s += "\n" + faintStyle.Render("Up/Down: Navigate | c: Create Category | Esc: Return to menu")
 
 	case createCategoryView:
 		s += headerStyle.Render("Create Category") + "\n\n"

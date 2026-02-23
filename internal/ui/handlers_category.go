@@ -18,19 +18,6 @@ func (m model) handleCategoryView(key string) (tea.Model, tea.Cmd) {
 		if m.categoryIndex < len(categories)-1 {
 			m.categoryIndex++
 		}
-	case "enter":
-		// Set selected category as default
-		categories, _ := m.store.GetCategories()
-		if len(categories) > 0 && m.categoryIndex < len(categories) {
-			selectedCategory := categories[m.categoryIndex]
-
-			result := m.store.SetDefaultCategory(selectedCategory.Name)
-			if result.Success {
-				m.categoryMessage = result.Message
-			} else {
-				m.categoryMessage = result.Message
-			}
-		}
 	case "c":
 		m.state = createCategoryView
 		m.createCategoryField = createCategoryName

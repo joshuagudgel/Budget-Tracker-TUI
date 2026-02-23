@@ -83,6 +83,16 @@ func (s *Store) calculateNextId() int64 {
 	return maxId + 1
 }
 
+func (s *Store) calculateNextCategoryId() int64 {
+	var maxId int64 = 0
+	for _, cat := range s.categories.Categories {
+		if cat.Id > maxId {
+			maxId = cat.Id
+		}
+	}
+	return maxId + 1
+}
+
 func (s *Store) SaveTransactions() error {
 	data, err := json.MarshalIndent(s.transactions, "", "  ")
 	if err != nil {
@@ -632,6 +642,7 @@ func (s *Store) ParseAmount(amountStr string) (float64, error) {
 type CategoryStore struct {
 	Categories []types.Category `json:"categories"`
 	Default    string           `json:"default"`
+	NextId     int64            `json:"nextId"`
 }
 
 type CategoryResult struct {
@@ -709,16 +720,18 @@ func (s *Store) SetDefaultCategory(categoryName string) *CategoryResult {
 func (s *Store) loadCategories() error {
 	if _, err := os.Stat(s.categoryName); os.IsNotExist(err) {
 		// Create default categories
+		now := time.Now().Format(time.RFC3339)
 		s.categories = CategoryStore{
 			Categories: []types.Category{
-				{Name: "food", DisplayName: "Food & Dining"},
-				{Name: "transport", DisplayName: "Transportation"},
-				{Name: "entertainment", DisplayName: "Entertainment"},
-				{Name: "utilities", DisplayName: "Utilities"},
-				{Name: "unsorted", DisplayName: "Unsorted"},
-				{Name: "sorted", DisplayName: "Sorted"},
+				{Id: 1, Name: "food", DisplayName: "Food & Dining", IsActive: true, CreatedAt: now, UpdatedAt: now},
+				{Id: 2, Name: "transport", DisplayName: "Transportation", IsActive: true, CreatedAt: now, UpdatedAt: now},
+				{Id: 3, Name: "entertainment", DisplayName: "Entertainment", IsActive: true, CreatedAt: now, UpdatedAt: now},
+				{Id: 4, Name: "utilities", DisplayName: "Utilities", IsActive: true, CreatedAt: now, UpdatedAt: now},
+				{Id: 5, Name: "unsorted", DisplayName: "Unsorted", IsActive: true, CreatedAt: now, UpdatedAt: now},
+				{Id: 6, Name: "sorted", DisplayName: "Sorted", IsActive: true, CreatedAt: now, UpdatedAt: now},
 			},
 			Default: "unsorted",
+			NextId:  7,
 		}
 		return s.SaveCategories()
 	}
@@ -728,7 +741,17 @@ func (s *Store) loadCategories() error {
 		return err
 	}
 
-	return json.Unmarshal(data, &s.categories)
+	err = json.Unmarshal(data, &s.categories)
+	if err != nil {
+		return err
+	}
+
+	// Initialize NextId if not set or calculate from existing categories
+	if s.categories.NextId == 0 {
+		s.categories.NextId = s.calculateNextCategoryId()
+	}
+
+	return nil
 }
 
 func (s *Store) SaveCategories() error {
@@ -751,12 +774,18 @@ func (s *Store) AddCategory(name, displayName string) error {
 		}
 	}
 
+	now := time.Now().Format(time.RFC3339)
 	category := types.Category{
+		Id:          s.categories.NextId,
 		Name:        name,
 		DisplayName: displayName,
+		IsActive:    true,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 
 	s.categories.Categories = append(s.categories.Categories, category)
+	s.categories.NextId++
 	return s.SaveCategories()
 }
 
