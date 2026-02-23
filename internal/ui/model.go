@@ -99,6 +99,25 @@ type model struct {
 	splitEditingCategory1 string
 	splitEditingCategory2 string
 
+	// Phase 3: Enhanced Category Management State
+	categories           []types.Category        // All available categories
+	selectedCategoryIdx  int                     // Currently selected category in list
+	editingCategory      types.Category          // Category being edited/created
+	categoryActiveField  int                     // Currently active field index
+	categoryEditingField bool                    // Whether currently editing a field
+	categoryFieldErrors  map[string]string       // Field-specific validation errors
+	categoryFields       []string                // Field names for category editing
+	categoryFieldValues  map[int]string          // Current field values indexed by field constant
+	categoryEditingStr   string                  // Current editing text for active field
+	validator            *validation.TransactionValidator        // Transaction validator instance
+	categoryValidator    *validation.CategoryManagementValidator // Category validator instance
+
+	// Category selection and hierarchy
+	selectedParentId     *int64                  // Selected parent category ID
+	selectedParentIdx    int                     // Index for parent category selection  
+	isSelectingParent    bool                    // Whether in parent selection mode
+	availableParents     []types.Category        // Categories available for parent selection
+
 	// Multi-select / bulk edit mode
 	isMultiSelectMode        bool
 	selectedTxIds            map[int64]bool
@@ -138,7 +157,6 @@ type model struct {
 	fieldErrors            map[string]string
 	hasValidationErrors    bool
 	validationNotification string
-	validator              *validation.TransactionValidator
 }
 
 // NewModel creates a new model instance
@@ -204,6 +222,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleCreateTemplateView(key)
 		case categoryView:
 			return m.handleCategoryView(key)
+		case categoryListView:
+			return m.handleCategoryListView(key)
+		case categoryEditView:
+			return m.handleCategoryEditView(key)
+		case categoryCreateView:
+			return m.handleCategoryCreateView(key)
 		case createCategoryView:
 			return m.handleCreateCategoryView(key)
 		case bulkEditView:
@@ -437,5 +461,334 @@ func (m *model) clearFieldError(field string) {
 		m.buildValidationNotification()
 	} else {
 		m.validationNotification = ""
+	}
+}
+
+// Phase 3: Category Management Methods
+
+// validateCurrentCategory validates the current category and updates field errors
+func (m *model) validateCurrentCategory() {
+	if m.categoryValidator == nil {
+		m.categoryValidator = validation.NewCategoryManagementValidator()
+	}
+
+	m.categoryFieldErrors = make(map[string]string)
+	m.hasValidationErrors = false
+
+	// Validate entire category
+	result := m.editingCategory.Validate(m.categories)
+	if !result.IsValid {
+		for _, err := range result.Errors {
+			m.categoryFieldErrors[err.Field] = err.Message
+			m.hasValidationErrors = true
+		}
+	}
+}
+
+// validateCategoryField validates a single category field
+func (m *model) validateCategoryField(field string) {
+	if m.categoryValidator == nil {
+		m.categoryValidator = validation.NewCategoryManagementValidator()
+	}
+
+	err := m.editingCategory.ValidateField(field, m.categories)
+	if err != nil {
+		m.categoryFieldErrors[field] = err.Error()
+		m.hasValidationErrors = true
+	} else {
+		delete(m.categoryFieldErrors, field)
+		// Check if any other fields have errors
+		m.hasValidationErrors = len(m.categoryFieldErrors) > 0
+	}
+}
+
+// clearCategoryFieldError clears error for specific field
+func (m *model) clearCategoryFieldError(field string) {
+	delete(m.categoryFieldErrors, field)
+	m.hasValidationErrors = len(m.categoryFieldErrors) > 0
+}
+
+// initCategoryFields initializes category field names and validation state
+func (m *model) initCategoryFields() {
+	m.categoryFields = []string{"displayName", "color", "parentId"}
+	m.categoryFieldErrors = make(map[string]string)
+	m.categoryFieldValues = make(map[int]string)
+	m.hasValidationErrors = false
+	if m.categoryValidator == nil {
+		m.categoryValidator = validation.NewCategoryManagementValidator()
+	}
+
+	// Initialize field values from current category
+	m.categoryFieldValues[categoryFieldDisplayName] = m.editingCategory.DisplayName
+	m.categoryFieldValues[categoryFieldColor] = m.editingCategory.Color
+	m.categoryFieldValues[categoryFieldParent] = ""
+}
+
+// loadCategories loads categories from store
+func (m *model) loadCategories() tea.Cmd {
+	categories, err := m.store.GetCategories()
+	if err != nil {
+		m.categoryMessage = "Error loading categories: " + err.Error()
+	} else {
+		m.categories = categories
+		m.categoryMessage = ""
+	}
+	return nil
+}
+
+// Category Field Navigation and Editing
+
+// handleCategoryFieldNavigation navigates between category fields
+func (m *model) handleCategoryFieldNavigation(direction int) {
+	if direction > 0 && m.categoryActiveField < len(m.categoryFields)-1 {
+		m.categoryActiveField++
+	} else if direction < 0 && m.categoryActiveField > 0 {
+		m.categoryActiveField--
+	}
+}
+
+// activateCategoryFieldEditing activates field editing (returns model, cmd)
+func (m model) activateCategoryFieldEditing() (tea.Model, tea.Cmd) {
+	// Inline the field activation logic
+	if m.categoryActiveField >= 0 && m.categoryActiveField < len(m.categoryFields) {
+		field := m.categoryFields[m.categoryActiveField]
+		if field == "parentId" {
+			return m, m.enterParentCategorySelection()
+		} else {
+			m.categoryEditingField = true
+			// Load current field value into editing string
+			if value, exists := m.categoryFieldValues[m.categoryActiveField]; exists {
+				m.categoryEditingStr = value
+			}
+		}
+	}
+	return m, nil
+}
+
+// activateCategoryFieldEditingWithBackspace activates field editing with backspace (returns model, cmd)
+func (m model) activateCategoryFieldEditingWithBackspace() (tea.Model, tea.Cmd) {
+	// Inline the backspace activation logic
+	if m.categoryActiveField >= 0 && m.categoryActiveField < len(m.categoryFields) {
+		field := m.categoryFields[m.categoryActiveField]
+		if field != "parentId" { // Only text fields support backspace activation
+			m.categoryEditingField = true
+			// Load current field value and remove last character
+			if value, exists := m.categoryFieldValues[m.categoryActiveField]; exists {
+				m.categoryEditingStr = value
+				if len(m.categoryEditingStr) > 0 {
+					m.categoryEditingStr = m.categoryEditingStr[:len(m.categoryEditingStr)-1]
+				}
+			}
+		}
+	}
+	return m, nil
+}
+
+// Category Field Input Handling
+
+// handleCategoryFieldEdit handles text input during field editing
+func (m *model) handleCategoryFieldEdit(key string) tea.Cmd {
+	switch key {
+	case "enter", "esc":
+		if key == "enter" {
+			// Save the editing value to the field values map
+			m.categoryFieldValues[m.categoryActiveField] = m.categoryEditingStr
+			// Update the actual category struct
+			m.updateCategoryFromFieldValues()
+		}
+		m.categoryEditingField = false
+		m.categoryEditingStr = ""
+		return nil
+	case "backspace":
+		if len(m.categoryEditingStr) > 0 {
+			m.categoryEditingStr = m.categoryEditingStr[:len(m.categoryEditingStr)-1]
+		}
+		return nil
+	default:
+		if len(key) == 1 {
+			m.categoryEditingStr += key
+		}
+		return nil
+	}
+}
+
+// updateCategoryFromFieldValues updates the editing category from field values
+func (m *model) updateCategoryFromFieldValues() {
+	if displayName, exists := m.categoryFieldValues[categoryFieldDisplayName]; exists {
+		m.editingCategory.DisplayName = displayName
+	}
+	if color, exists := m.categoryFieldValues[categoryFieldColor]; exists {
+		m.editingCategory.Color = color
+	}
+}
+
+// Parent Category Selection Methods
+
+// enterParentCategorySelection enters parent selection mode
+func (m *model) enterParentCategorySelection() tea.Cmd {
+	m.isSelectingParent = true
+	m.selectedParentIdx = -1 // Start with "None" selected
+	m.availableParents = m.getAvailableParentCategories()
+	return nil
+}
+
+// getAvailableParentCategories returns categories that can be parents
+func (m *model) getAvailableParentCategories() []types.Category {
+	var available []types.Category
+	for _, cat := range m.categories {
+		// Can't be parent of itself or if it would create circular reference
+		if cat.Id != m.editingCategory.Id && !m.wouldCreateCircularReference(cat.Id) {
+			available = append(available, cat)
+		}
+	}
+	return available
+}
+
+// wouldCreateCircularReference checks if making catId a parent would create circular reference
+func (m *model) wouldCreateCircularReference(catId int64) bool {
+	// For now, simple check - can be enhanced with full hierarchy traversal
+	return m.editingCategory.ParentId != nil && *m.editingCategory.ParentId == catId
+}
+
+// handleParentCategorySelection handles parent selection navigation
+func (m *model) handleParentCategorySelection(key string) tea.Cmd {
+	switch key {
+	case "up":
+		if m.selectedParentIdx > -1 {
+			m.selectedParentIdx--
+		}
+	case "down":
+		if m.selectedParentIdx < len(m.availableParents)-1 {
+			m.selectedParentIdx++
+		}
+	case "enter":
+		m.selectParentCategory()
+		m.isSelectingParent = false
+		return nil
+	case "esc":
+		m.isSelectingParent = false
+		return nil
+	}
+	return nil
+}
+
+// selectParentCategory selects the current parent category
+func (m *model) selectParentCategory() {
+	if m.selectedParentIdx == -1 {
+		// "None" selected
+		m.selectedParentId = nil
+		m.editingCategory.ParentId = nil
+	} else if m.selectedParentIdx >= 0 && m.selectedParentIdx < len(m.availableParents) {
+		// Specific parent selected
+		parentId := m.availableParents[m.selectedParentIdx].Id
+		m.selectedParentId = &parentId
+		m.editingCategory.ParentId = &parentId
+	}
+}
+
+// findCategoryById finds a category by ID
+func (m *model) findCategoryById(id int64) *types.Category {
+	for i := range m.categories {
+		if m.categories[i].Id == id {
+			return &m.categories[i]
+		}
+	}
+	return nil
+}
+
+// CRUD Operations
+
+// saveCategoryAndReturn saves the current category and returns to list
+func (m *model) saveCategoryAndReturn() (tea.Model, tea.Cmd) {
+	// Validate before saving
+	m.validateCurrentCategory()
+	if m.hasValidationErrors {
+		m.categoryMessage = "Please fix validation errors before saving"
+		return m, nil
+	}
+
+	var err error
+	if m.editingCategory.Id == 0 {
+		// Create new category
+		err = m.store.CreateCategoryFull(&m.editingCategory)
+		if err != nil {
+			m.categoryMessage = "Error creating category: " + err.Error()
+		} else {
+			m.categoryMessage = "Category created successfully"
+		}
+	} else {
+		// Update existing category
+		err = m.store.UpdateCategory(&m.editingCategory)
+		if err != nil {
+			m.categoryMessage = "Error updating category: " + err.Error()
+		} else {
+			m.categoryMessage = "Category updated successfully"
+		}
+	}
+
+	m.state = categoryListView
+	return m, m.loadCategories()
+}
+
+// deleteCategoryWithValidation deletes category with safety checks
+func (m *model) deleteCategoryWithValidation() tea.Cmd {
+	if m.selectedCategoryIdx < 0 || m.selectedCategoryIdx >= len(m.categories) {
+		m.categoryMessage = "No category selected for deletion"
+		return nil
+	}
+
+	categoryToDelete := m.categories[m.selectedCategoryIdx]
+	
+	// Check if category can be deleted
+	err := m.store.ValidateCategoryForDeletion(categoryToDelete.Id)
+	if err != nil {
+		m.categoryMessage = "Cannot delete category: " + err.Error()
+		return nil
+	}
+
+	// Perform deletion
+	err = m.store.DeleteCategory(categoryToDelete.Id)
+	if err != nil {
+		m.categoryMessage = "Error deleting category: " + err.Error()
+	} else {
+		m.categoryMessage = fmt.Sprintf("Category '%s' deleted successfully", categoryToDelete.DisplayName)
+		// Adjust selection if needed
+		if m.selectedCategoryIdx >= len(m.categories)-1 {
+			m.selectedCategoryIdx = len(m.categories) - 2
+			if m.selectedCategoryIdx < 0 {
+				m.selectedCategoryIdx = 0
+			}
+		}
+	}
+
+	return m.loadCategories()
+}
+
+// handleCategoryFieldBackspace handles backspace during field editing
+func (m *model) handleCategoryFieldBackspace() {
+	if !m.categoryEditingField {
+		return
+	}
+
+	field := m.categoryFields[m.categoryActiveField]
+	switch field {
+	case "displayName":
+		if len(m.editingCategory.DisplayName) > 0 {
+			m.editingCategory.DisplayName = m.editingCategory.DisplayName[:len(m.editingCategory.DisplayName)-1]
+		}
+	case "color":
+		if len(m.editingCategory.Color) > 0 {
+			m.editingCategory.Color = m.editingCategory.Color[:len(m.editingCategory.Color)-1]
+		}
+	}
+}
+
+// appendToCategoryField appends character to current field
+func (m *model) appendToCategoryField(field, char string) {
+	switch field {
+	case "displayName":
+		m.editingCategory.DisplayName += char
+	case "color":
+		m.editingCategory.Color += char
 	}
 }

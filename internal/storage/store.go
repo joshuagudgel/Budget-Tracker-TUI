@@ -889,7 +889,7 @@ func (s *Store) CreateCategoryFull(category *types.Category) error {
 	// Add to store
 	s.categories.Categories = append(s.categories.Categories, *category)
 	s.categories.NextId++
-	
+
 	return s.SaveCategories()
 }
 
@@ -930,7 +930,7 @@ func (s *Store) UpdateCategory(category *types.Category) error {
 
 	// Update the category
 	s.categories.Categories[categoryIndex] = *category
-	
+
 	return s.SaveCategories()
 }
 
@@ -970,7 +970,7 @@ func (s *Store) DeleteCategory(categoryId int64) error {
 
 	// Remove the category
 	s.categories.Categories = append(
-		s.categories.Categories[:categoryIndex], 
+		s.categories.Categories[:categoryIndex],
 		s.categories.Categories[categoryIndex+1:]...,
 	)
 
@@ -980,21 +980,21 @@ func (s *Store) DeleteCategory(categoryId int64) error {
 // GetCategoryHierarchy returns categories sorted by parent-child relationship
 func (s *Store) GetCategoryHierarchy() []types.Category {
 	var result []types.Category
-	
+
 	// Helper function to recursively add children
 	var addChildren func(parentId *int64, level int)
 	addChildren = func(parentId *int64, level int) {
 		for _, cat := range s.categories.Categories {
 			// Check if this category belongs at this level
 			if (parentId == nil && cat.ParentId == nil) ||
-			   (parentId != nil && cat.ParentId != nil && *cat.ParentId == *parentId) {
+				(parentId != nil && cat.ParentId != nil && *cat.ParentId == *parentId) {
 				result = append(result, cat)
 				// Recursively add children of this category
 				addChildren(&cat.Id, level+1)
 			}
 		}
 	}
-	
+
 	// Start with top-level categories (no parent)
 	addChildren(nil, 0)
 	return result
@@ -1029,7 +1029,7 @@ func (s *Store) ValidateCategoryForDeletion(categoryId int64) error {
 	}
 
 	if transactionCount > 0 {
-		return fmt.Errorf("cannot delete category '%s': it is being used by %d transaction(s)", 
+		return fmt.Errorf("cannot delete category '%s': it is being used by %d transaction(s)",
 			targetCategory.DisplayName, transactionCount)
 	}
 
@@ -1061,11 +1061,11 @@ func (s *Store) ValidateCategoryForDeletion(categoryId int64) error {
 // (excludes the category itself and its descendants to prevent circular references)
 func (s *Store) GetCategoriesForParentSelection(excludeCategoryId int64) []types.Category {
 	var result []types.Category
-	
+
 	// Get all descendants of the excluded category
 	excludeIds := make(map[int64]bool)
 	excludeIds[excludeCategoryId] = true
-	
+
 	// Helper to find all descendants
 	var findDescendants func(parentId int64)
 	findDescendants = func(parentId int64) {
@@ -1078,16 +1078,16 @@ func (s *Store) GetCategoriesForParentSelection(excludeCategoryId int64) []types
 			}
 		}
 	}
-	
+
 	findDescendants(excludeCategoryId)
-	
+
 	// Return categories not in the exclude list
 	for _, cat := range s.categories.Categories {
 		if !excludeIds[cat.Id] {
 			result = append(result, cat)
 		}
 	}
-	
+
 	return result
 }
 

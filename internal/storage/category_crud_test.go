@@ -24,11 +24,11 @@ func createTestStore(t *testing.T) *storage.Store {
 	})
 
 	store := &storage.Store{}
-	
+
 	// Initialize store with test directory
 	// We need to simulate the Init() method but with our temp directory
 	// Since Init() uses home directory, we'll create a minimal test setup
-	
+
 	return store
 }
 
@@ -40,7 +40,7 @@ func uniqueCategoryName(prefix string) string {
 
 func TestCreateCategoryFull(t *testing.T) {
 	store := createTestStore(t)
-	
+
 	// Initialize basic category store for testing
 	err := store.Init()
 	if err != nil {
@@ -48,9 +48,9 @@ func TestCreateCategoryFull(t *testing.T) {
 	}
 
 	tests := []struct {
-		name        string
-		category    *types.Category
-		expectError bool
+		name          string
+		category      *types.Category
+		expectError   bool
 		errorContains string
 	}{
 		{
@@ -77,7 +77,7 @@ func TestCreateCategoryFull(t *testing.T) {
 				DisplayName: "",
 				Color:       "#FF0000",
 			},
-			expectError: true,
+			expectError:   true,
 			errorContains: "empty",
 		},
 		{
@@ -86,7 +86,7 @@ func TestCreateCategoryFull(t *testing.T) {
 				DisplayName: uniqueCategoryName("ValidName"),
 				Color:       "invalid-color",
 			},
-			expectError: true,
+			expectError:   true,
 			errorContains: "color",
 		},
 		{
@@ -94,7 +94,7 @@ func TestCreateCategoryFull(t *testing.T) {
 			category: &types.Category{
 				DisplayName: "Food & Dining", // This should already exist from default categories
 			},
-			expectError: true,
+			expectError:   true,
 			errorContains: "already exists",
 		},
 	}
@@ -102,7 +102,7 @@ func TestCreateCategoryFull(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := store.CreateCategoryFull(tt.category)
-			
+
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("Expected error but got none")
@@ -176,10 +176,10 @@ func TestUpdateCategory(t *testing.T) {
 	}
 
 	tests := []struct {
-		name          string
+		name           string
 		updateCategory *types.Category
-		expectError   bool
-		errorContains string
+		expectError    bool
+		errorContains  string
 	}{
 		{
 			name: "Valid category update",
@@ -197,7 +197,7 @@ func TestUpdateCategory(t *testing.T) {
 				DisplayName: uniqueCategoryName("NonExistent"),
 				Color:       "#FF0000",
 			},
-			expectError: true,
+			expectError:   true,
 			errorContains: "not found",
 		},
 		{
@@ -207,7 +207,7 @@ func TestUpdateCategory(t *testing.T) {
 				DisplayName: "",
 				Color:       "#FF0000",
 			},
-			expectError: true,
+			expectError:   true,
 			errorContains: "empty",
 		},
 	}
@@ -215,7 +215,7 @@ func TestUpdateCategory(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := store.UpdateCategory(tt.updateCategory)
-			
+
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("Expected error but got none")
@@ -231,7 +231,7 @@ func TestUpdateCategory(t *testing.T) {
 					if updatedCategory == nil {
 						t.Errorf("Updated category not found")
 					} else if updatedCategory.DisplayName != tt.updateCategory.DisplayName {
-						t.Errorf("Category name not updated. Expected '%s', got '%s'", 
+						t.Errorf("Category name not updated. Expected '%s', got '%s'",
 							tt.updateCategory.DisplayName, updatedCategory.DisplayName)
 					}
 				}
@@ -319,7 +319,7 @@ func TestDeleteCategory(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := store.DeleteCategory(tt.categoryId)
-			
+
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("Expected error but got none")
@@ -472,7 +472,7 @@ func TestValidateCategoryForDeletion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := store.ValidateCategoryForDeletion(tt.categoryId)
-			
+
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("Expected error but got none")
@@ -519,7 +519,7 @@ func TestGetCategoriesForParentSelection(t *testing.T) {
 
 	// Test parent selection (should exclude the category itself)
 	availableParents := store.GetCategoriesForParentSelection(parentId)
-	
+
 	// Verify the category itself is not in the list
 	for _, cat := range availableParents {
 		if cat.Id == parentId {
@@ -564,8 +564,8 @@ func TestNextCategoryId(t *testing.T) {
 
 // Helper function for case-insensitive string contains check
 func containsIgnoreCase(s, substr string) bool {
-	return len(s) >= len(substr) && 
-		   (substr == "" || 
+	return len(s) >= len(substr) &&
+		(substr == "" ||
 			findSubstring(strings.ToLower(s), strings.ToLower(substr)))
 }
 

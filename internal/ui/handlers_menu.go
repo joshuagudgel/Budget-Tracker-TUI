@@ -14,9 +14,10 @@ func (m model) handleMenuView(key string) (tea.Model, tea.Cmd) {
 		m.state = bankStatementView
 		m.statementMessage = ""
 	case "c":
-		m.state = categoryView
+		m.state = categoryListView
 		m.categoryMessage = ""
-		m.categoryIndex = 0
+		m.selectedCategoryIdx = 0
+		return m, m.loadCategories()
 	case "q":
 		return m, tea.Quit
 	}

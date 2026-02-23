@@ -26,6 +26,7 @@ var (
 
 	// Selection mode indicators (add these)
 	selectingFieldStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("208")).Padding(0, 1).Width(30) // Orange border for selecting
+	errorFieldStyle     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("9")).Padding(0, 1).Width(30)   // Red border for validation errors
 
 	// Notification styles
 	notificationStyle = lipgloss.NewStyle().Background(lipgloss.Color("196")).Foreground(lipgloss.Color("15")).Padding(0, 1).MarginBottom(1)
@@ -159,6 +160,15 @@ func (m model) View() string {
 		}
 
 		s += "\n" + faintStyle.Render("Up/Down: Navigate | c: Create Category | Esc: Return to menu")
+
+	case categoryListView:
+		s += m.renderCategoryListView()
+
+	case categoryEditView:
+		s += m.renderCategoryEditView()
+
+	case categoryCreateView:
+		s += m.renderCategoryCreateView()
 
 	case createCategoryView:
 		s += headerStyle.Render("Create Category") + "\n\n"
@@ -977,4 +987,195 @@ func (m model) getFieldStyle(fieldName string, isActive bool, isEditing bool) li
 func (m model) getCategoryFieldStyle(fieldType uint, isEditing bool) lipgloss.Style {
 	isActive := m.createCategoryField == fieldType
 	return m.getFieldStyle("category", isActive, isEditing)
+}
+
+// Phase 3: New Category View Rendering Methods
+
+// renderCategoryListView renders the main category list view
+func (m model) renderCategoryListView() string {
+	s := headerStyle.Render("Category Management") + "\n\n"
+
+	// Show validation notification if present
+	if m.categoryMessage != "" {
+		s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.categoryMessage) + "\n\n"
+	}
+
+	if len(m.categories) == 0 {
+		s += faintStyle.Render("No categories found. Press 'n' to create your first category.") + "\n\n"
+	} else {
+		s += "Categories:\n\n"
+		for i, category := range m.categories {
+			prefix := "  "
+			if i == m.selectedCategoryIdx {
+				prefix = "> "
+			}
+
+			// Show hierarchy with indentation
+			indent := ""
+			if category.ParentId != nil {
+				indent = "    "
+			}
+
+			// Format category display
+			displayName := category.DisplayName
+			if category.Color != "" {
+				displayName = fmt.Sprintf("%s [%s]", displayName, category.Color)
+			}
+			
+			categoryLine := fmt.Sprintf("%s%s%d - %s", indent, prefix, category.Id, displayName)
+			
+			// Highlight selected category
+			if i == m.selectedCategoryIdx {
+				categoryLine = lipgloss.NewStyle().
+					Background(lipgloss.Color("240")).
+					Foreground(lipgloss.Color("15")).
+					Render(categoryLine)
+			}
+			
+			s += categoryLine + "\n"
+		}
+	}
+
+	s += "\n" + faintStyle.Render("Up/Down: Navigate | n: New Category | e: Edit | d: Delete | Esc: Return to menu")
+	return s
+}
+
+// renderCategoryEditView renders the category editing form
+func (m model) renderCategoryEditView() string {
+	title := "Edit Category"
+	if m.editingCategory.Id == 0 {
+		title = "Create Category"
+	}
+	
+	s := headerStyle.Render(title) + "\n\n"
+
+	// Show validation notification if present
+	if m.categoryMessage != "" {
+		s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.categoryMessage) + "\n\n"
+	}
+
+	// Parent selection mode
+	if m.isSelectingParent {
+		return s + m.renderParentCategorySelection()
+	}
+
+	// Display Name field
+	displayName := m.categoryFieldValues[categoryFieldDisplayName]
+	if m.categoryEditingField && m.categoryActiveField == categoryFieldDisplayName {
+		displayName = m.categoryEditingStr
+	}
+	displayStyle := m.getCategoryEditFieldStyle(categoryFieldDisplayName)
+	s += formLabelStyle.Render("Display Name:") + "\n" + displayStyle.Render(displayName) + "\n"
+	
+	// Show field error if present
+	if err, exists := m.categoryFieldErrors["displayName"]; exists {
+		s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(err) + "\n"
+	}
+	s += "\n"
+
+	// Color field
+	color := m.categoryFieldValues[categoryFieldColor]
+	if m.categoryEditingField && m.categoryActiveField == categoryFieldColor {
+		color = m.categoryEditingStr
+	}
+	colorStyle := m.getCategoryEditFieldStyle(categoryFieldColor)
+	s += formLabelStyle.Render("Color (hex):") + "\n" + colorStyle.Render(color) + "\n"
+	
+	// Show field error if present
+	if err, exists := m.categoryFieldErrors["color"]; exists {
+		s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(err) + "\n"
+	}
+	s += "\n"
+
+	// Parent field
+	parentDisplay := "None"
+	if m.selectedParentId != nil {
+		if parent := m.findCategoryById(*m.selectedParentId); parent != nil {
+			parentDisplay = parent.DisplayName
+		}
+	}
+	if m.categoryEditingField && m.categoryActiveField == categoryFieldParent {
+		parentDisplay = "[Selecting Parent...]"
+	}
+	parentStyle := m.getCategoryEditFieldStyle(categoryFieldParent)
+	s += formLabelStyle.Render("Parent Category:") + "\n" + parentStyle.Render(parentDisplay) + "\n"
+	
+	// Show field error if present
+	if err, exists := m.categoryFieldErrors["parentId"]; exists {
+		s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(err) + "\n"
+	}
+	s += "\n"
+
+	instructions := "Up/Down: Navigate | Enter/Backspace: Edit | Ctrl+S: Save | Esc: Cancel"
+	if m.categoryEditingField {
+		instructions = "Type to edit | Enter: Confirm | Esc: Cancel edit"
+	}
+	s += faintStyle.Render(instructions)
+
+	return s
+}
+
+// renderCategoryCreateView delegates to edit view since they're identical
+func (m model) renderCategoryCreateView() string {
+	return m.renderCategoryEditView()
+}
+
+// renderParentCategorySelection renders the parent selection interface
+func (m model) renderParentCategorySelection() string {
+	s := "Select Parent Category:\n\n"
+
+	// Add "None" option
+	prefix := "  "
+	if m.selectedParentIdx == -1 {
+		prefix = "> "
+	}
+	s += enumeratorStyle.Render(prefix) + "None (Top Level)\n"
+
+	// Show available parent categories (excluding self and children)
+	availableParents := m.getAvailableParentCategories()
+	for i, category := range availableParents {
+		prefix = "  "
+		if i == m.selectedParentIdx {
+			prefix = "> "
+		}
+		s += enumeratorStyle.Render(prefix) + fmt.Sprintf("%d - %s\n", category.Id, category.DisplayName)
+	}
+
+	s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: Select | Esc: Cancel")
+	return s
+}
+
+// getCategoryEditFieldStyle returns the appropriate style for category editing fields
+func (m model) getCategoryEditFieldStyle(field int) lipgloss.Style {
+	isActive := m.categoryActiveField == field
+	isEditing := m.categoryEditingField && isActive
+	
+	// Convert field constant to field name
+	fieldName := ""
+	switch field {
+	case categoryFieldDisplayName:
+		fieldName = "displayName"
+	case categoryFieldColor:
+		fieldName = "color"
+	case categoryFieldParent:
+		fieldName = "parentId"
+	}
+	
+	// Check for validation errors first
+	if _, hasError := m.categoryFieldErrors[fieldName]; hasError {
+		return errorFieldStyle
+	}
+
+	// Then check editing state
+	if isEditing {
+		return selectingFieldStyle
+	}
+
+	// Then check active state
+	if isActive {
+		return activeFieldStyle
+	}
+
+	// Default state
+	return formFieldStyle
 }

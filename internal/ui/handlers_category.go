@@ -6,7 +6,88 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Category management handlers
+// Phase 3: Enhanced Category Management Handlers
+
+// handleCategoryListView handles the main category list view
+func (m model) handleCategoryListView(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "up":
+		if m.selectedCategoryIdx > 0 {
+			m.selectedCategoryIdx--
+		}
+	case "down":
+		if m.selectedCategoryIdx < len(m.categories)-1 {
+			m.selectedCategoryIdx++
+		}
+	case "n":
+		// Create new category
+		m.state = categoryCreateView
+		m.editingCategory = types.Category{}
+		m.initCategoryFields()
+		m.categoryActiveField = 0
+		m.categoryEditingField = false
+		m.categoryMessage = ""
+		return m, m.loadCategories()
+	case "e":
+		// Edit selected category
+		if m.selectedCategoryIdx >= 0 && m.selectedCategoryIdx < len(m.categories) {
+			m.state = categoryEditView
+			m.editingCategory = m.categories[m.selectedCategoryIdx]
+			m.initCategoryFields()
+			m.categoryActiveField = 0
+			m.categoryEditingField = false
+			m.categoryMessage = ""
+		}
+		return m, nil
+	case "d":
+		// Delete selected category
+		return m, m.deleteCategoryWithValidation()
+	case "q", "esc":
+		m.state = menuView
+	}
+	return m, nil
+}
+
+// handleCategoryEditView handles category editing (both create and edit)
+func (m model) handleCategoryEditView(key string) (tea.Model, tea.Cmd) {
+	// Handle parent selection mode
+	if m.isSelectingParent {
+		return m, m.handleParentCategorySelection(key)
+	}
+
+	// Handle field editing mode
+	if m.categoryEditingField {
+		return m, m.handleCategoryFieldEdit(key)
+	}
+
+	// Handle field navigation and activation
+	switch key {
+	case "up":
+		m.handleCategoryFieldNavigation(-1)
+	case "down":
+		m.handleCategoryFieldNavigation(1)
+	case "enter":
+		return m.activateCategoryFieldEditing()
+	case "backspace":
+		return m.activateCategoryFieldEditingWithBackspace()
+	case "ctrl+s":
+		return m.saveCategoryAndReturn()
+	case "esc":
+		m.state = categoryListView
+		return m, m.loadCategories()
+	}
+	return m, nil
+}
+
+// handleCategoryCreateView handles category creation 
+func (m model) handleCategoryCreateView(key string) (tea.Model, tea.Cmd) {
+	// Delegate to edit view handler since they use the same logic
+	return m.handleCategoryEditView(key)
+}
+
+// Legacy category handlers (maintaining backwards compatibility)
+
+// handleCategoryView handles the legacy category view
 func (m model) handleCategoryView(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "up":
@@ -19,16 +100,21 @@ func (m model) handleCategoryView(key string) (tea.Model, tea.Cmd) {
 			m.categoryIndex++
 		}
 	case "c":
-		m.state = createCategoryView
-		m.createCategoryField = createCategoryName
-		m.newCategory = types.Category{}
+		// Redirect to new category creation view
+		m.state = categoryCreateView
+		m.editingCategory = types.Category{}
+		m.initCategoryFields()
+		m.categoryActiveField = 0
+		m.categoryEditingField = false
 		m.categoryMessage = ""
+		return m, m.loadCategories()
 	case "esc":
 		m.state = menuView
 	}
 	return m, nil
 }
 
+// handleCreateCategoryView handles legacy category creation
 func (m model) handleCreateCategoryView(key string) (tea.Model, tea.Cmd) {
 	// Handle active editing states
 	if m.isEditingCategoryDisplayName {
@@ -48,14 +134,11 @@ func (m model) handleCreateCategoryView(key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// Category field navigation
-func (m model) handleCreateCategoryFieldNavigation(direction int) (tea.Model, tea.Cmd) {
-	if direction > 0 && m.createCategoryField < createCategoryDisplayName {
-		m.createCategoryField++
-	} else if direction < 0 && m.createCategoryField > createCategoryName {
-		m.createCategoryField--
-	}
-	return m, nil
+// Legacy field editing methods (for backwards compatibility)
+
+func (m model) handleCategoryFieldActivation() (tea.Model, tea.Cmd) {
+	// Only handle DisplayName field now
+	return m.enterCategoryDisplayNameEditing()
 }
 
 func (m model) handleCategoryBackspaceActivation() (tea.Model, tea.Cmd) {
@@ -63,13 +146,6 @@ func (m model) handleCategoryBackspaceActivation() (tea.Model, tea.Cmd) {
 	return m.enterCategoryDisplayNameEditingWithBackspace()
 }
 
-func (m model) handleCategoryFieldActivation() (tea.Model, tea.Cmd) {
-	// Only handle DisplayName field now
-	return m.enterCategoryDisplayNameEditing()
-}
-
-// Only DisplayName editing functions are now needed
-// Category Display Name editing functions
 func (m model) enterCategoryDisplayNameEditing() (tea.Model, tea.Cmd) {
 	m.isEditingCategoryDisplayName = true
 	m.editingCategoryDisplayNameStr = m.newCategory.DisplayName

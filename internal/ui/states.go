@@ -17,6 +17,10 @@ const (
 	bankStatementView         = 12
 	statementHistoryView      = 13
 	statementOverlapView      = 14
+	// Phase 3: Enhanced Category Management States
+	categoryListView          = 15
+	categoryEditView          = 16
+	categoryCreateView        = 17
 )
 
 // Edit field constants
@@ -57,4 +61,11 @@ const (
 	bulkEditDate
 	bulkEditCategory
 	bulkEditType
+)
+
+// Phase 3: Category field constants (using int to match model field types)
+const (
+	categoryFieldDisplayName int = iota
+	categoryFieldColor
+	categoryFieldParent
 )
