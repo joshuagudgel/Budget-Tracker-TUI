@@ -60,6 +60,16 @@ func (m model) handleStatementHistoryView(key string) (tea.Model, tea.Cmd) {
 			m.statementMessage = "Error: " + err.Error()
 		}
 		m.state = bankStatementView
+	case "u":
+		// Initialize undo confirmation
+		if len(statements) > 0 && m.statementIndex >= 0 && m.statementIndex < len(statements) {
+			stmt := statements[m.statementIndex]
+			if m.store.CanUndoImport(stmt.Id) {
+				m.initUndoConfirmation(m.statementIndex)
+			} else {
+				m.statementMessage = "Cannot undo this import - invalid status or already undone"
+			}
+		}
 	case "esc":
 		m.state = bankStatementView
 	}
@@ -78,6 +88,17 @@ func (m model) handleStatementOverlapView(key string) (tea.Model, tea.Cmd) {
 		m.state = bankStatementView
 	case "n", "esc":
 		m.state = bankStatementView
+	}
+	return m, nil
+}
+
+// handleUndoConfirmView handles the undo confirmation view
+func (m model) handleUndoConfirmView(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "y":
+		m.executeUndo()
+	case "n", "esc":
+		m.state = statementHistoryView
 	}
 	return m, nil
 }

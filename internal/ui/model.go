@@ -153,6 +153,12 @@ type model struct {
 	backupMessage string
 	importMessage string
 
+	// Undo import functionality
+	undoStatementId   int64
+	undoStatementName string
+	undoTxCount       int
+	undoMessage       string
+
 	// Validation state
 	fieldErrors            map[string]string
 	hasValidationErrors    bool
@@ -238,6 +244,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleStatementHistoryView(key)
 		case statementOverlapView:
 			return m.handleStatementOverlapView(key)
+		case undoConfirmView:
+			return m.handleUndoConfirmView(key)
 		}
 	case tea.WindowSizeMsg:
 		m.windowHeight = msg.Height
@@ -268,6 +276,43 @@ func (m *model) validateCurrentTransaction() {
 		}
 		m.buildValidationNotification()
 	}
+}
+
+// initUndoConfirmation prepares the undo confirmation view
+func (m *model) initUndoConfirmation(statementIndex int) {
+	statements := m.store.GetStatementHistory()
+	if statementIndex >= 0 && statementIndex < len(statements) {
+		stmt := statements[statementIndex]
+		m.undoStatementId = stmt.Id
+		m.undoStatementName = stmt.Filename
+		m.undoTxCount = stmt.TxCount
+		m.undoMessage = ""
+		m.state = undoConfirmView
+	}
+}
+
+// executeUndo performs the actual undo operation
+func (m *model) executeUndo() {
+	if !m.store.CanUndoImport(m.undoStatementId) {
+		m.undoMessage = "Cannot undo this import - statement not in completed/override status"
+		return
+	}
+
+	removedCount, err := m.store.UndoImport(m.undoStatementId)
+	if err != nil {
+		m.undoMessage = fmt.Sprintf("Error during undo: %v", err)
+		return
+	}
+
+	// Refresh transactions
+	m.transactions, _ = m.store.GetTransactions()
+
+	// Set success message
+	m.statementMessage = fmt.Sprintf("Successfully undone import of %s - removed %d transactions",
+		m.undoStatementName, removedCount)
+
+	// Return to statement history view
+	m.state = statementHistoryView
 }
 
 // validateBulkEditData validates bulk edit values and updates field errors

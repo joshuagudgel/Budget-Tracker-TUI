@@ -423,7 +423,10 @@ func (m model) View() string {
 			}
 		}
 
-		s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: View Details | Esc: Back")
+		s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: View Details | u: Undo Import | Esc: Back")
+
+	case undoConfirmView:
+		return m.renderUndoConfirmView()
 
 	case statementOverlapView:
 		s += headerStyle.Render("Import Overlap Warning") + "\n\n"
@@ -1485,4 +1488,27 @@ func (m model) getFieldNameFromConstant(field int) string {
 	default:
 		return ""
 	}
+}
+
+// renderUndoConfirmView renders the undo import confirmation view
+func (m model) renderUndoConfirmView() string {
+	s := headerStyle.Render("Confirm Undo Import") + "\n\n"
+
+	// Warning message
+	s += lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Render(
+		"⚠ This action will permanently remove all transactions from this import:") + "\n\n"
+
+	// Statement details
+	s += formLabelStyle.Render("File:") + " " + headerStyle.Render(m.undoStatementName) + "\n"
+	s += formLabelStyle.Render("Transactions:") + " " + headerStyle.Render(fmt.Sprintf("%d", m.undoTxCount)) + "\n\n"
+
+	// Error message if any
+	if m.undoMessage != "" {
+		s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.undoMessage) + "\n\n"
+	}
+
+	s += faintStyle.Render("This action cannot be undone. Your transaction data will be modified.") + "\n\n"
+	s += faintStyle.Render("y: Confirm Undo | n: Cancel | Esc: Cancel")
+
+	return s
 }

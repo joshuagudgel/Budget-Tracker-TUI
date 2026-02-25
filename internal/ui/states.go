@@ -17,10 +17,10 @@ const (
 	bankStatementView         = 12
 	statementHistoryView      = 13
 	statementOverlapView      = 14
-	// Phase 3: Enhanced Category Management States
-	categoryListView   = 15
-	categoryEditView   = 16
-	categoryCreateView = 17
+	categoryListView          = 15
+	categoryEditView          = 16
+	categoryCreateView        = 17
+	undoConfirmView           = 18
 )
 
 // Edit field constants

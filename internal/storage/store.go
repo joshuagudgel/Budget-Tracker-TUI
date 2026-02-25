@@ -199,6 +199,7 @@ func (s *Store) SplitTransaction(parentId int64, splits []types.Transaction) err
 	secondSplit.Id = s.nextId
 	secondSplit.Date = parent.Date                       // Ensure same date as original
 	secondSplit.TransactionType = parent.TransactionType // Ensure same type
+	secondSplit.StatementId = parent.StatementId         // Inherit statement ID from parent
 	now := time.Now().Format(time.RFC3339)
 	secondSplit.CreatedAt = now
 	secondSplit.UpdatedAt = now
@@ -304,15 +305,21 @@ func (s *Store) ImportCSVWithOverride(templateName string) *types.ImportResult {
 		}
 	}
 
-	s.transactions = append(s.transactions, transactions...)
-
-	// Record statement with override status
+	// Record statement with override status first to get statement ID
 	result.PeriodStart, result.PeriodEnd = s.ExtractPeriodFromTransactions(transactions)
 	filename := filepath.Base(s.importName)
+	statementId := s.statements.NextId
 	err = s.RecordBankStatement(filename, result.PeriodStart, result.PeriodEnd, templateName, len(transactions), "override")
 	if err != nil {
 		log.Printf("Failed to record statement: %v", err)
 	}
+
+	// Set StatementId on all transactions to link them to the statement
+	for i := range transactions {
+		transactions[i].StatementId = fmt.Sprintf("%d", statementId)
+	}
+
+	s.transactions = append(s.transactions, transactions...)
 
 	err = s.SaveTransactions()
 	if err != nil {
@@ -512,16 +519,22 @@ func (s *Store) ImportTransactionsFromCSV(templateName string) error {
 		return fmt.Errorf("OVERLAP_DETECTED")
 	}
 
-	// Add transactions and record statement
-	s.transactions = append(s.transactions, importedTransactions...)
-
-	// Record successful import
+	// Record successful import first to get statement ID
 	filename := filepath.Base(s.importName)
+	statementId := s.statements.NextId
 	err = s.RecordBankStatement(filename, periodStart, periodEnd, templateName, len(importedTransactions), "completed")
 	if err != nil {
 		// Log error but don't fail the import
 		log.Printf("Failed to record statement: %v", err)
 	}
+
+	// Set StatementId on all transactions to link them to the statement
+	for i := range importedTransactions {
+		importedTransactions[i].StatementId = fmt.Sprintf("%d", statementId)
+	}
+
+	// Add transactions to store
+	s.transactions = append(s.transactions, importedTransactions...)
 
 	return s.SaveTransactions()
 }
@@ -1323,6 +1336,52 @@ func (s *Store) SaveBankStatements() error {
 		return err
 	}
 	return os.WriteFile(s.statementName, data, 0644)
+}
+
+// UndoImport removes all transactions from a specific statement import
+func (s *Store) UndoImport(statementId int64) (int, error) {
+	var removedCount int
+	var remainingTransactions []types.Transaction
+
+	for _, tx := range s.transactions {
+		if tx.StatementId != fmt.Sprintf("%d", statementId) {
+			remainingTransactions = append(remainingTransactions, tx)
+		} else {
+			removedCount++
+		}
+	}
+
+	s.transactions = remainingTransactions
+
+	// Update statement status to indicate it was undone
+	for i, stmt := range s.statements.Statements {
+		if stmt.Id == statementId {
+			s.statements.Statements[i].Status = "undone"
+			break
+		}
+	}
+
+	err := s.SaveTransactions()
+	if err != nil {
+		return 0, err
+	}
+
+	err = s.SaveBankStatements()
+	if err != nil {
+		return removedCount, err
+	}
+
+	return removedCount, nil
+}
+
+// CanUndoImport checks if a statement can be undone
+func (s *Store) CanUndoImport(statementId int64) bool {
+	for _, stmt := range s.statements.Statements {
+		if stmt.Id == statementId {
+			return stmt.Status == "completed" || stmt.Status == "override"
+		}
+	}
+	return false
 }
 
 // Directory Navigation Business Logic --------------------
