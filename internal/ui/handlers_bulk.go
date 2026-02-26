@@ -69,7 +69,7 @@ func (m model) handleBulkEditView(key string) (tea.Model, tea.Cmd) {
 
 	switch key {
 	case "esc":
-		m.state = listView
+		m.state = m.previousState
 	case "down", "tab":
 		if m.bulkEditField < bulkEditType {
 			m.bulkEditField++
@@ -249,7 +249,15 @@ func (m model) handleSaveBulkEdit() (tea.Model, tea.Cmd) {
 	}
 
 	m.transactions, _ = m.store.GetTransactions()
-	m.state = listView
+
+	// Reload filtered transactions if we came from statement transaction view
+	if m.previousState == statementTransactionListView {
+		if filteredTransactions, err := m.store.GetTransactionsByStatement(m.currentStatementId); err == nil {
+			m.filteredTransactions = filteredTransactions
+		}
+	}
+
+	m.state = m.previousState // Return to previous state instead of hardcoded listView
 	return m.exitMultiSelectMode()
 }
 
