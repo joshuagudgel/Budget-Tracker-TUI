@@ -155,6 +155,11 @@ func (m model) handleBankStatementManageView(key string) (tea.Model, tea.Cmd) {
 func (m model) getAvailableActions(stmt types.BankStatement) []string {
 	actions := []string{"View Details"}
 
+	// Add manage transactions option for completed statements
+	if stmt.Status == "completed" {
+		actions = append(actions, "Manage Transactions")
+	}
+
 	if m.store.CanUndoImport(stmt.Id) {
 		actions = append(actions, "Undo Import")
 	}
@@ -176,6 +181,19 @@ func (m model) executeStatementAction(stmt types.BankStatement, action string) (
 			m.bankStatementListMessage += " | Error: " + stmt.ErrorLog
 		}
 		m.state = bankStatementListView
+	case "Manage Transactions":
+		// Load filtered transactions for this statement
+		filteredTransactions, err := m.store.GetTransactionsByStatement(stmt.Id)
+		if err != nil {
+			m.bankStatementListMessage = "Error loading transactions: " + err.Error()
+			m.state = bankStatementListView
+			return m, nil
+		}
+		m.filteredTransactions = filteredTransactions
+		m.currentStatementId = stmt.Id
+		m.filteredListIndex = 0
+		m.statementTxMessage = ""
+		m.state = statementTransactionListView
 	case "Undo Import":
 		m.initUndoConfirmationById(stmt.Id)
 	case "Retry Import":
