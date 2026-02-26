@@ -35,7 +35,7 @@ func (m model) handleEditView(key string) (tea.Model, tea.Cmd) {
 		if m.isSplitMode {
 			return m.exitSplitMode()
 		}
-		m.state = listView
+		m.state = m.previousState
 	case "enter":
 		return m.handleFieldActivation()
 	case "backspace":
@@ -85,7 +85,14 @@ func (m model) handleSaveTransaction() (tea.Model, tea.Cmd) {
 		log.Printf("Error saving transaction: %v", err)
 	} else {
 		m.transactions, _ = m.store.GetTransactions()
+		// Reload filtered transactions if we came from statement transaction view
+		if m.previousState == statementTransactionListView {
+			filteredTransactions, err := m.store.GetTransactionsByStatement(m.currentStatementId)
+			if err == nil {
+				m.filteredTransactions = filteredTransactions
+			}
+		}
 	}
-	m.state = listView
+	m.state = m.previousState // Return to previous state instead of hardcoded listView
 	return m, nil
 }
