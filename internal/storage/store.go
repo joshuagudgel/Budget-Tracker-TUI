@@ -111,6 +111,20 @@ func (s *Store) GetTransactions() ([]types.Transaction, error) {
 	return s.transactions, nil
 }
 
+// GetTransactionsByStatement returns all transactions for a specific bank statement
+func (s *Store) GetTransactionsByStatement(statementId int64) ([]types.Transaction, error) {
+	var filteredTransactions []types.Transaction
+
+	statementIdStr := fmt.Sprintf("%d", statementId)
+	for _, tx := range s.transactions {
+		if tx.StatementId == statementIdStr {
+			filteredTransactions = append(filteredTransactions, tx)
+		}
+	}
+
+	return filteredTransactions, nil
+}
+
 func (s *Store) SaveTransaction(transaction types.Transaction) error {
 	found := false
 	for i, t := range s.transactions {
