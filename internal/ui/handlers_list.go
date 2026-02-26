@@ -21,6 +21,7 @@ func (m model) handleListView(key string) (tea.Model, tea.Cmd) {
 			if len(m.selectedTxIds) > 0 {
 				m.bulkEditField = bulkEditAmount
 				m.resetBulkEditValues()
+				m.previousState = listView // Track where to return
 				m.state = bulkEditView
 			}
 			return m, nil
@@ -30,6 +31,7 @@ func (m model) handleListView(key string) (tea.Model, tea.Cmd) {
 			m.currTransaction = m.transactions[m.listIndex]
 			m.editField = editAmount
 			m.editAmountStr = ""
+			m.previousState = listView // Track where to return
 			m.state = editView
 		}
 	case "m":
