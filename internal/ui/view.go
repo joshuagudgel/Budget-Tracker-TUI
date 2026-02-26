@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"budget-tracker-tui/internal/types"
 
@@ -1501,6 +1502,13 @@ func (m model) renderBankStatementListView() string {
 	// Add summary header
 	s += faintStyle.Render(fmt.Sprintf("Total Statements: %d", len(statements))) + "\n\n"
 
+	// Add column headers
+	s += headerStyle.Render("Filename") + " | " +
+		headerStyle.Render("Period") + " | " +
+		headerStyle.Render("Imported") + " | " +
+		headerStyle.Render("Txns") + " | " +
+		headerStyle.Render("Status") + "\n\n"
+
 	// Show statements with enhanced formatting and status indicators
 	for i, stmt := range statements {
 		prefix := "  "
@@ -1541,9 +1549,16 @@ func (m model) renderBankStatementListView() string {
 		dateRange := fmt.Sprintf("%s - %s", stmt.PeriodStart, stmt.PeriodEnd)
 		txCount := fmt.Sprintf("%d txns", stmt.TxCount)
 
+		// Format import date compactly
+		importDate := stmt.ImportDate
+		if t, err := time.Parse(time.RFC3339, stmt.ImportDate); err == nil {
+			importDate = t.Format("01/02/06")
+		}
+
 		line := style.Render(prefix +
 			fmt.Sprintf("%-28s", filename) + " | " +
 			fmt.Sprintf("%-23s", dateRange) + " | " +
+			fmt.Sprintf("%-8s", importDate) + " | " +
 			fmt.Sprintf("%-8s", txCount) + " | " +
 			statusStyle.Render(statusSymbol+" "+statusText))
 
