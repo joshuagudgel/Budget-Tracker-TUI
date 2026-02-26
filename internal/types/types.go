@@ -42,7 +42,7 @@ type BankStatement struct {
 	ImportDate     string `json:"importDate"`
 	PeriodStart    string `json:"periodStart"`
 	PeriodEnd      string `json:"periodEnd"`
-	TemplateUsed   string `json:"templateUsed"`
+	TemplateUsed   int64  `json:"templateUsed"`
 	TxCount        int    `json:"txCount"`
 	Status         string `json:"status"`
 	ProcessingTime int64  `json:"processingTime,omitempty"`
@@ -50,6 +50,7 @@ type BankStatement struct {
 }
 
 type CSVTemplate struct {
+	Id             int64  `json:"id"`
 	Name           string `json:"name"`
 	DateColumn     int    `json:"dateColumn"`
 	AmountColumn   int    `json:"amountColumn"`
@@ -313,6 +314,138 @@ func (c *Category) ValidateField(field string, availableCategories []Category) e
 		return c.validateColor()
 	case "parentid", "parent":
 		return c.validateParentId(availableCategories)
+	default:
+		return fmt.Errorf("unknown field: %s", field)
+	}
+}
+
+// CSVTemplate validation methods
+
+// Validate validates the CSV template and returns a ValidationResult
+func (ct *CSVTemplate) Validate() ValidationResult {
+	result := ValidationResult{IsValid: true}
+
+	// Validate Name
+	if err := ct.validateName(); err != nil {
+		result.AddError("name", err.Error())
+	}
+
+	// Validate columns
+	if err := ct.validateColumns(); err != nil {
+		result.AddError("columns", err.Error())
+	}
+
+	// Validate DateFormat
+	if err := ct.validateDateFormat(); err != nil {
+		result.AddError("dateFormat", err.Error())
+	}
+
+	// Validate Delimiter
+	if err := ct.validateDelimiter(); err != nil {
+		result.AddError("delimiter", err.Error())
+	}
+
+	return result
+}
+
+// validateName validates the template name
+func (ct *CSVTemplate) validateName() error {
+	trimmed := strings.TrimSpace(ct.Name)
+	if trimmed == "" {
+		return fmt.Errorf("template name cannot be empty")
+	}
+	if len(ct.Name) > 100 {
+		return fmt.Errorf("template name cannot exceed 100 characters")
+	}
+	return nil
+}
+
+// validateColumns ensures columns are properly configured
+func (ct *CSVTemplate) validateColumns() error {
+	// Check for negative column indices
+	if ct.DateColumn < 0 {
+		return fmt.Errorf("date column index cannot be negative")
+	}
+	if ct.AmountColumn < 0 {
+		return fmt.Errorf("amount column index cannot be negative")
+	}
+	if ct.DescColumn < 0 {
+		return fmt.Errorf("description column index cannot be negative")
+	}
+	if ct.MerchantColumn != nil && *ct.MerchantColumn < 0 {
+		return fmt.Errorf("merchant column index cannot be negative")
+	}
+
+	// Check for duplicate column assignments
+	columns := []int{ct.DateColumn, ct.AmountColumn, ct.DescColumn}
+	if ct.MerchantColumn != nil {
+		columns = append(columns, *ct.MerchantColumn)
+	}
+
+	for i := 0; i < len(columns); i++ {
+		for j := i + 1; j < len(columns); j++ {
+			if columns[i] == columns[j] {
+				return fmt.Errorf("columns cannot have duplicate indices")
+			}
+		}
+	}
+
+	return nil
+}
+
+// validateDateFormat validates the date format string
+func (ct *CSVTemplate) validateDateFormat() error {
+	if ct.DateFormat == "" {
+		return nil // Optional field
+	}
+
+	// Test common date formats
+	validFormats := []string{
+		"2006-01-02", "01/02/2006", "01-02-2006", "2006/01/02",
+		"02/01/2006", "02-01-2006", "2/1/2006", "1/2/2006",
+	}
+
+	for _, format := range validFormats {
+		if ct.DateFormat == format {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("unsupported date format: %s", ct.DateFormat)
+}
+
+// validateDelimiter validates the CSV delimiter
+func (ct *CSVTemplate) validateDelimiter() error {
+	if ct.Delimiter == "" {
+		return nil // Default to comma
+	}
+
+	if len(ct.Delimiter) != 1 {
+		return fmt.Errorf("delimiter must be a single character")
+	}
+
+	// Common valid delimiters
+	validDelimiters := ",;|\t"
+	for _, valid := range validDelimiters {
+		if ct.Delimiter == string(valid) {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("unsupported delimiter: %s", ct.Delimiter)
+}
+
+// ValidateField validates a single field and returns any error
+func (ct *CSVTemplate) ValidateField(field string) error {
+	switch strings.ToLower(field) {
+	case "name":
+		return ct.validateName()
+	case "columns":
+		return ct.validateColumns()
+	case "dateformat":
+		return ct.validateDateFormat()
+	case "delimiter":
+		return ct.validateDelimiter()
 	default:
 		return fmt.Errorf("unknown field: %s", field)
 	}

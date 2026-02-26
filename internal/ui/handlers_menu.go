@@ -11,8 +11,15 @@ func (m model) handleMenuView(key string) (tea.Model, tea.Cmd) {
 		m.state = backupView
 		m.backupMessage = ""
 	case "i":
+		// Quick import path
 		m.state = bankStatementView
 		m.statementMessage = ""
+	case "b":
+		// Bank statement management path
+		m.state = bankStatementListView
+		m.bankStatementListIndex = 0
+		m.bankStatementListMessage = ""
+		m.isInBankStatementActions = false
 	case "c":
 		m.state = categoryListView
 		m.categoryMessage = ""
