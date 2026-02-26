@@ -156,6 +156,13 @@ type model struct {
 	isInBankStatementActions bool
 	bankStatementActionIndex int
 
+	// Statement transaction management
+	filteredTransactions []types.Transaction
+	currentStatementId   int64
+	statementTxMessage   string
+	filteredListIndex    int
+	previousState        uint // Track where to return after edit/bulk operations
+
 	// Messages
 	backupMessage string
 	importMessage string
@@ -187,6 +194,7 @@ func NewModel(store *storage.Store) model {
 		selectedTxIds:  make(map[int64]bool),
 		fieldErrors:    make(map[string]string),
 		validator:      validation.NewTransactionValidator(),
+		previousState:  listView, // Default to listView for backward compatibility
 	}
 }
 
@@ -255,6 +263,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleBankStatementListView(key)
 		case bankStatementManageView:
 			return m.handleBankStatementManageView(key)
+		case statementTransactionListView:
+			return m.handleStatementTransactionListView(key)
 		}
 	case tea.WindowSizeMsg:
 		m.windowHeight = msg.Height

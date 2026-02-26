@@ -2,26 +2,27 @@ package ui
 
 // Application state constants
 const (
-	menuView                uint = iota
-	listView                     = 1
-	titleView                    = 2
-	bodyView                     = 3
-	editView                     = 4
-	backupView                   = 5
-	filePickerView               = 6
-	csvTemplateView              = 7
-	createTemplateView           = 8
-	categoryView                 = 9
-	createCategoryView           = 10
-	bulkEditView                 = 11
-	bankStatementView            = 12
-	statementOverlapView         = 13
-	categoryListView             = 14
-	categoryEditView             = 15
-	categoryCreateView           = 16
-	undoConfirmView              = 17
-	bankStatementListView        = 18
-	bankStatementManageView      = 19
+	menuView                     uint = iota
+	listView                          = 1
+	titleView                         = 2
+	bodyView                          = 3
+	editView                          = 4
+	backupView                        = 5
+	filePickerView                    = 6
+	csvTemplateView                   = 7
+	createTemplateView                = 8
+	categoryView                      = 9
+	createCategoryView                = 10
+	bulkEditView                      = 11
+	bankStatementView                 = 12
+	statementOverlapView              = 13
+	categoryListView                  = 14
+	categoryEditView                  = 15
+	categoryCreateView                = 16
+	undoConfirmView                   = 17
+	bankStatementListView             = 18
+	bankStatementManageView           = 19
+	statementTransactionListView      = 20
 )
 
 // Edit field constants

@@ -414,6 +414,9 @@ func (m model) View() string {
 
 	case bankStatementManageView:
 		return m.renderBankStatementManageView()
+
+	case statementTransactionListView:
+		return m.renderStatementTransactionListView()
 	}
 
 	return s
@@ -1635,5 +1638,105 @@ func (m model) renderBankStatementManageView() string {
 	}
 
 	s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: Execute | Esc: Back")
+	return s
+}
+
+// renderStatementTransactionListView renders the filtered transaction list for a specific bank statement
+func (m model) renderStatementTransactionListView() string {
+	stmt, err := m.store.GetStatementById(m.currentStatementId)
+	if err != nil {
+		return "Error: Statement not found"
+	}
+
+	var s string
+	s += headerStyle.Render("Transactions: "+stmt.Filename) + "\n"
+	s += faintStyle.Render("Period: "+stmt.PeriodStart+" to "+stmt.PeriodEnd) + " | " +
+		faintStyle.Render(fmt.Sprintf("%d transactions", len(m.filteredTransactions))) + "\n\n"
+
+	// Column headers
+	s += headerStyle.Render("Date") + " | " +
+		headerStyle.Render("Description") + " | " +
+		headerStyle.Render("Amount") + " | " +
+		headerStyle.Render("Category") + " | " +
+		headerStyle.Render("Type") + "\n\n"
+
+	// Display message if exists
+	if m.statementTxMessage != "" {
+		s += successStyle.Render(m.statementTxMessage) + "\n\n"
+	}
+
+	headerLines := 6 // Title + period + headers + messages + padding
+	availableHeight := m.windowHeight - headerLines - 2
+
+	if availableHeight <= 0 {
+		availableHeight = 10 // Fallback minimum
+	}
+
+	// Calculate scroll offset
+	startIndex := 0
+	if len(m.filteredTransactions) > availableHeight {
+		startIndex = m.filteredListIndex - availableHeight/2
+		if startIndex < 0 {
+			startIndex = 0
+		}
+		if startIndex > len(m.filteredTransactions)-availableHeight {
+			startIndex = len(m.filteredTransactions) - availableHeight
+		}
+	}
+
+	endIndex := startIndex + availableHeight
+	if endIndex > len(m.filteredTransactions) {
+		endIndex = len(m.filteredTransactions)
+	}
+
+	// Render visible transactions with selection indicators
+	for i := startIndex; i < endIndex; i++ {
+		t := m.filteredTransactions[i]
+		prefix := " "
+
+		if m.isMultiSelectMode {
+			if m.selectedTxIds[t.Id] {
+				prefix = "✓"
+			} else {
+				prefix = " "
+			}
+
+			if i == m.filteredListIndex {
+				prefix += ">"
+			} else {
+				prefix += " "
+			}
+		} else if i == m.filteredListIndex {
+			prefix = ">"
+		}
+
+		s += enumeratorStyle.Render(prefix) + t.Date + " | " +
+			t.Description + " | " +
+			fmt.Sprintf("%.2f", t.Amount) + " | " +
+			m.getCategoryDisplayName(t.CategoryId) + " | " +
+			t.TransactionType + "\n"
+	}
+
+	// Fill remaining space if needed
+	for i := endIndex - startIndex; i < availableHeight; i++ {
+		s += "\n"
+	}
+
+	if len(m.filteredTransactions) == 0 {
+		s += faintStyle.Render("No transactions found for this statement.")
+	} else {
+		scrollInfo := ""
+		if len(m.filteredTransactions) > availableHeight {
+			scrollInfo = fmt.Sprintf(" (%d/%d)", m.filteredListIndex+1, len(m.filteredTransactions))
+		}
+
+		// Updated help text based on mode
+		if m.isMultiSelectMode {
+			s += faintStyle.Render("Enter: Toggle Selection | e: Edit Selected | m: Exit Multi-Select | Esc: Back" + scrollInfo)
+		} else {
+			s += faintStyle.Render("Up/Down: Navigate | e: Edit | m: Multi-Select | d: Delete | Esc: Back" + scrollInfo)
+		}
+	}
+
 	return s
 }
