@@ -58,7 +58,8 @@ func (m model) View() string {
 	switch m.state {
 	case menuView:
 		s += headerStyle.Render("Manage Transactions ('t')") + "\n"
-		s += headerStyle.Render("Import Bank Statements ('i')") + "\n"
+		s += headerStyle.Render("Import Bank Statement ('i')") + "\n"
+		s += headerStyle.Render("Manage Bank Statements ('b')") + "\n"
 		s += headerStyle.Render("Manage Categories ('c')") + "\n"
 		s += headerStyle.Render("Settings ('r')") + "\n"
 		s += headerStyle.Render("Quit ('q')") + "\n"
@@ -386,44 +387,7 @@ func (m model) View() string {
 			}
 		}
 
-		s += faintStyle.Render("t: Select Template | f: Choose File | h: View History | Esc: Menu")
-
-	case statementHistoryView:
-		s += headerStyle.Render("Bank Statement History") + "\n\n"
-
-		statements := m.store.GetStatementHistory()
-
-		if len(statements) == 0 {
-			s += faintStyle.Render("No import history found.") + "\n\n"
-		} else {
-			for i, stmt := range statements {
-				prefix := "  "
-				if i == m.statementIndex {
-					prefix = "> "
-				}
-
-				statusIcon := "✓"
-				statusColor := "10" // Green
-				switch stmt.Status {
-				case "failed":
-					statusIcon = "✗"
-					statusColor = "9" // Red
-				case "override":
-					statusIcon = "⚠"
-					statusColor = "208" // Orange
-				}
-
-				statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor))
-
-				s += enumeratorStyle.Render(prefix) +
-					statusStyle.Render(statusIcon) + " " +
-					headerStyle.Render(stmt.Filename) + " " +
-					faintStyle.Render(fmt.Sprintf("(%s to %s) - %d txs using %s",
-						stmt.PeriodStart, stmt.PeriodEnd, stmt.TxCount, stmt.TemplateUsed)) + "\n"
-			}
-		}
-
-		s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: View Details | u: Undo Import | Esc: Back")
+		s += faintStyle.Render("t: Select Template | f: Choose File | h: Manage Statements | Esc: Menu")
 
 	case undoConfirmView:
 		return m.renderUndoConfirmView()
@@ -443,6 +407,12 @@ func (m model) View() string {
 		s += "\n" + faintStyle.Render("This may create duplicate transactions in your data.") + "\n\n"
 
 		s += faintStyle.Render("y: Import Anyway | n: Cancel Import | Esc: Cancel")
+
+	case bankStatementListView:
+		return m.renderBankStatementListView()
+
+	case bankStatementManageView:
+		return m.renderBankStatementManageView()
 	}
 
 	return s
@@ -1510,5 +1480,141 @@ func (m model) renderUndoConfirmView() string {
 	s += faintStyle.Render("This action cannot be undone. Your transaction data will be modified.") + "\n\n"
 	s += faintStyle.Render("y: Confirm Undo | n: Cancel | Esc: Cancel")
 
+	return s
+}
+
+// Enhanced Bank Statement Management Views
+
+// renderBankStatementListView renders the main bank statement management list
+func (m model) renderBankStatementListView() string {
+	s := headerStyle.Render("Bank Statement Management") + "\n\n"
+
+	statements := m.store.GetStatementHistory()
+
+	if len(statements) == 0 {
+		s += faintStyle.Render("No bank statements imported yet.\n\n")
+		s += faintStyle.Render("Get started by importing your first bank statement.\n")
+		s += faintStyle.Render("i: Import Bank Statement | Esc: Menu")
+		return s
+	}
+
+	// Add summary header
+	s += faintStyle.Render(fmt.Sprintf("Total Statements: %d", len(statements))) + "\n\n"
+
+	// Show statements with enhanced formatting and status indicators
+	for i, stmt := range statements {
+		prefix := "  "
+		style := lipgloss.NewStyle()
+
+		if i == m.bankStatementListIndex {
+			prefix = "▶ "
+			style = style.Bold(true)
+		}
+
+		// Status indicator with color and symbols
+		statusStyle := successStyle
+		statusSymbol := "✓"
+		statusText := stmt.Status
+
+		switch stmt.Status {
+		case "completed":
+			statusSymbol = "✓"
+			statusStyle = successStyle
+		case "failed":
+			statusSymbol = "✗"
+			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+		case "undone":
+			statusSymbol = "↶"
+			statusStyle = faintStyle
+			statusText = "undone"
+		case "override":
+			statusSymbol = "⚠"
+			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("208"))
+		}
+
+		// Format each line with consistent spacing
+		filename := stmt.Filename
+		if len(filename) > 25 {
+			filename = filename[:22] + "..."
+		}
+
+		dateRange := fmt.Sprintf("%s - %s", stmt.PeriodStart, stmt.PeriodEnd)
+		txCount := fmt.Sprintf("%d txns", stmt.TxCount)
+
+		line := style.Render(prefix +
+			fmt.Sprintf("%-28s", filename) + " | " +
+			fmt.Sprintf("%-23s", dateRange) + " | " +
+			fmt.Sprintf("%-8s", txCount) + " | " +
+			statusStyle.Render(statusSymbol+" "+statusText))
+
+		s += line + "\n"
+	}
+
+	s += "\n"
+
+	// Show current statement details if selected
+	if len(statements) > 0 && m.bankStatementListIndex >= 0 && m.bankStatementListIndex < len(statements) {
+		stmt := statements[m.bankStatementListIndex]
+		s += formLabelStyle.Render("Selected:") + " " + stmt.Filename + "\n"
+		if stmt.ErrorLog != "" {
+			s += formLabelStyle.Render("Error:") + " " +
+				lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(stmt.ErrorLog) + "\n"
+		}
+		s += "\n"
+	}
+
+	if m.bankStatementListMessage != "" {
+		s += successStyle.Render(m.bankStatementListMessage) + "\n\n"
+	}
+
+	s += faintStyle.Render("Up/Down: Navigate | Enter: Manage | u: Quick Undo | d: Details | i: Import New | Esc: Menu")
+	return s
+}
+
+// renderBankStatementManageView renders the individual statement management view
+func (m model) renderBankStatementManageView() string {
+	stmt, err := m.store.GetStatementById(m.selectedBankStatementId)
+	if err != nil {
+		return "Error: Statement not found"
+	}
+
+	s := headerStyle.Render("Manage Statement: "+stmt.Filename) + "\n\n"
+
+	// Statement details
+	s += formLabelStyle.Render("File:") + " " + stmt.Filename + "\n"
+	s += formLabelStyle.Render("Period:") + " " + stmt.PeriodStart + " to " + stmt.PeriodEnd + "\n"
+	s += formLabelStyle.Render("Transactions:") + " " + fmt.Sprintf("%d", stmt.TxCount) + "\n"
+	s += formLabelStyle.Render("Template:") + " " + stmt.TemplateUsed + "\n"
+	s += formLabelStyle.Render("Import Date:") + " " + stmt.ImportDate + "\n"
+
+	// Status with color
+	statusStyle := successStyle
+	switch stmt.Status {
+	case "failed":
+		statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+	case "undone":
+		statusStyle = faintStyle
+	case "override":
+		statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("208"))
+	}
+	s += formLabelStyle.Render("Status:") + " " + statusStyle.Render(stmt.Status) + "\n"
+
+	if stmt.ErrorLog != "" {
+		s += formLabelStyle.Render("Error:") + " " + lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(stmt.ErrorLog) + "\n"
+	}
+
+	s += "\n" + headerStyle.Render("Available Actions:") + "\n\n"
+
+	// Show available actions
+	actions := m.getAvailableActions(*stmt)
+	for i, action := range actions {
+		prefix := "  "
+		if i == m.bankStatementActionIndex {
+			prefix = "▶ "
+		}
+		s += prefix + action + "\n"
+	}
+
+	s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: Execute | Esc: Back")
 	return s
 }

@@ -1384,6 +1384,46 @@ func (s *Store) CanUndoImport(statementId int64) bool {
 	return false
 }
 
+// Enhanced Bank Statement Management Methods
+
+// GetStatementById retrieves a bank statement by its ID
+func (s *Store) GetStatementById(id int64) (*types.BankStatement, error) {
+	for i, stmt := range s.statements.Statements {
+		if stmt.Id == id {
+			return &s.statements.Statements[i], nil
+		}
+	}
+	return nil, fmt.Errorf("statement with ID %d not found", id)
+}
+
+// GetStatementSummary returns a formatted summary for display
+func (s *Store) GetStatementSummary(stmt types.BankStatement) string {
+	return fmt.Sprintf("%s | %s - %s | %d txns | %s",
+		stmt.Filename, stmt.PeriodStart, stmt.PeriodEnd, stmt.TxCount, stmt.Status)
+}
+
+// GetStatementsByStatus returns statements filtered by status
+func (s *Store) GetStatementsByStatus(status string) []types.BankStatement {
+	var filtered []types.BankStatement
+	for _, stmt := range s.statements.Statements {
+		if stmt.Status == status {
+			filtered = append(filtered, stmt)
+		}
+	}
+	return filtered
+}
+
+// GetUndoableStatements returns statements that can be undone
+func (s *Store) GetUndoableStatements() []types.BankStatement {
+	var undoable []types.BankStatement
+	for _, stmt := range s.statements.Statements {
+		if s.CanUndoImport(stmt.Id) {
+			undoable = append(undoable, stmt)
+		}
+	}
+	return undoable
+}
+
 // Directory Navigation Business Logic --------------------
 
 type DirectoryResult struct {

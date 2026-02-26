@@ -149,6 +149,13 @@ type model struct {
 	pendingStatement types.BankStatement
 	statementMessage string
 
+	// Enhanced bank statement management
+	bankStatementListIndex   int
+	selectedBankStatementId  int64
+	bankStatementListMessage string
+	isInBankStatementActions bool
+	bankStatementActionIndex int
+
 	// Messages
 	backupMessage string
 	importMessage string
@@ -240,12 +247,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleBulkEditView(key)
 		case bankStatementView:
 			return m.handleBankStatementView(key)
-		case statementHistoryView:
-			return m.handleStatementHistoryView(key)
 		case statementOverlapView:
 			return m.handleStatementOverlapView(key)
 		case undoConfirmView:
 			return m.handleUndoConfirmView(key)
+		case bankStatementListView:
+			return m.handleBankStatementListView(key)
+		case bankStatementManageView:
+			return m.handleBankStatementManageView(key)
 		}
 	case tea.WindowSizeMsg:
 		m.windowHeight = msg.Height
@@ -291,6 +300,26 @@ func (m *model) initUndoConfirmation(statementIndex int) {
 	}
 }
 
+// initUndoConfirmationById prepares undo confirmation using statement ID (for new workflow)
+func (m *model) initUndoConfirmationById(statementId int64) {
+	stmt, err := m.store.GetStatementById(statementId)
+	if err != nil {
+		m.bankStatementListMessage = "Error: " + err.Error()
+		return
+	}
+
+	if !m.store.CanUndoImport(statementId) {
+		m.bankStatementListMessage = "Cannot undo this import - invalid status or already undone"
+		return
+	}
+
+	m.undoStatementId = stmt.Id
+	m.undoStatementName = stmt.Filename
+	m.undoTxCount = stmt.TxCount
+	m.undoMessage = ""
+	m.state = undoConfirmView
+}
+
 // executeUndo performs the actual undo operation
 func (m *model) executeUndo() {
 	if !m.store.CanUndoImport(m.undoStatementId) {
@@ -307,12 +336,16 @@ func (m *model) executeUndo() {
 	// Refresh transactions
 	m.transactions, _ = m.store.GetTransactions()
 
-	// Set success message
-	m.statementMessage = fmt.Sprintf("Successfully undone import of %s - removed %d transactions",
+	// Set success message for both views
+	successMsg := fmt.Sprintf("Successfully undone import of %s - removed %d transactions",
 		m.undoStatementName, removedCount)
 
-	// Return to statement history view
-	m.state = statementHistoryView
+	m.statementMessage = successMsg
+	m.bankStatementListMessage = successMsg
+
+	// Always return to bank statement list view
+	m.state = bankStatementListView
+	m.isInBankStatementActions = false
 }
 
 // validateBulkEditData validates bulk edit values and updates field errors

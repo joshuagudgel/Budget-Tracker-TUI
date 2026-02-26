@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"fmt"
+	"budget-tracker-tui/internal/types"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -31,47 +31,12 @@ func (m model) handleBankStatementView(key string) (tea.Model, tea.Cmd) {
 			m.fileIndex = 0
 		}
 	case "h":
-		m.state = statementHistoryView
-		m.statementIndex = 0
+		m.state = bankStatementListView
+		m.bankStatementListIndex = 0
+		m.bankStatementListMessage = ""
+		m.isInBankStatementActions = false
 	case "esc":
 		m.state = menuView
-	}
-	return m, nil
-}
-
-func (m model) handleStatementHistoryView(key string) (tea.Model, tea.Cmd) {
-	statements := m.store.GetStatementHistory()
-
-	switch key {
-	case "up":
-		if m.statementIndex > 0 {
-			m.statementIndex--
-		}
-	case "down":
-		if len(statements) > 0 && m.statementIndex < len(statements)-1 {
-			m.statementIndex++
-		}
-	case "enter":
-		// Use store method with proper error handling
-		if stmt, err := m.store.GetStatementByIndex(m.statementIndex); err == nil {
-			m.statementMessage = fmt.Sprintf("Statement Details: %s | Period: %s to %s | %d transactions | Template: %s | Status: %s | Import Date: %s",
-				stmt.Filename, stmt.PeriodStart, stmt.PeriodEnd, stmt.TxCount, stmt.TemplateUsed, stmt.Status, stmt.ImportDate)
-		} else {
-			m.statementMessage = "Error: " + err.Error()
-		}
-		m.state = bankStatementView
-	case "u":
-		// Initialize undo confirmation
-		if len(statements) > 0 && m.statementIndex >= 0 && m.statementIndex < len(statements) {
-			stmt := statements[m.statementIndex]
-			if m.store.CanUndoImport(stmt.Id) {
-				m.initUndoConfirmation(m.statementIndex)
-			} else {
-				m.statementMessage = "Cannot undo this import - invalid status or already undone"
-			}
-		}
-	case "esc":
-		m.state = bankStatementView
 	}
 	return m, nil
 }
@@ -98,7 +63,125 @@ func (m model) handleUndoConfirmView(key string) (tea.Model, tea.Cmd) {
 	case "y":
 		m.executeUndo()
 	case "n", "esc":
-		m.state = statementHistoryView
+		m.state = bankStatementListView
+	}
+	return m, nil
+}
+
+// Enhanced Bank Statement Management Handlers
+
+// handleBankStatementListView handles the new bank statement list management view
+func (m model) handleBankStatementListView(key string) (tea.Model, tea.Cmd) {
+	statements := m.store.GetStatementHistory()
+
+	switch key {
+	case "up":
+		if m.bankStatementListIndex > 0 {
+			m.bankStatementListIndex--
+		}
+	case "down":
+		if len(statements) > 0 && m.bankStatementListIndex < len(statements)-1 {
+			m.bankStatementListIndex++
+		}
+	case "enter":
+		// Enter action mode for the selected statement
+		if len(statements) > 0 && m.bankStatementListIndex >= 0 && m.bankStatementListIndex < len(statements) {
+			m.selectedBankStatementId = statements[m.bankStatementListIndex].Id
+			m.isInBankStatementActions = true
+			m.bankStatementActionIndex = 0
+			m.state = bankStatementManageView
+		}
+	case "i":
+		// Quick import shortcut
+		m.state = bankStatementView
+		m.statementMessage = ""
+	case "u":
+		// Quick undo shortcut
+		if len(statements) > 0 && m.bankStatementListIndex >= 0 && m.bankStatementListIndex < len(statements) {
+			stmt := statements[m.bankStatementListIndex]
+			if m.store.CanUndoImport(stmt.Id) {
+				m.initUndoConfirmationById(stmt.Id)
+			} else {
+				m.bankStatementListMessage = "Cannot undo this import - invalid status or already undone"
+			}
+		}
+	case "d":
+		// Show details shortcut
+		if len(statements) > 0 && m.bankStatementListIndex >= 0 && m.bankStatementListIndex < len(statements) {
+			stmt := statements[m.bankStatementListIndex]
+			m.bankStatementListMessage = m.store.GetStatementSummary(stmt)
+			if stmt.ErrorLog != "" {
+				m.bankStatementListMessage += " | Error: " + stmt.ErrorLog
+			}
+		}
+	case "esc":
+		m.state = menuView
+	}
+	return m, nil
+}
+
+// handleBankStatementManageView handles individual statement action selection
+func (m model) handleBankStatementManageView(key string) (tea.Model, tea.Cmd) {
+	stmt, err := m.store.GetStatementById(m.selectedBankStatementId)
+	if err != nil {
+		m.bankStatementListMessage = "Error: " + err.Error()
+		m.state = bankStatementListView
+		return m, nil
+	}
+
+	actions := m.getAvailableActions(*stmt)
+
+	switch key {
+	case "up":
+		if m.bankStatementActionIndex > 0 {
+			m.bankStatementActionIndex--
+		}
+	case "down":
+		if m.bankStatementActionIndex < len(actions)-1 {
+			m.bankStatementActionIndex++
+		}
+	case "enter":
+		return m.executeStatementAction(*stmt, actions[m.bankStatementActionIndex])
+	case "esc":
+		m.isInBankStatementActions = false
+		m.state = bankStatementListView
+	}
+	return m, nil
+}
+
+// Helper methods for bank statement management
+
+// getAvailableActions returns available actions for a statement
+func (m model) getAvailableActions(stmt types.BankStatement) []string {
+	actions := []string{"View Details"}
+
+	if m.store.CanUndoImport(stmt.Id) {
+		actions = append(actions, "Undo Import")
+	}
+
+	// Add reimport option for failed statements
+	if stmt.Status == "failed" {
+		actions = append(actions, "Retry Import")
+	}
+
+	return actions
+}
+
+// executeStatementAction executes the selected action on a statement
+func (m model) executeStatementAction(stmt types.BankStatement, action string) (tea.Model, tea.Cmd) {
+	switch action {
+	case "View Details":
+		m.bankStatementListMessage = m.store.GetStatementSummary(stmt)
+		if stmt.ErrorLog != "" {
+			m.bankStatementListMessage += " | Error: " + stmt.ErrorLog
+		}
+		m.state = bankStatementListView
+	case "Undo Import":
+		m.initUndoConfirmationById(stmt.Id)
+	case "Retry Import":
+		// TODO: Implement retry import functionality
+		m.bankStatementListMessage = "Retry import not yet implemented"
+		m.state = bankStatementListView
 	}
 	return m, nil
 }
