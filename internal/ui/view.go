@@ -1584,7 +1584,11 @@ func (m model) renderBankStatementManageView() string {
 	s += formLabelStyle.Render("File:") + " " + stmt.Filename + "\n"
 	s += formLabelStyle.Render("Period:") + " " + stmt.PeriodStart + " to " + stmt.PeriodEnd + "\n"
 	s += formLabelStyle.Render("Transactions:") + " " + fmt.Sprintf("%d", stmt.TxCount) + "\n"
-	s += formLabelStyle.Render("Template:") + " " + stmt.TemplateUsed + "\n"
+	templateName := m.store.GetTemplateNameById(stmt.TemplateUsed)
+	if templateName == "" {
+		templateName = fmt.Sprintf("Template ID: %d", stmt.TemplateUsed)
+	}
+	s += formLabelStyle.Render("Template:") + " " + templateName + "\n"
 	s += formLabelStyle.Render("Import Date:") + " " + stmt.ImportDate + "\n"
 
 	// Status with color

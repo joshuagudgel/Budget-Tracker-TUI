@@ -309,7 +309,7 @@ func (s *Store) ImportCSVWithOverride(templateName string) *types.ImportResult {
 	result.PeriodStart, result.PeriodEnd = s.ExtractPeriodFromTransactions(transactions)
 	filename := filepath.Base(s.importName)
 	statementId := s.statements.NextId
-	err = s.RecordBankStatement(filename, result.PeriodStart, result.PeriodEnd, templateName, len(transactions), "override")
+	err = s.RecordBankStatement(filename, result.PeriodStart, result.PeriodEnd, template.Id, len(transactions), "override")
 	if err != nil {
 		log.Printf("Failed to record statement: %v", err)
 	}
@@ -410,6 +410,10 @@ func (s *Store) CreateCSVTemplate(template types.CSVTemplate) *TemplateResult {
 		result.Message = "Column indices must be non-negative"
 		return result
 	}
+
+	// Assign unique ID to template
+	template.Id = s.csvTemplates.NextId
+	s.csvTemplates.NextId++
 
 	// Add template and set as default
 	s.csvTemplates.Templates = append(s.csvTemplates.Templates, template)
@@ -522,7 +526,7 @@ func (s *Store) ImportTransactionsFromCSV(templateName string) error {
 	// Record successful import first to get statement ID
 	filename := filepath.Base(s.importName)
 	statementId := s.statements.NextId
-	err = s.RecordBankStatement(filename, periodStart, periodEnd, templateName, len(importedTransactions), "completed")
+	err = s.RecordBankStatement(filename, periodStart, periodEnd, template.Id, len(importedTransactions), "completed")
 	if err != nil {
 		// Log error but don't fail the import
 		log.Printf("Failed to record statement: %v", err)
@@ -576,14 +580,14 @@ func (s *Store) DetectOverlap(periodStart, periodEnd string) []types.BankStateme
 	return overlaps
 }
 
-func (s *Store) RecordBankStatement(filename, periodStart, periodEnd, templateUsed string, txCount int, status string) error {
+func (s *Store) RecordBankStatement(filename, periodStart, periodEnd string, templateId int64, txCount int, status string) error {
 	statement := types.BankStatement{
 		Id:           s.statements.NextId,
 		Filename:     filename,
 		ImportDate:   time.Now().Format(time.RFC3339), // RFC3339 timestamp
 		PeriodStart:  periodStart,
 		PeriodEnd:    periodEnd,
-		TemplateUsed: templateUsed,
+		TemplateUsed: templateId,
 		TxCount:      txCount,
 		Status:       status,
 	}
@@ -1249,6 +1253,7 @@ func (s *Store) RestoreFromBackup() error {
 type CSVTemplateStore struct {
 	Templates []types.CSVTemplate `json:"templates"`
 	Default   string              `json:"default"`
+	NextId    int64               `json:"nextId"`
 }
 
 func (s *Store) loadCSVProfiles() error {
@@ -1256,10 +1261,11 @@ func (s *Store) loadCSVProfiles() error {
 		// Create default templates
 		s.csvTemplates = CSVTemplateStore{
 			Templates: []types.CSVTemplate{
-				{Name: "Bank1", DateColumn: 0, AmountColumn: 1, DescColumn: 4, HasHeader: false},
-				{Name: "Bank2", DateColumn: 0, AmountColumn: 5, DescColumn: 2, HasHeader: true},
+				{Id: 1, Name: "Bank1", DateColumn: 0, AmountColumn: 1, DescColumn: 4, HasHeader: false},
+				{Id: 2, Name: "Bank2", DateColumn: 0, AmountColumn: 5, DescColumn: 2, HasHeader: true},
 			},
 			Default: "Bank1",
+			NextId:  3,
 		}
 		return s.SaveCSVTemplates()
 	}
@@ -1269,7 +1275,17 @@ func (s *Store) loadCSVProfiles() error {
 		return err
 	}
 
-	return json.Unmarshal(data, &s.csvTemplates)
+	err = json.Unmarshal(data, &s.csvTemplates)
+	if err != nil {
+		return err
+	}
+
+	// Initialize NextId if not set or calculate from existing templates
+	if s.csvTemplates.NextId == 0 {
+		s.csvTemplates.NextId = s.calculateNextTemplateId()
+	}
+
+	return nil
 }
 
 func (s *Store) SaveCSVTemplates() error {
@@ -1287,6 +1303,36 @@ func (s *Store) GetTemplateByName(name string) *types.CSVTemplate {
 		}
 	}
 	return nil
+}
+
+// GetTemplateById returns a CSV template by its ID
+func (s *Store) GetTemplateById(id int64) *types.CSVTemplate {
+	for _, template := range s.csvTemplates.Templates {
+		if template.Id == id {
+			return &template
+		}
+	}
+	return nil
+}
+
+// GetTemplateNameById returns the name of a template by its ID, or empty string if not found
+func (s *Store) GetTemplateNameById(id int64) string {
+	template := s.GetTemplateById(id)
+	if template != nil {
+		return template.Name
+	}
+	return ""
+}
+
+// calculateNextTemplateId calculates the next available template ID
+func (s *Store) calculateNextTemplateId() int64 {
+	var maxId int64 = 0
+	for _, template := range s.csvTemplates.Templates {
+		if template.Id > maxId {
+			maxId = template.Id
+		}
+	}
+	return maxId + 1
 }
 
 // Bank Statement History Business Logic ---------------------
