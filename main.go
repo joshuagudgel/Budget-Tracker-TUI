@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	store := &storage.Store{}
+	store := storage.NewStore()
 	if err := store.Init(); err != nil {
 		log.Fatalf("unable to init store: %v", err)
 	}
