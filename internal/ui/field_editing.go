@@ -210,7 +210,7 @@ func (m model) enterCategorySelection() (tea.Model, tea.Cmd) {
 	m.isSelectingCategory = true
 
 	// Find current category in list for initial position
-	categories, _ := m.store.GetCategories()
+	categories, _ := m.store.Categories.GetCategories()
 	for i, cat := range categories {
 		if cat.Id == m.currTransaction.CategoryId {
 			m.categorySelectIndex = i
@@ -222,7 +222,7 @@ func (m model) enterCategorySelection() (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleCategorySelection(key string) (tea.Model, tea.Cmd) {
-	categories, _ := m.store.GetCategories()
+	categories, _ := m.store.Categories.GetCategories()
 
 	switch key {
 	case "up":

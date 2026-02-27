@@ -28,7 +28,7 @@ func (m model) enterSplitMode() (tea.Model, tea.Cmd) {
 	m.splitDesc2 = m.currTransaction.Description + " (part 2)"
 
 	// Pre-populate categories with current transaction's category
-	categoryDisplayName := m.store.GetCategoryDisplayName(m.currTransaction.CategoryId)
+	categoryDisplayName := m.store.Categories.GetCategoryDisplayName(m.currTransaction.CategoryId)
 	m.splitCategory1 = categoryDisplayName
 	m.splitCategory2 = categoryDisplayName
 
@@ -355,7 +355,7 @@ func (m model) exitSplitAmountEditing() (tea.Model, tea.Cmd) {
 func (m model) enterSplitCategory1Selection() (tea.Model, tea.Cmd) {
 	m.isSplitSelectingCategory1 = true
 	m.splitCat1SelectIndex = 0
-	categories, _ := m.store.GetCategories()
+	categories, _ := m.store.Categories.GetCategories()
 
 	// Find current category in list
 	for i, cat := range categories {
@@ -371,7 +371,7 @@ func (m model) enterSplitCategory1Selection() (tea.Model, tea.Cmd) {
 func (m model) enterSplitCategory2Selection() (tea.Model, tea.Cmd) {
 	m.isSplitSelectingCategory2 = true
 	m.splitCat2SelectIndex = 0
-	categories, _ := m.store.GetCategories()
+	categories, _ := m.store.Categories.GetCategories()
 
 	// Find current category in list
 	for i, cat := range categories {
@@ -385,7 +385,7 @@ func (m model) enterSplitCategory2Selection() (tea.Model, tea.Cmd) {
 
 // handleSplitCategorySelection handles navigation and selection within category dropdowns
 func (m model) handleSplitCategorySelection(key string) (tea.Model, tea.Cmd) {
-	categories, _ := m.store.GetCategories()
+	categories, _ := m.store.Categories.GetCategories()
 
 	var currentIndex *int
 	var isSelecting1 bool
@@ -487,7 +487,7 @@ func (m model) handleSaveSplit() (tea.Model, tea.Cmd) {
 	}
 
 	// Validate both split transactions before saving
-	categories, _ := m.store.GetCategories()
+	categories, _ := m.store.Categories.GetCategories()
 
 	result1 := m.validator.ValidateTransaction(&split1, categories)
 	result2 := m.validator.ValidateTransaction(&split2, categories)
@@ -498,14 +498,14 @@ func (m model) handleSaveSplit() (tea.Model, tea.Cmd) {
 	}
 
 	// Save split using store method
-	err := m.store.SplitTransaction(m.currTransaction.Id, []types.Transaction{split1, split2})
+	err := m.store.Transactions.SplitTransaction(m.currTransaction.Id, []types.Transaction{split1, split2})
 	if err != nil {
 		m.splitMessage = fmt.Sprintf("Error saving split: %v", err)
 		return m, nil
 	}
 
 	// Refresh transactions and exit
-	m.transactions, _ = m.store.GetTransactions()
+	m.transactions, _ = m.store.Transactions.GetTransactions()
 	m.state = listView
 	return m.exitSplitMode()
 }

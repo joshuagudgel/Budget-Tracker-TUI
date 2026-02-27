@@ -181,7 +181,7 @@ type model struct {
 
 // NewModel creates a new model instance
 func NewModel(store *storage.Store) model {
-	transactions, err := store.GetTransactions()
+	transactions, err := store.Transactions.GetTransactions()
 	if err != nil {
 		log.Fatalf("unable to get transactions: %v", err)
 	}
@@ -200,7 +200,7 @@ func NewModel(store *storage.Store) model {
 
 // getCategoryDisplayName returns the display name for a category ID, or empty string if not found
 func (m model) getCategoryDisplayName(categoryId int64) string {
-	return m.store.GetCategoryDisplayName(categoryId)
+	return m.store.Categories.GetCategoryDisplayName(categoryId)
 }
 
 // Init initializes the model
@@ -275,7 +275,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // validateCurrentTransaction validates the current transaction and updates field errors
 func (m *model) validateCurrentTransaction() {
-	categories, err := m.store.GetCategories()
+	categories, err := m.store.Categories.GetCategories()
 	if err != nil {
 		return
 	}
@@ -299,7 +299,7 @@ func (m *model) validateCurrentTransaction() {
 
 // initUndoConfirmation prepares the undo confirmation view
 func (m *model) initUndoConfirmation(statementIndex int) {
-	statements := m.store.GetStatementHistory()
+	statements := m.store.Statements.GetStatementHistory()
 	if statementIndex >= 0 && statementIndex < len(statements) {
 		stmt := statements[statementIndex]
 		m.undoStatementId = stmt.Id
@@ -312,13 +312,13 @@ func (m *model) initUndoConfirmation(statementIndex int) {
 
 // initUndoConfirmationById prepares undo confirmation using statement ID (for new workflow)
 func (m *model) initUndoConfirmationById(statementId int64) {
-	stmt, err := m.store.GetStatementById(statementId)
+	stmt, err := m.store.Statements.GetStatementById(statementId)
 	if err != nil {
 		m.bankStatementListMessage = "Error: " + err.Error()
 		return
 	}
 
-	if !m.store.CanUndoImport(statementId) {
+	if !m.store.Statements.CanUndoImport(statementId) {
 		m.bankStatementListMessage = "Cannot undo this import - invalid status or already undone"
 		return
 	}
@@ -332,7 +332,7 @@ func (m *model) initUndoConfirmationById(statementId int64) {
 
 // executeUndo performs the actual undo operation
 func (m *model) executeUndo() {
-	if !m.store.CanUndoImport(m.undoStatementId) {
+	if !m.store.Statements.CanUndoImport(m.undoStatementId) {
 		m.undoMessage = "Cannot undo this import - statement not in completed/override status"
 		return
 	}
@@ -344,7 +344,7 @@ func (m *model) executeUndo() {
 	}
 
 	// Refresh transactions
-	m.transactions, _ = m.store.GetTransactions()
+	m.transactions, _ = m.store.Transactions.GetTransactions()
 
 	// Set success message for both views
 	successMsg := fmt.Sprintf("Successfully undone import of %s - removed %d transactions",
@@ -360,7 +360,7 @@ func (m *model) executeUndo() {
 
 // validateBulkEditData validates bulk edit values and updates field errors
 func (m *model) validateBulkEditData() {
-	categories, err := m.store.GetCategories()
+	categories, err := m.store.Categories.GetCategories()
 	if err != nil {
 		return
 	}
@@ -382,7 +382,7 @@ func (m *model) validateBulkEditData() {
 
 	// Find category ID from display name if not placeholder
 	if !m.bulkCategoryIsPlaceholder && m.bulkCategoryValue != "" {
-		if category := m.store.GetCategoryByDisplayName(m.bulkCategoryValue); category != nil {
+		if category := m.store.Categories.GetCategoryByDisplayName(m.bulkCategoryValue); category != nil {
 			tempTx.CategoryId = category.Id
 		}
 	}
@@ -427,7 +427,7 @@ func (m *model) validateBulkEditData() {
 
 // validateSplitTransaction validates split transaction fields and updates field errors
 func (m *model) validateSplitTransaction() {
-	categories, err := m.store.GetCategories()
+	categories, err := m.store.Categories.GetCategories()
 	if err != nil {
 		return
 	}
@@ -614,7 +614,7 @@ func (m *model) initCategoryFields() {
 
 // loadCategories loads categories from store
 func (m *model) loadCategories() tea.Cmd {
-	categories, err := m.store.GetCategories()
+	categories, err := m.store.Categories.GetCategories()
 	if err != nil {
 		m.categoryMessage = "Error loading categories: " + err.Error()
 	} else {
@@ -798,7 +798,7 @@ func (m *model) saveCategoryAndReturn() (tea.Model, tea.Cmd) {
 	var err error
 	if m.editingCategory.Id == 0 {
 		// Create new category
-		err = m.store.CreateCategoryFull(&m.editingCategory)
+		err = m.store.Categories.CreateCategoryFull(&m.editingCategory)
 		if err != nil {
 			m.categoryMessage = "Error creating category: " + err.Error()
 		} else {
@@ -806,7 +806,7 @@ func (m *model) saveCategoryAndReturn() (tea.Model, tea.Cmd) {
 		}
 	} else {
 		// Update existing category
-		err = m.store.UpdateCategory(&m.editingCategory)
+		err = m.store.Categories.UpdateCategory(&m.editingCategory)
 		if err != nil {
 			m.categoryMessage = "Error updating category: " + err.Error()
 		} else {
@@ -835,7 +835,7 @@ func (m *model) deleteCategoryWithValidation() tea.Cmd {
 	}
 
 	// Perform deletion
-	err = m.store.DeleteCategory(categoryToDelete.Id)
+	err = m.store.Categories.DeleteCategory(categoryToDelete.Id)
 	if err != nil {
 		m.categoryMessage = "Error deleting category: " + err.Error()
 	} else {

@@ -91,7 +91,7 @@ func (m model) handleCategoryView(key string) (tea.Model, tea.Cmd) {
 			m.categoryIndex--
 		}
 	case "down":
-		categories, _ := m.store.GetCategories()
+		categories, _ := m.store.Categories.GetCategories()
 		if m.categoryIndex < len(categories)-1 {
 			m.categoryIndex++
 		}
@@ -186,9 +186,9 @@ func (m model) handleSaveCategory() (tea.Model, tea.Cmd) {
 	}
 
 	// Add new category (now only needs DisplayName)
-	err := m.store.AddCategory(m.newCategory.DisplayName)
-	if err != nil {
-		m.categoryMessage = "Error: " + err.Error()
+	result := m.store.Categories.CreateCategory(m.newCategory.DisplayName)
+	if !result.Success {
+		m.categoryMessage = "Error: " + result.Message
 		return m, nil
 	}
 

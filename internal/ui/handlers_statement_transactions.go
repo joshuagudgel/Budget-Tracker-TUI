@@ -44,10 +44,10 @@ func (m model) handleStatementTransactionListView(key string) (tea.Model, tea.Cm
 	case "d":
 		if !m.isMultiSelectMode && len(m.filteredTransactions) > 0 {
 			// Delete transaction
-			m.store.DeleteTransaction(m.filteredTransactions[m.filteredListIndex].Id)
+			m.store.Transactions.DeleteTransaction(m.filteredTransactions[m.filteredListIndex].Id)
 
 			// Reload filtered transactions
-			filteredTransactions, err := m.store.GetTransactionsByStatement(m.currentStatementId)
+			filteredTransactions, err := m.store.Transactions.GetTransactionsByStatement(m.currentStatementId)
 			if err != nil {
 				m.statementTxMessage = "Error reloading transactions: " + err.Error()
 			} else {

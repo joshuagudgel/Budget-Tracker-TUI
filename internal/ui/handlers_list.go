@@ -44,8 +44,8 @@ func (m model) handleListView(key string) (tea.Model, tea.Cmd) {
 	case "d":
 		if !m.isMultiSelectMode {
 			// Existing single delete logic
-			m.store.DeleteTransaction(m.transactions[m.listIndex].Id)
-			m.transactions, _ = m.store.GetTransactions()
+			m.store.Transactions.DeleteTransaction(m.transactions[m.listIndex].Id)
+			m.transactions, _ = m.store.Transactions.GetTransactions()
 			// Bounds checking for list index
 			if m.listIndex >= len(m.transactions) && len(m.transactions) > 0 {
 				m.listIndex = len(m.transactions) - 1

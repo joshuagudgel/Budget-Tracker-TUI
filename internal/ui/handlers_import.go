@@ -17,9 +17,11 @@ func (m model) handleBackupView(key string) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.state = menuView
 	case "r":
-		result := m.store.RestoreTransactionsFromBackup()
-		if result.Success {
-			m.transactions, _ = m.store.GetTransactions()
+		result, err := m.store.Transactions.RestoreFromBackup()
+		if err != nil {
+			m.backupMessage = "Error: " + err.Error()
+		} else if result.Success {
+			m.transactions, _ = m.store.Transactions.GetTransactions()
 			m.backupMessage = result.Message
 			m.listIndex = 0
 		} else {
@@ -65,7 +67,7 @@ func (m model) handleFileSelection() (tea.Model, tea.Cmd) {
 		}
 		m.fileIndex = 0
 
-		result := m.store.LoadDirectoryEntries(m.currentDir)
+		result := m.store.Statements.LoadDirectoryEntries(m.currentDir)
 		if !result.Success {
 			m.statementMessage = result.Message
 		} else {
@@ -76,9 +78,9 @@ func (m model) handleFileSelection() (tea.Model, tea.Cmd) {
 
 	// Handle CSV file selection
 	if strings.HasSuffix(strings.ToLower(selected), ".csv") {
-		templateToUse := m.store.GetDefaultTemplate()
+		templateToUse := m.store.Templates.GetDefaultTemplate()
 		if templateToUse == "" {
-			templates := m.store.GetCSVTemplates()
+			templates := m.store.Templates.GetCSVTemplates()
 			if len(templates) > 0 {
 				templateToUse = templates[0].Name
 			}
@@ -94,7 +96,7 @@ func (m model) handleFileSelection() (tea.Model, tea.Cmd) {
 		}
 
 		if result.Success {
-			m.transactions, _ = m.store.GetTransactions()
+			m.transactions, _ = m.store.Transactions.GetTransactions()
 		}
 		m.statementMessage = result.Message
 		m.state = bankStatementView
@@ -143,8 +145,8 @@ func (m *model) loadDirectoryEntries() error {
 }
 
 func (m model) getSelectedTemplate() string {
-	templateToUse := m.store.GetDefaultTemplate()
-	if templateToUse == "" && len(m.store.GetCSVTemplates()) > 0 {
+	templateToUse := m.store.Templates.GetDefaultTemplate()
+	if templateToUse == "" && len(m.store.Templates.GetCSVTemplates()) > 0 {
 		templateToUse = "unsorted"
 	}
 	return templateToUse
@@ -153,7 +155,7 @@ func (m model) getSelectedTemplate() string {
 // CSV Template View
 
 func (m model) handleCSVTemplateView(key string) (tea.Model, tea.Cmd) {
-	templates := m.store.GetCSVTemplates()
+	templates := m.store.Templates.GetCSVTemplates()
 
 	switch key {
 	case "esc":
@@ -170,7 +172,7 @@ func (m model) handleCSVTemplateView(key string) (tea.Model, tea.Cmd) {
 		if len(templates) > 0 && m.templateIndex < len(templates) {
 			selectedTemplate := templates[m.templateIndex]
 
-			result := m.store.SetDefaultTemplate(selectedTemplate.Name)
+			result := m.store.Templates.SetDefaultTemplate(selectedTemplate.Name)
 			m.importMessage = result.Message
 			m.state = bankStatementView
 		}
@@ -199,7 +201,7 @@ func (m model) handleCreateTemplateView(key string) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		// Use store's business logic instead of UI logic
-		result := m.store.CreateCSVTemplate(m.newTemplate)
+		result := m.store.Templates.CreateCSVTemplate(m.newTemplate)
 		if result.Success {
 			m.createMessage = ""
 			m.state = csvTemplateView

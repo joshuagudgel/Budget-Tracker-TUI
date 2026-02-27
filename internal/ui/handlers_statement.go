@@ -21,7 +21,7 @@ func (m model) handleBankStatementView(key string) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		result := m.store.LoadDirectoryEntriesWithFallback(m.currentDir)
+		result := m.store.Statements.LoadDirectoryEntriesWithFallback(m.currentDir)
 		if !result.Success {
 			m.statementMessage = result.Message
 		} else {
@@ -45,9 +45,9 @@ func (m model) handleStatementOverlapView(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "y":
 		// Use current template stored from file selection
-		result := m.store.ImportCSVWithOverride(m.selectedTemplate)
+		result := m.store.ImportCSVWithOverride(m.selectedFile, m.selectedTemplate)
 		if result.Success {
-			m.transactions, _ = m.store.GetTransactions()
+			m.transactions, _ = m.store.Transactions.GetTransactions()
 		}
 		m.statementMessage = result.Message
 		m.state = bankStatementView
@@ -72,7 +72,7 @@ func (m model) handleUndoConfirmView(key string) (tea.Model, tea.Cmd) {
 
 // handleBankStatementListView handles the new bank statement list management view
 func (m model) handleBankStatementListView(key string) (tea.Model, tea.Cmd) {
-	statements := m.store.GetStatementHistory()
+	statements := m.store.Statements.GetStatementHistory()
 
 	switch key {
 	case "up":
@@ -99,7 +99,7 @@ func (m model) handleBankStatementListView(key string) (tea.Model, tea.Cmd) {
 		// Quick undo shortcut
 		if len(statements) > 0 && m.bankStatementListIndex >= 0 && m.bankStatementListIndex < len(statements) {
 			stmt := statements[m.bankStatementListIndex]
-			if m.store.CanUndoImport(stmt.Id) {
+			if m.store.Statements.CanUndoImport(stmt.Id) {
 				m.initUndoConfirmationById(stmt.Id)
 			} else {
 				m.bankStatementListMessage = "Cannot undo this import - invalid status or already undone"
@@ -109,7 +109,7 @@ func (m model) handleBankStatementListView(key string) (tea.Model, tea.Cmd) {
 		// Show details shortcut
 		if len(statements) > 0 && m.bankStatementListIndex >= 0 && m.bankStatementListIndex < len(statements) {
 			stmt := statements[m.bankStatementListIndex]
-			m.bankStatementListMessage = m.store.GetStatementSummary(stmt)
+			m.bankStatementListMessage = m.store.Statements.GetStatementSummary(stmt)
 			if stmt.ErrorLog != "" {
 				m.bankStatementListMessage += " | Error: " + stmt.ErrorLog
 			}
@@ -122,7 +122,7 @@ func (m model) handleBankStatementListView(key string) (tea.Model, tea.Cmd) {
 
 // handleBankStatementManageView handles individual statement action selection
 func (m model) handleBankStatementManageView(key string) (tea.Model, tea.Cmd) {
-	stmt, err := m.store.GetStatementById(m.selectedBankStatementId)
+	stmt, err := m.store.Statements.GetStatementById(m.selectedBankStatementId)
 	if err != nil {
 		m.bankStatementListMessage = "Error: " + err.Error()
 		m.state = bankStatementListView
@@ -160,7 +160,7 @@ func (m model) getAvailableActions(stmt types.BankStatement) []string {
 		actions = append(actions, "Manage Transactions")
 	}
 
-	if m.store.CanUndoImport(stmt.Id) {
+	if m.store.Statements.CanUndoImport(stmt.Id) {
 		actions = append(actions, "Undo Import")
 	}
 
@@ -176,14 +176,14 @@ func (m model) getAvailableActions(stmt types.BankStatement) []string {
 func (m model) executeStatementAction(stmt types.BankStatement, action string) (tea.Model, tea.Cmd) {
 	switch action {
 	case "View Details":
-		m.bankStatementListMessage = m.store.GetStatementSummary(stmt)
+		m.bankStatementListMessage = m.store.Statements.GetStatementSummary(stmt)
 		if stmt.ErrorLog != "" {
 			m.bankStatementListMessage += " | Error: " + stmt.ErrorLog
 		}
 		m.state = bankStatementListView
 	case "Manage Transactions":
 		// Load filtered transactions for this statement
-		filteredTransactions, err := m.store.GetTransactionsByStatement(stmt.Id)
+		filteredTransactions, err := m.store.Transactions.GetTransactionsByStatement(stmt.Id)
 		if err != nil {
 			m.bankStatementListMessage = "Error loading transactions: " + err.Error()
 			m.state = bankStatementListView

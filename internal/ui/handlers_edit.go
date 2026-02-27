@@ -80,14 +80,14 @@ func (m model) handleSaveTransaction() (tea.Model, tea.Cmd) {
 		}
 	}
 	m.editAmountStr = ""
-	err := m.store.SaveTransaction(m.currTransaction)
+	err := m.store.Transactions.SaveTransaction(m.currTransaction)
 	if err != nil {
 		log.Printf("Error saving transaction: %v", err)
 	} else {
-		m.transactions, _ = m.store.GetTransactions()
+		m.transactions, _ = m.store.Transactions.GetTransactions()
 		// Reload filtered transactions if we came from statement transaction view
 		if m.previousState == statementTransactionListView {
-			filteredTransactions, err := m.store.GetTransactionsByStatement(m.currentStatementId)
+			filteredTransactions, err := m.store.Transactions.GetTransactionsByStatement(m.currentStatementId)
 			if err == nil {
 				m.filteredTransactions = filteredTransactions
 			}

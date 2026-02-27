@@ -107,7 +107,7 @@ func (m model) handleBulkFieldActivation(key string) (tea.Model, tea.Cmd) {
 
 // handleBulkCategorySelection handles category selection dropdown navigation
 func (m model) handleBulkCategorySelection(key string) (tea.Model, tea.Cmd) {
-	categories, _ := m.store.GetCategories()
+	categories, _ := m.store.Categories.GetCategories()
 
 	switch key {
 	case "esc":
@@ -186,7 +186,7 @@ func (m model) handleSaveBulkEdit() (tea.Model, tea.Cmd) {
 			}
 			if !m.bulkCategoryIsPlaceholder && strings.TrimSpace(m.bulkCategoryValue) != "" {
 				// Find category by display name
-				if category := m.store.GetCategoryByDisplayName(m.bulkCategoryValue); category != nil {
+				if category := m.store.Categories.GetCategoryByDisplayName(m.bulkCategoryValue); category != nil {
 					tempTx.CategoryId = category.Id
 				}
 			}
@@ -195,7 +195,7 @@ func (m model) handleSaveBulkEdit() (tea.Model, tea.Cmd) {
 			}
 
 			// Validate the modified transaction
-			categories, _ := m.store.GetCategories()
+			categories, _ := m.store.Categories.GetCategories()
 
 			result := m.validator.ValidateTransaction(&tempTx, categories)
 			if !result.IsValid {
@@ -234,7 +234,7 @@ func (m model) handleSaveBulkEdit() (tea.Model, tea.Cmd) {
 			// Apply category if modified
 			if !m.bulkCategoryIsPlaceholder && strings.TrimSpace(m.bulkCategoryValue) != "" {
 				// Find category by display name
-				if category := m.store.GetCategoryByDisplayName(m.bulkCategoryValue); category != nil {
+				if category := m.store.Categories.GetCategoryByDisplayName(m.bulkCategoryValue); category != nil {
 					m.transactions[i].CategoryId = category.Id
 				}
 			}
@@ -244,15 +244,15 @@ func (m model) handleSaveBulkEdit() (tea.Model, tea.Cmd) {
 				m.transactions[i].TransactionType = m.bulkTypeValue
 			}
 
-			m.store.SaveTransaction(m.transactions[i])
+			m.store.Transactions.SaveTransaction(m.transactions[i])
 		}
 	}
 
-	m.transactions, _ = m.store.GetTransactions()
+	m.transactions, _ = m.store.Transactions.GetTransactions()
 
 	// Reload filtered transactions if we came from statement transaction view
 	if m.previousState == statementTransactionListView {
-		if filteredTransactions, err := m.store.GetTransactionsByStatement(m.currentStatementId); err == nil {
+		if filteredTransactions, err := m.store.Transactions.GetTransactionsByStatement(m.currentStatementId); err == nil {
 			m.filteredTransactions = filteredTransactions
 		}
 	}

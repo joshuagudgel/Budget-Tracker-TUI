@@ -157,7 +157,7 @@ func (m model) View() string {
 	case categoryView:
 		s += headerStyle.Render("Category Management") + "\n\n"
 
-		categories, _ := m.store.GetCategories()
+		categories, _ := m.store.Categories.GetCategories()
 		if len(categories) == 0 {
 			s += faintStyle.Render("No categories found.") + "\n\n"
 		} else {
@@ -233,8 +233,8 @@ func (m model) View() string {
 	case csvTemplateView:
 		s += headerStyle.Render("Select CSV Template") + "\n\n"
 
-		templates := m.store.GetCSVTemplates()
-		currentDefaultTemplate := m.store.GetDefaultTemplate()
+		templates := m.store.Templates.GetCSVTemplates()
+		currentDefaultTemplate := m.store.Templates.GetDefaultTemplate()
 		if len(templates) == 0 {
 			s += faintStyle.Render("No CSV templates found.") + "\n\n"
 		} else {
@@ -340,10 +340,10 @@ func (m model) View() string {
 	case bankStatementView:
 		s += headerStyle.Render("Bank Statement Import") + "\n\n"
 
-		statements := m.store.GetStatementHistory()
+		statements := m.store.Statements.GetStatementHistory()
 
 		// Current configuration status
-		currentTemplate := m.store.GetDefaultTemplate()
+		currentTemplate := m.store.Templates.GetDefaultTemplate()
 		if currentTemplate != "" {
 			s += formLabelStyle.Render("CSV Template:") + " " + headerStyle.Render(currentTemplate) + " ✓\n"
 		} else {
@@ -426,7 +426,7 @@ func (m model) renderBulkCategoryOptions() string {
 	var s string
 	s += faintStyle.Render("Categories:") + "\n"
 
-	categories, _ := m.store.GetCategories()
+	categories, _ := m.store.Categories.GetCategories()
 	maxVisible := 5
 
 	startIdx := 0
@@ -733,7 +733,7 @@ func (m model) renderSplitCategoryOptions(splitNumber int) string {
 	var s string
 	s += faintStyle.Render("Categories:") + "\n"
 
-	categories, _ := m.store.GetCategories()
+	categories, _ := m.store.Categories.GetCategories()
 	maxVisible := 5
 
 	var currentIndex int
@@ -894,7 +894,7 @@ func (m model) renderCategoryOptions() string {
 
 	// Calculate available height for scrolling
 	maxVisible := 5
-	categories, _ := m.store.GetCategories()
+	categories, _ := m.store.Categories.GetCategories()
 
 	// Scroll logic for large category lists
 	startIdx := 0
@@ -1493,7 +1493,7 @@ func (m model) renderUndoConfirmView() string {
 func (m model) renderBankStatementListView() string {
 	s := headerStyle.Render("Bank Statement Management") + "\n\n"
 
-	statements := m.store.GetStatementHistory()
+	statements := m.store.Statements.GetStatementHistory()
 
 	if len(statements) == 0 {
 		s += faintStyle.Render("No bank statements imported yet.\n\n")
@@ -1591,7 +1591,7 @@ func (m model) renderBankStatementListView() string {
 
 // renderBankStatementManageView renders the individual statement management view
 func (m model) renderBankStatementManageView() string {
-	stmt, err := m.store.GetStatementById(m.selectedBankStatementId)
+	stmt, err := m.store.Statements.GetStatementById(m.selectedBankStatementId)
 	if err != nil {
 		return "Error: Statement not found"
 	}
@@ -1602,7 +1602,7 @@ func (m model) renderBankStatementManageView() string {
 	s += formLabelStyle.Render("File:") + " " + stmt.Filename + "\n"
 	s += formLabelStyle.Render("Period:") + " " + stmt.PeriodStart + " to " + stmt.PeriodEnd + "\n"
 	s += formLabelStyle.Render("Transactions:") + " " + fmt.Sprintf("%d", stmt.TxCount) + "\n"
-	templateName := m.store.GetTemplateNameById(stmt.TemplateUsed)
+	templateName := m.store.Templates.GetTemplateNameById(stmt.TemplateUsed)
 	if templateName == "" {
 		templateName = fmt.Sprintf("Template ID: %d", stmt.TemplateUsed)
 	}
@@ -1643,7 +1643,7 @@ func (m model) renderBankStatementManageView() string {
 
 // renderStatementTransactionListView renders the filtered transaction list for a specific bank statement
 func (m model) renderStatementTransactionListView() string {
-	stmt, err := m.store.GetStatementById(m.currentStatementId)
+	stmt, err := m.store.Statements.GetStatementById(m.currentStatementId)
 	if err != nil {
 		return "Error: Statement not found"
 	}
