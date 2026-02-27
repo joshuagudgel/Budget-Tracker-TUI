@@ -129,8 +129,9 @@ type RestoreResult struct {
 }
 
 type CategoryResult struct {
-	Success bool
-	Message string
+	Success    bool
+	Message    string
+	CategoryId int64
 }
 
 type TemplateResult struct {

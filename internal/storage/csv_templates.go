@@ -1,91 +1,130 @@
 package storage
 
 import (
+	"budget-tracker-tui/internal/database"
 	"budget-tracker-tui/internal/types"
-	"encoding/json"
+	"database/sql"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
-// CSVTemplateStore handles all CSV template-related operations
+// CSVTemplateStore handles all CSV template-related operations using SQLite
 type CSVTemplateStore struct {
-	filename  string
-	Templates []types.CSVTemplate `json:"templates"`
-	Default   string              `json:"default"`
-	NextId    int64               `json:"nextId"`
+	db              *database.Connection
+	helper          *database.SQLHelper
+	defaultTemplate string
 }
 
 // NewCSVTemplateStore creates a new CSVTemplateStore instance
-func NewCSVTemplateStore(templateFile string) *CSVTemplateStore {
-	return &CSVTemplateStore{
-		filename:  templateFile,
-		Templates: []types.CSVTemplate{},
-		Default:   "",
-		NextId:    1,
+func NewCSVTemplateStore(db *database.Connection) *CSVTemplateStore {
+	store := &CSVTemplateStore{
+		db:              db,
+		helper:          database.NewSQLHelper(db),
+		defaultTemplate: "Bank1",
+	}
+
+	// Ensure default templates exist
+	store.ensureDefaultTemplates()
+
+	return store
+}
+
+// ensureDefaultTemplates creates default CSV templates if none exist
+func (cts *CSVTemplateStore) ensureDefaultTemplates() {
+	count, err := cts.helper.CountBy("csv_templates", "")
+	if err != nil || count > 0 {
+		return // Templates already exist or error occurred
+	}
+
+	// Create default templates
+	defaultTemplates := []types.CSVTemplate{
+		{Name: "Bank1", DateColumn: 0, AmountColumn: 1, DescColumn: 4, HasHeader: false},
+		{Name: "Bank2", DateColumn: 0, AmountColumn: 5, DescColumn: 2, HasHeader: true},
+	}
+
+	for _, template := range defaultTemplates {
+		cts.SaveCSVTemplate(template) // Ignore errors during initialization
 	}
 }
 
-// LoadCSVTemplates loads CSV templates from the JSON file
+// LoadCSVTemplates is no longer needed with SQLite (data is always persisted)
+// Kept for interface compatibility
 func (cts *CSVTemplateStore) LoadCSVTemplates() error {
-	if _, err := os.Stat(cts.filename); os.IsNotExist(err) {
-		// Create default templates
-		cts.Templates = []types.CSVTemplate{
-			{Id: 1, Name: "Bank1", DateColumn: 0, AmountColumn: 1, DescColumn: 4, HasHeader: false},
-			{Id: 2, Name: "Bank2", DateColumn: 0, AmountColumn: 5, DescColumn: 2, HasHeader: true},
-		}
-		cts.Default = "Bank1"
-		cts.NextId = 3
-		return cts.SaveCSVTemplates()
-	}
-
-	data, err := os.ReadFile(cts.filename)
-	if err != nil {
-		return err
-	}
-
-	err = json.Unmarshal(data, cts)
-	if err != nil {
-		return err
-	}
-
-	// Initialize NextId if not set or calculate from existing templates
-	if cts.NextId == 0 {
-		cts.NextId = cts.calculateNextTemplateId()
-	}
-
+	// SQLite data is always persisted, no loading needed
 	return nil
 }
 
-// SaveCSVTemplates saves CSV templates to the JSON file
+// SaveCSVTemplates is no longer needed with SQLite (data is always persisted)
+// Kept for interface compatibility
 func (cts *CSVTemplateStore) SaveCSVTemplates() error {
-	data, err := json.MarshalIndent(cts, "", "  ")
+	// SQLite data is always persisted, no explicit saving needed
+	return nil
+}
+
+// GetCSVTemplates returns all CSV templates from the database
+func (cts *CSVTemplateStore) GetCSVTemplates() ([]types.CSVTemplate, error) {
+	query := `
+		SELECT id, name, date_column, amount_column, desc_column, merchant_column,
+		       has_header, date_format, delimiter, created_at, updated_at
+		FROM csv_templates
+		ORDER BY name
+	`
+
+	rows, err := cts.helper.QueryRows(query)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("failed to query CSV templates: %w", err)
 	}
-	return os.WriteFile(cts.filename, data, 0644)
-}
+	defer rows.Close()
 
-// calculateNextTemplateId calculates the next available template ID
-func (cts *CSVTemplateStore) calculateNextTemplateId() int64 {
-	var maxId int64 = 0
-	for _, template := range cts.Templates {
-		if template.Id > maxId {
-			maxId = template.Id
+	var templates []types.CSVTemplate
+	for rows.Next() {
+		template, err := cts.scanCSVTemplate(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan CSV template: %w", err)
 		}
+		templates = append(templates, template)
 	}
-	return maxId + 1
+
+	return templates, rows.Err()
 }
 
-// GetCSVTemplates returns all CSV templates
-func (cts *CSVTemplateStore) GetCSVTemplates() []types.CSVTemplate {
-	return cts.Templates
+// scanCSVTemplate scans a database row into a CSVTemplate struct
+func (cts *CSVTemplateStore) scanCSVTemplate(rows *sql.Rows) (types.CSVTemplate, error) {
+	var template types.CSVTemplate
+	var merchantColumn sql.NullInt64
+	var dateFormat, delimiter sql.NullString
+
+	err := rows.Scan(
+		&template.Id, &template.Name, &template.DateColumn, &template.AmountColumn,
+		&template.DescColumn, &merchantColumn, &template.HasHeader, &dateFormat,
+		&delimiter, &template.CreatedAt, &template.UpdatedAt,
+	)
+
+	if err != nil {
+		return template, err
+	}
+
+	// Handle nullable fields
+	if merchantColumn.Valid {
+		merchantInt := int(merchantColumn.Int64)
+		template.MerchantColumn = &merchantInt
+	}
+	if dateFormat.Valid {
+		template.DateFormat = dateFormat.String
+	}
+	if delimiter.Valid {
+		template.Delimiter = delimiter.String
+	}
+
+	return template, nil
 }
 
 // GetDefaultTemplate returns the name of the default template
 func (cts *CSVTemplateStore) GetDefaultTemplate() string {
-	return cts.Default
+	return cts.defaultTemplate
 }
 
 // SetDefaultTemplate sets the default template
@@ -98,13 +137,7 @@ func (cts *CSVTemplateStore) SetDefaultTemplate(templateName string) *TemplateRe
 		return result
 	}
 
-	cts.Default = templateName
-	err := cts.SaveCSVTemplates()
-	if err != nil {
-		result.Message = fmt.Sprintf("Failed to save: %v", err)
-		return result
-	}
-
+	cts.defaultTemplate = templateName
 	result.Success = true
 	result.Message = fmt.Sprintf("Default template set to '%s'", templateName)
 	return result
@@ -112,22 +145,69 @@ func (cts *CSVTemplateStore) SetDefaultTemplate(templateName string) *TemplateRe
 
 // GetTemplateByName returns a CSV template by name
 func (cts *CSVTemplateStore) GetTemplateByName(name string) *types.CSVTemplate {
-	for _, template := range cts.Templates {
-		if template.Name == name {
-			return &template
-		}
+	query := `
+		SELECT id, name, date_column, amount_column, desc_column, merchant_column,
+		       has_header, date_format, delimiter, created_at, updated_at
+		FROM csv_templates
+		WHERE name = ?
+	`
+
+	row := cts.helper.QuerySingleRow(query, name)
+	template, err := cts.scanCSVTemplateRow(row)
+	if err != nil {
+		return nil // Template not found or error
 	}
-	return nil
+
+	return &template
+}
+
+// scanCSVTemplateRow scans a single database row into a CSVTemplate struct
+func (cts *CSVTemplateStore) scanCSVTemplateRow(row *sql.Row) (types.CSVTemplate, error) {
+	var template types.CSVTemplate
+	var merchantColumn sql.NullInt64
+	var dateFormat, delimiter sql.NullString
+
+	err := row.Scan(
+		&template.Id, &template.Name, &template.DateColumn, &template.AmountColumn,
+		&template.DescColumn, &merchantColumn, &template.HasHeader, &dateFormat,
+		&delimiter, &template.CreatedAt, &template.UpdatedAt,
+	)
+
+	if err != nil {
+		return template, err
+	}
+
+	// Handle nullable fields
+	if merchantColumn.Valid {
+		merchantInt := int(merchantColumn.Int64)
+		template.MerchantColumn = &merchantInt
+	}
+	if dateFormat.Valid {
+		template.DateFormat = dateFormat.String
+	}
+	if delimiter.Valid {
+		template.Delimiter = delimiter.String
+	}
+
+	return template, nil
 }
 
 // GetTemplateById returns a CSV template by its ID
 func (cts *CSVTemplateStore) GetTemplateById(id int64) *types.CSVTemplate {
-	for _, template := range cts.Templates {
-		if template.Id == id {
-			return &template
-		}
+	query := `
+		SELECT id, name, date_column, amount_column, desc_column, merchant_column,
+		       has_header, date_format, delimiter, created_at, updated_at
+		FROM csv_templates
+		WHERE id = ?
+	`
+
+	row := cts.helper.QuerySingleRow(query, id)
+	template, err := cts.scanCSVTemplateRow(row)
+	if err != nil {
+		return nil // Template not found or error
 	}
-	return nil
+
+	return &template
 }
 
 // GetTemplateNameById returns the name of a template by its ID, or empty string if not found
@@ -149,12 +229,16 @@ func (cts *CSVTemplateStore) CreateCSVTemplate(template types.CSVTemplate) *Temp
 		return result
 	}
 
+	// Set default delimiter if empty (matches database schema default)
+	if template.Delimiter == "" {
+		template.Delimiter = ","
+	}
+
 	// Check for duplicates
-	for _, existing := range cts.Templates {
-		if existing.Name == template.Name {
-			result.Message = "Template name already exists"
-			return result
-		}
+	existing := cts.GetTemplateByName(template.Name)
+	if existing != nil {
+		result.Message = "Template name already exists"
+		return result
 	}
 
 	// Validate column indices
@@ -163,23 +247,118 @@ func (cts *CSVTemplateStore) CreateCSVTemplate(template types.CSVTemplate) *Temp
 		return result
 	}
 
-	// Assign unique ID to template
-	template.Id = cts.NextId
-	cts.NextId++
-
-	// Add template and set as default
-	cts.Templates = append(cts.Templates, template)
-	cts.Default = template.Name
-
-	err := cts.SaveCSVTemplates()
+	err := cts.SaveCSVTemplate(template)
 	if err != nil {
 		result.Message = fmt.Sprintf("Failed to save template: %v", err)
 		return result
 	}
 
+	// Set as default
+	cts.defaultTemplate = template.Name
+
 	result.Success = true
 	result.Message = fmt.Sprintf("Template '%s' created and set as default", template.Name)
 	return result
+}
+
+// SaveCSVTemplate saves or updates a CSV template
+func (cts *CSVTemplateStore) SaveCSVTemplate(template types.CSVTemplate) error {
+	now := time.Now().Format(time.RFC3339)
+
+	if template.Id == 0 {
+		// Insert new template
+		return cts.insertTemplate(template, now)
+	} else {
+		// Update existing template
+		return cts.updateTemplate(template, now)
+	}
+}
+
+// insertTemplate inserts a new CSV template
+func (cts *CSVTemplateStore) insertTemplate(template types.CSVTemplate, now string) error {
+	query := `
+		INSERT INTO csv_templates (
+			name, date_column, amount_column, desc_column, merchant_column,
+			has_header, date_format, delimiter, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`
+
+	// Handle nullable fields
+	var merchantColumn interface{}
+	if template.MerchantColumn != nil {
+		merchantColumn = *template.MerchantColumn
+	}
+
+	var dateFormat interface{}
+	if template.DateFormat != "" {
+		dateFormat = template.DateFormat
+	}
+
+	// Delimiter is NOT NULL in schema, so use default if empty
+	delimiter := template.Delimiter
+	if delimiter == "" {
+		delimiter = "," // Use schema default
+	}
+
+	// Set creation timestamp if not provided
+	createdAt := template.CreatedAt
+	if createdAt == "" {
+		createdAt = now
+	}
+
+	id, err := cts.helper.ExecReturnID(query,
+		template.Name, template.DateColumn, template.AmountColumn,
+		template.DescColumn, merchantColumn, template.HasHeader,
+		dateFormat, delimiter, createdAt, now,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to insert CSV template: %w", err)
+	}
+
+	// Update the template ID
+	template.Id = id
+	return nil
+}
+
+// updateTemplate updates an existing CSV template
+func (cts *CSVTemplateStore) updateTemplate(template types.CSVTemplate, now string) error {
+	query := `
+		UPDATE csv_templates SET 
+			name = ?, date_column = ?, amount_column = ?, desc_column = ?, 
+			merchant_column = ?, has_header = ?, date_format = ?, delimiter = ?, 
+			updated_at = ?
+		WHERE id = ?
+	`
+
+	// Handle nullable fields
+	var merchantColumn interface{}
+	if template.MerchantColumn != nil {
+		merchantColumn = *template.MerchantColumn
+	}
+
+	var dateFormat interface{}
+	if template.DateFormat != "" {
+		dateFormat = template.DateFormat
+	}
+
+	// Delimiter is NOT NULL in schema, so use default if empty
+	delimiter := template.Delimiter
+	if delimiter == "" {
+		delimiter = "," // Use schema default
+	}
+
+	_, err := cts.helper.ExecReturnRowsAffected(query,
+		template.Name, template.DateColumn, template.AmountColumn,
+		template.DescColumn, merchantColumn, template.HasHeader,
+		dateFormat, delimiter, now, template.Id,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to update CSV template: %w", err)
+	}
+
+	return nil
 }
 
 // ParseCSVLine parses a CSV line handling quoted fields

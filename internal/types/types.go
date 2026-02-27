@@ -47,6 +47,8 @@ type BankStatement struct {
 	Status         string `json:"status"`
 	ProcessingTime int64  `json:"processingTime,omitempty"`
 	ErrorLog       string `json:"errorLog,omitempty"`
+	CreatedAt      string `json:"createdAt"`
+	UpdatedAt      string `json:"updatedAt"`
 }
 
 type CSVTemplate struct {
@@ -59,6 +61,8 @@ type CSVTemplate struct {
 	DateFormat     string `json:"dateFormat,omitempty"`
 	MerchantColumn *int   `json:"merchantColumn,omitempty"`
 	Delimiter      string `json:"delimiter,omitempty"`
+	CreatedAt      string `json:"createdAt"`
+	UpdatedAt      string `json:"updatedAt"`
 }
 
 type ImportResult struct {

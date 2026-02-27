@@ -1,8 +1,9 @@
 package storage
 
 import (
+	"budget-tracker-tui/internal/database"
 	"budget-tracker-tui/internal/types"
-	"encoding/json"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,131 +11,251 @@ import (
 	"time"
 )
 
-// BankStatementStore handles all bank statement-related operations
+// BankStatementStore handles all bank statement-related operations using SQLite
 type BankStatementStore struct {
-	filename   string
-	Statements []types.BankStatement `json:"statements"`
-	NextId     int64                 `json:"nextId"`
+	db     *database.Connection
+	helper *database.SQLHelper
 }
 
 // NewBankStatementStore creates a new BankStatementStore instance
-func NewBankStatementStore(statementFile string) *BankStatementStore {
+func NewBankStatementStore(db *database.Connection) *BankStatementStore {
 	return &BankStatementStore{
-		filename:   statementFile,
-		Statements: []types.BankStatement{},
-		NextId:     1,
+		db:     db,
+		helper: database.NewSQLHelper(db),
 	}
 }
 
-// LoadBankStatements loads bank statements from the JSON file
+// LoadBankStatements is no longer needed with SQLite (data is always persisted)
+// Kept for interface compatibility
 func (bs *BankStatementStore) LoadBankStatements() error {
-	if _, err := os.Stat(bs.filename); os.IsNotExist(err) {
-		bs.Statements = []types.BankStatement{}
-		bs.NextId = 1
-		return bs.SaveBankStatements()
-	}
-
-	data, err := os.ReadFile(bs.filename)
-	if err != nil {
-		return err
-	}
-
-	return json.Unmarshal(data, bs)
+	// SQLite data is always persisted, no loading needed
+	return nil
 }
 
-// SaveBankStatements saves bank statements to the JSON file
+// SaveBankStatements is no longer needed with SQLite (data is always persisted)
+// Kept for interface compatibility
 func (bs *BankStatementStore) SaveBankStatements() error {
-	data, err := json.MarshalIndent(bs, "", "  ")
+	// SQLite data is always persisted, no explicit saving needed
+	return nil
+}
+
+// NextId calculates the next available ID for bank statements
+func (bs *BankStatementStore) NextId() int64 {
+	maxID, err := bs.helper.GetMaxID("bank_statements", "id")
 	if err != nil {
-		return err
+		return 1 // Default to 1 if error or no records
 	}
-	return os.WriteFile(bs.filename, data, 0644)
+	return maxID + 1
 }
 
-// GetStatementHistory returns all bank statements
+// scanBankStatement scans a database row into a BankStatement struct
+func (bs *BankStatementStore) scanBankStatement(rows *sql.Rows) (types.BankStatement, error) {
+	var stmt types.BankStatement
+	var periodStart, periodEnd sql.NullString
+	var processingTime sql.NullInt64
+	var errorLog sql.NullString
+
+	err := rows.Scan(
+		&stmt.Id, &stmt.Filename, &stmt.ImportDate, &periodStart, &periodEnd,
+		&stmt.TemplateUsed, &stmt.TxCount, &stmt.Status, &processingTime,
+		&errorLog, &stmt.CreatedAt, &stmt.UpdatedAt,
+	)
+
+	if err != nil {
+		return stmt, err
+	}
+
+	// Handle nullable fields
+	if periodStart.Valid {
+		stmt.PeriodStart = periodStart.String
+	}
+	if periodEnd.Valid {
+		stmt.PeriodEnd = periodEnd.String
+	}
+	if processingTime.Valid {
+		stmt.ProcessingTime = processingTime.Int64
+	}
+	if errorLog.Valid {
+		stmt.ErrorLog = errorLog.String
+	}
+
+	return stmt, nil
+}
+
+// GetStatementHistory returns all bank statements ordered by import date
 func (bs *BankStatementStore) GetStatementHistory() []types.BankStatement {
-	return bs.Statements
+	query := `
+		SELECT id, filename, import_date, period_start, period_end,
+		       template_used, tx_count, status, processing_time, error_log,
+		       created_at, updated_at
+		FROM bank_statements
+		ORDER BY import_date DESC
+	`
+
+	rows, err := bs.helper.QueryRows(query)
+	if err != nil {
+		return []types.BankStatement{} // Return empty slice on error
+	}
+	defer rows.Close()
+
+	var statements []types.BankStatement
+	for rows.Next() {
+		stmt, err := bs.scanBankStatement(rows)
+		if err != nil {
+			continue // Skip malformed rows
+		}
+		statements = append(statements, stmt)
+	}
+
+	return statements
 }
 
-// GetStatementByIndex returns a bank statement by index
+// scanBankStatementRow scans a single database row into a BankStatement struct
+func (bs *BankStatementStore) scanBankStatementRow(row *sql.Row) (types.BankStatement, error) {
+	var stmt types.BankStatement
+	var periodStart, periodEnd sql.NullString
+	var processingTime sql.NullInt64
+	var errorLog sql.NullString
+
+	err := row.Scan(
+		&stmt.Id, &stmt.Filename, &stmt.ImportDate, &periodStart, &periodEnd,
+		&stmt.TemplateUsed, &stmt.TxCount, &stmt.Status, &processingTime,
+		&errorLog, &stmt.CreatedAt, &stmt.UpdatedAt,
+	)
+
+	if err != nil {
+		return stmt, err
+	}
+
+	// Handle nullable fields
+	if periodStart.Valid {
+		stmt.PeriodStart = periodStart.String
+	}
+	if periodEnd.Valid {
+		stmt.PeriodEnd = periodEnd.String
+	}
+	if processingTime.Valid {
+		stmt.ProcessingTime = processingTime.Int64
+	}
+	if errorLog.Valid {
+		stmt.ErrorLog = errorLog.String
+	}
+
+	return stmt, nil
+}
+
+// GetStatementByIndex returns a statement by its index in the history list
 func (bs *BankStatementStore) GetStatementByIndex(index int) (*types.BankStatement, error) {
-	if index < 0 || index >= len(bs.Statements) {
+	statements := bs.GetStatementHistory()
+	if index < 0 || index >= len(statements) {
 		return nil, fmt.Errorf("statement index %d out of range", index)
 	}
-	return &bs.Statements[index], nil
+	return &statements[index], nil
 }
 
-// GetStatementDetails returns a bank statement by index with bool indicator
+// GetStatementDetails returns a statement and existence boolean by index
 func (bs *BankStatementStore) GetStatementDetails(index int) (types.BankStatement, bool) {
-	if index < 0 || index >= len(bs.Statements) {
+	statement, err := bs.GetStatementByIndex(index)
+	if err != nil {
 		return types.BankStatement{}, false
 	}
-	return bs.Statements[index], true
+	return *statement, true
 }
 
 // GetStatementById retrieves a bank statement by its ID
 func (bs *BankStatementStore) GetStatementById(id int64) (*types.BankStatement, error) {
-	for i, stmt := range bs.Statements {
-		if stmt.Id == id {
-			return &bs.Statements[i], nil
-		}
+	query := `
+		SELECT id, filename, import_date, period_start, period_end,
+		       template_used, tx_count, status, processing_time, error_log,
+		       created_at, updated_at
+		FROM bank_statements
+		WHERE id = ?
+	`
+
+	row := bs.helper.QuerySingleRow(query, id)
+	stmt, err := bs.scanBankStatementRow(row)
+	if err != nil {
+		return nil, fmt.Errorf("statement not found: %w", err)
 	}
-	return nil, fmt.Errorf("statement with ID %d not found", id)
+
+	return &stmt, nil
 }
 
-// RecordBankStatement records a new bank statement
+// RecordBankStatement records a new bank statement import
 func (bs *BankStatementStore) RecordBankStatement(filename, periodStart, periodEnd string, templateId int64, txCount int, status string) error {
-	statement := types.BankStatement{
-		Id:           bs.NextId,
-		Filename:     filename,
-		ImportDate:   time.Now().Format(time.RFC3339), // RFC3339 timestamp
-		PeriodStart:  periodStart,
-		PeriodEnd:    periodEnd,
-		TemplateUsed: templateId,
-		TxCount:      txCount,
-		Status:       status,
+	now := time.Now().Format(time.RFC3339)
+
+	query := `
+		INSERT INTO bank_statements (
+			filename, import_date, period_start, period_end,
+			template_used, tx_count, status, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`
+
+	var periodStartVal, periodEndVal interface{}
+	if periodStart != "" {
+		periodStartVal = periodStart
+	}
+	if periodEnd != "" {
+		periodEndVal = periodEnd
 	}
 
-	bs.Statements = append(bs.Statements, statement)
-	bs.NextId++
+	_, err := bs.helper.ExecReturnID(query,
+		filename, now, periodStartVal, periodEndVal,
+		templateId, txCount, status, now, now,
+	)
 
-	return bs.SaveBankStatements()
+	return err
 }
 
 // MarkStatementUndone marks a statement as undone
 func (bs *BankStatementStore) MarkStatementUndone(statementId int64) error {
-	for i, stmt := range bs.Statements {
-		if stmt.Id == statementId {
-			bs.Statements[i].Status = "undone"
-			return bs.SaveBankStatements()
-		}
+	query := "UPDATE bank_statements SET status = 'undone', updated_at = ? WHERE id = ?"
+	now := time.Now().Format(time.RFC3339)
+
+	rowsAffected, err := bs.helper.ExecReturnRowsAffected(query, now, statementId)
+	if err != nil {
+		return fmt.Errorf("failed to mark statement as undone: %w", err)
 	}
-	return fmt.Errorf("statement with ID %d not found", statementId)
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("statement not found")
+	}
+
+	return nil
 }
 
 // CanUndoImport checks if a statement can be undone
 func (bs *BankStatementStore) CanUndoImport(statementId int64) bool {
-	for _, stmt := range bs.Statements {
-		if stmt.Id == statementId {
-			return stmt.Status == "completed" || stmt.Status == "override"
-		}
-	}
-	return false
+	exists, err := bs.helper.ExistsBy("bank_statements", "id = ? AND status IN ('completed', 'override')", statementId)
+	return err == nil && exists
 }
 
 // DetectOverlap checks for period overlaps with existing completed statements
 func (bs *BankStatementStore) DetectOverlap(periodStart, periodEnd string) []types.BankStatement {
 	var overlaps []types.BankStatement
 
-	for _, stmt := range bs.Statements {
-		if stmt.Status != "completed" {
-			continue
-		}
+	query := `
+		SELECT id, filename, import_date, period_start, period_end,
+		       template_used, tx_count, status, processing_time, error_log,
+		       created_at, updated_at
+		FROM bank_statements
+		WHERE status = 'completed' AND period_start IS NOT NULL AND period_end IS NOT NULL
+		  AND ? <= period_end AND ? >= period_start
+	`
 
-		// Check for date range overlap
-		if periodStart <= stmt.PeriodEnd && periodEnd >= stmt.PeriodStart {
-			overlaps = append(overlaps, stmt)
+	rows, err := bs.helper.QueryRows(query, periodStart, periodEnd)
+	if err != nil {
+		return overlaps // Return empty slice on error
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		stmt, err := bs.scanBankStatement(rows)
+		if err != nil {
+			continue // Skip malformed rows
 		}
+		overlaps = append(overlaps, stmt)
 	}
 
 	return overlaps
@@ -148,24 +269,36 @@ func (bs *BankStatementStore) GetStatementSummary(stmt types.BankStatement) stri
 
 // GetStatementsByStatus returns statements filtered by status
 func (bs *BankStatementStore) GetStatementsByStatus(status string) []types.BankStatement {
-	var filtered []types.BankStatement
-	for _, stmt := range bs.Statements {
-		if stmt.Status == status {
-			filtered = append(filtered, stmt)
-		}
+	query := `
+		SELECT id, filename, import_date, period_start, period_end,
+		       template_used, tx_count, status, processing_time, error_log,
+		       created_at, updated_at
+		FROM bank_statements
+		WHERE status = ?
+		ORDER BY import_date DESC
+	`
+
+	rows, err := bs.helper.QueryRows(query, status)
+	if err != nil {
+		return []types.BankStatement{} // Return empty slice on error
 	}
-	return filtered
+	defer rows.Close()
+
+	var statements []types.BankStatement
+	for rows.Next() {
+		stmt, err := bs.scanBankStatement(rows)
+		if err != nil {
+			continue // Skip malformed rows
+		}
+		statements = append(statements, stmt)
+	}
+
+	return statements
 }
 
 // GetUndoableStatements returns statements that can be undone
 func (bs *BankStatementStore) GetUndoableStatements() []types.BankStatement {
-	var undoable []types.BankStatement
-	for _, stmt := range bs.Statements {
-		if bs.CanUndoImport(stmt.Id) {
-			undoable = append(undoable, stmt)
-		}
-	}
-	return undoable
+	return bs.GetStatementsByStatus("completed")
 }
 
 // ExtractPeriodFromTransactions extracts start and end dates from transactions

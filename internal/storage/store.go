@@ -1,13 +1,14 @@
 package storage
 
 import (
+	"budget-tracker-tui/internal/database"
 	"budget-tracker-tui/internal/types"
+	"database/sql"
 	"fmt"
-	"os"
 	"path/filepath"
 )
 
-// Store is the main store that integrates all domain stores
+// Store is the main store that integrates all domain stores using SQLite
 type Store struct {
 	// Public domain stores - directly accessible by UI layer
 	Transactions *TransactionStore
@@ -15,12 +16,8 @@ type Store struct {
 	Statements   *BankStatementStore
 	Templates    *CSVTemplateStore
 
-	// Private file paths for shared operations
-	transactionFile string
-	categoryFile    string
-	statementFile   string
-	templateFile    string
-	backupFile      string
+	// Private database connection
+	db *database.Connection
 }
 
 // NewStore creates a new Store with all domain stores
@@ -28,60 +25,58 @@ func NewStore() *Store {
 	return &Store{}
 }
 
-// Init initializes the store and all domain stores
+// Init initializes the store and all domain stores with SQLite database
 func (s *Store) Init() error {
-	homeDir, err := os.UserHomeDir()
+	// Initialize SQLite database connection
+	db, err := database.NewConnection()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to initialize database: %w", err)
 	}
 
-	appDir := filepath.Join(homeDir, ".finance-wrapped")
-	os.MkdirAll(appDir, 0755)
+	s.db = db
 
-	// Set up file paths
-	s.transactionFile = filepath.Join(appDir, "transactions.json")
-	s.categoryFile = filepath.Join(appDir, "categories.json")
-	s.statementFile = filepath.Join(appDir, "bank-statements.json")
-	s.templateFile = filepath.Join(appDir, "csv-templates.json")
-	s.backupFile = filepath.Join(appDir, "backup.json")
+	// Initialize domain stores with database connection
+	s.Categories = NewCategoryStore(db)
+	s.Templates = NewCSVTemplateStore(db)
+	s.Statements = NewBankStatementStore(db)
+	s.Transactions = NewTransactionStore(db)
 
-	// Initialize domain stores
-	s.Categories = NewCategoryStore(s.categoryFile)
-	s.Templates = NewCSVTemplateStore(s.templateFile)
-	s.Statements = NewBankStatementStore(s.statementFile)
-	s.Transactions = NewTransactionStore(s.transactionFile, s.backupFile, s)
-
-	// Load all stores
-	err = s.Categories.LoadCategories()
+	// No need to load stores explicitly with SQLite - data is always persisted
+	// Database health check to ensure everything is working
+	err = s.db.CheckHealth()
 	if err != nil {
-		return err
+		return fmt.Errorf("database health check failed: %w", err)
 	}
 
-	err = s.Templates.LoadCSVTemplates()
-	if err != nil {
-		return err
-	}
-
-	err = s.Statements.LoadBankStatements()
-	if err != nil {
-		return err
-	}
-
-	err = s.Transactions.LoadTransactions()
-	if err != nil {
-		return err
-	}
-
-	// Migrate existing data to new category system
+	// Migrate existing data to new category system if needed
 	return s.MigrateTransactionCategories()
 }
 
-// GetFilePaths returns the file paths for shared operations
-func (s *Store) GetFilePaths() (transactions, categories, statements, templates string) {
-	return s.transactionFile, s.categoryFile, s.statementFile, s.templateFile
+// Close closes the database connection
+func (s *Store) Close() error {
+	if s.db != nil {
+		return s.db.Close()
+	}
+	return nil
 }
 
-// SharedUtilsInterface implementation for TransactionStore
+// GetDatabasePath returns the database file path
+func (s *Store) GetDatabasePath() string {
+	if s.db != nil {
+		return s.db.GetPath()
+	}
+	return ""
+}
+
+// GetDatabaseStats returns database statistics
+func (s *Store) GetDatabaseStats() (map[string]interface{}, error) {
+	if s.db != nil {
+		return s.db.GetStats()
+	}
+	return nil, fmt.Errorf("database not initialized")
+}
+
+// SharedUtilsInterface implementation for backward compatibility
 func (s *Store) ParseCSVLine(line string, delimiter string) []string {
 	return s.Templates.ParseCSVLine(line, delimiter)
 }
@@ -90,8 +85,8 @@ func (s *Store) ParseAmount(amountStr string) (float64, error) {
 	return s.Templates.ParseAmount(amountStr)
 }
 
-// MigrateTransactionCategories migrates old string-based categories to category IDs
-// This function should be called during application startup to handle legacy data
+// MigrateTransactionCategories migrates transactions to use proper category IDs
+// This function ensures data integrity during the SQLite migration
 func (s *Store) MigrateTransactionCategories() error {
 	transactions, err := s.Transactions.GetTransactions()
 	if err != nil {
@@ -99,43 +94,33 @@ func (s *Store) MigrateTransactionCategories() error {
 	}
 
 	needsMigration := false
+	defaultCategoryId := s.Categories.GetDefaultCategoryId()
 
-	// For now, set default category ID for transactions that have CategoryId = 0
+	// Set default category ID for transactions that have CategoryId = 0
 	for i := range transactions {
 		if transactions[i].CategoryId == 0 {
-			transactions[i].CategoryId = s.Categories.GetDefaultCategoryId()
+			transactions[i].CategoryId = defaultCategoryId
 			needsMigration = true
 		}
 	}
 
-	// Handle migration of legacy CategoryStore format
-	// If DefaultId is 0 but we have categories, set it to first category or Unsorted (id 5)
-	if s.Categories.DefaultId == 0 && len(s.Categories.Categories) > 0 {
-		// Try to find Unsorted category (our default)
-		found := false
-		for _, cat := range s.Categories.Categories {
-			if cat.DisplayName == "Unsorted" {
-				s.Categories.DefaultId = cat.Id
-				found = true
-				break
-			}
-		}
-		// If no Unsorted category, use the first one
-		if !found {
-			s.Categories.DefaultId = s.Categories.Categories[0].Id
-		}
-		if err := s.Categories.SaveCategories(); err != nil {
-			return err
-		}
-	}
-
 	if needsMigration {
-		// Update transactions with the migrated data
-		for _, tx := range transactions {
-			err = s.Transactions.SaveTransaction(tx)
-			if err != nil {
-				return err
+		// Update transactions with the migrated data using SQLite transaction
+		err = s.db.ExecuteInTransaction(func(tx *sql.Tx) error {
+			for _, transaction := range transactions {
+				if transaction.CategoryId == defaultCategoryId {
+					updateQuery := "UPDATE transactions SET category_id = ? WHERE id = ?"
+					_, err := tx.Exec(updateQuery, defaultCategoryId, transaction.Id)
+					if err != nil {
+						return fmt.Errorf("failed to migrate transaction %d: %w", transaction.Id, err)
+					}
+				}
 			}
+			return nil
+		})
+
+		if err != nil {
+			return fmt.Errorf("failed to migrate transaction categories: %w", err)
 		}
 	}
 
@@ -216,7 +201,7 @@ func (s *Store) ImportCSVWithOverride(filePath, templateName string) *types.Impo
 	// Record statement with override status first to get statement ID
 	result.PeriodStart, result.PeriodEnd = s.Statements.ExtractPeriodFromTransactions(transactions)
 	filename := filepath.Base(filePath)
-	statementId := s.Statements.NextId
+	statementId := s.Statements.NextId()
 
 	err = s.Statements.RecordBankStatement(filename, result.PeriodStart, result.PeriodEnd, template.Id, len(transactions), "override")
 	if err != nil {
@@ -267,7 +252,7 @@ func (s *Store) ImportTransactionsFromCSV(filePath, templateName string) error {
 
 	// Record successful import first to get statement ID
 	filename := filepath.Base(filePath)
-	statementId := s.Statements.NextId
+	statementId := s.Statements.NextId()
 
 	err = s.Statements.RecordBankStatement(filename, periodStart, periodEnd, template.Id, len(transactions), "completed")
 	if err != nil {
@@ -296,8 +281,17 @@ func (s *Store) UndoImport(statementId int64) (int, error) {
 		}
 	}
 
-	// Replace transactions (this is a bit of a hack, but we need to remove transactions)
-	s.Transactions.transactions = remainingTransactions
+	// Batch delete transactions with prepared statement for efficiency
+	if removedCount > 0 {
+		err := s.db.ExecuteInTransaction(func(tx *sql.Tx) error {
+			deleteQuery := "DELETE FROM transactions WHERE statement_id = ?"
+			_, err := tx.Exec(deleteQuery, statementId)
+			return err
+		})
+		if err != nil {
+			return 0, fmt.Errorf("failed to remove transactions for statement %d: %w", statementId, err)
+		}
+	}
 
 	// Update statement status to indicate it was undone
 	err = s.Statements.MarkStatementUndone(statementId)

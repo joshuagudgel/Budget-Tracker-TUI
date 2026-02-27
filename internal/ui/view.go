@@ -233,7 +233,7 @@ func (m model) View() string {
 	case csvTemplateView:
 		s += headerStyle.Render("Select CSV Template") + "\n\n"
 
-		templates := m.store.Templates.GetCSVTemplates()
+		templates, _ := m.store.Templates.GetCSVTemplates()
 		currentDefaultTemplate := m.store.Templates.GetDefaultTemplate()
 		if len(templates) == 0 {
 			s += faintStyle.Render("No CSV templates found.") + "\n\n"

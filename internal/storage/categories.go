@@ -1,146 +1,231 @@
 package storage
 
 import (
+	"budget-tracker-tui/internal/database"
 	"budget-tracker-tui/internal/types"
-	"encoding/json"
+	"database/sql"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 )
 
-// CategoryStore handles all category-related operations
+// CategoryStore handles all category-related operations using SQLite
 type CategoryStore struct {
-	filename   string
-	Categories []types.Category `json:"categories"`
-	DefaultId  int64            `json:"defaultId"`
-	NextId     int64            `json:"nextId"`
+	db        *database.Connection
+	helper    *database.SQLHelper
+	defaultId int64
 }
 
 // NewCategoryStore creates a new CategoryStore instance
-func NewCategoryStore(categoryFile string) *CategoryStore {
-	return &CategoryStore{
-		filename:   categoryFile,
-		Categories: []types.Category{},
-		DefaultId:  0,
-		NextId:     1,
+func NewCategoryStore(db *database.Connection) *CategoryStore {
+	store := &CategoryStore{
+		db:        db,
+		helper:    database.NewSQLHelper(db),
+		defaultId: 1, // Default to "Uncategorized" category
+	}
+
+	// Ensure default categories exist
+	store.ensureDefaultCategories()
+
+	return store
+}
+
+// ensureDefaultCategories creates default categories if they don't exist
+func (cs *CategoryStore) ensureDefaultCategories() {
+	// Check if categories exist
+	count, err := cs.helper.CountBy("categories", "")
+	if err != nil || count > 0 {
+		return // Categories already exist or error occurred
+	}
+
+	// Create default categories (note: ID 1 "Uncategorized" is created by schema)
+	defaultCategories := []types.Category{
+		{DisplayName: "Food & Dining", IsActive: true},
+		{DisplayName: "Transportation", IsActive: true},
+		{DisplayName: "Entertainment", IsActive: true},
+		{DisplayName: "Utilities", IsActive: true},
+		{DisplayName: "Shopping", IsActive: true},
+		{DisplayName: "Healthcare", IsActive: true},
+	}
+
+	for _, category := range defaultCategories {
+		cs.CreateCategoryFull(&category) // Ignore errors during initialization
 	}
 }
 
-// LoadCategories loads categories from the JSON file
+// LoadCategories is no longer needed with SQLite (data is always persisted)
+// Kept for interface compatibility
 func (cs *CategoryStore) LoadCategories() error {
-	if _, err := os.Stat(cs.filename); os.IsNotExist(err) {
-		// Create default categories
-		now := time.Now().Format(time.RFC3339)
-		cs.Categories = []types.Category{
-			{Id: 1, DisplayName: "Food & Dining", IsActive: true, CreatedAt: now, UpdatedAt: now},
-			{Id: 2, DisplayName: "Transportation", IsActive: true, CreatedAt: now, UpdatedAt: now},
-			{Id: 3, DisplayName: "Entertainment", IsActive: true, CreatedAt: now, UpdatedAt: now},
-			{Id: 4, DisplayName: "Utilities", IsActive: true, CreatedAt: now, UpdatedAt: now},
-			{Id: 5, DisplayName: "Unsorted", IsActive: true, CreatedAt: now, UpdatedAt: now},
-			{Id: 6, DisplayName: "Sorted", IsActive: true, CreatedAt: now, UpdatedAt: now},
-		}
-		cs.DefaultId = 5 // Unsorted
-		cs.NextId = 7
-		return cs.SaveCategories()
-	}
-
-	data, err := os.ReadFile(cs.filename)
-	if err != nil {
-		return err
-	}
-
-	err = json.Unmarshal(data, cs)
-	if err != nil {
-		return err
-	}
-
-	// Initialize NextId if not set or calculate from existing categories
-	if cs.NextId == 0 {
-		cs.NextId = cs.CalculateNextCategoryId()
-	}
-
+	// SQLite data is always persisted, no loading needed
 	return nil
 }
 
-// SaveCategories saves categories to the JSON file
+// SaveCategories is no longer needed with SQLite (data is always persisted)
+// Kept for interface compatibility
 func (cs *CategoryStore) SaveCategories() error {
-	data, err := json.MarshalIndent(cs, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(cs.filename, data, 0644)
+	// SQLite data is always persisted, no explicit saving needed
+	return nil
 }
 
-// CalculateNextCategoryId calculates the next available category ID
+// CalculateNextCategoryId calculates the next available category ID using SQLite
 func (cs *CategoryStore) CalculateNextCategoryId() int64 {
-	var maxId int64 = 0
-	for _, cat := range cs.Categories {
-		if cat.Id > maxId {
-			maxId = cat.Id
-		}
+	maxID, err := cs.helper.GetMaxID("categories", "id")
+	if err != nil {
+		return 1 // Default to 1 if error or no records
 	}
-	return maxId + 1
+	return maxID + 1
 }
 
-// GetCategories returns all categories
+// GetCategories returns all categories from the database
 func (cs *CategoryStore) GetCategories() ([]types.Category, error) {
-	return cs.Categories, nil
+	query := `
+		SELECT id, display_name, parent_id, color, is_active, created_at, updated_at 
+		FROM categories 
+		WHERE is_active = 1 
+		ORDER BY display_name
+	`
+
+	rows, err := cs.helper.QueryRows(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query categories: %w", err)
+	}
+	defer rows.Close()
+
+	var categories []types.Category
+	for rows.Next() {
+		category, err := cs.scanCategory(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan category: %w", err)
+		}
+		categories = append(categories, category)
+	}
+
+	return categories, rows.Err()
 }
 
 // GetDefaultCategoryId returns the default category ID
 func (cs *CategoryStore) GetDefaultCategoryId() int64 {
-	return cs.DefaultId
+	return cs.defaultId
 }
 
 // SetDefaultCategoryId sets the default category ID
 func (cs *CategoryStore) SetDefaultCategoryId(categoryId int64) error {
 	// Verify category exists
-	found := false
-	for _, cat := range cs.Categories {
-		if cat.Id == categoryId {
-			found = true
-			break
-		}
+	exists, err := cs.helper.ExistsBy("categories", "id = ? AND is_active = 1", categoryId)
+	if err != nil {
+		return fmt.Errorf("failed to check category existence: %w", err)
 	}
 
-	if !found {
-		return fmt.Errorf("category not found")
+	if !exists {
+		return fmt.Errorf("category not found or inactive")
 	}
 
-	cs.DefaultId = categoryId
-	return cs.SaveCategories()
+	cs.defaultId = categoryId
+	return nil
 }
 
 // GetCategoryDisplayName returns the display name for a category ID, or empty string if not found
 func (cs *CategoryStore) GetCategoryDisplayName(categoryId int64) string {
-	for _, category := range cs.Categories {
-		if category.Id == categoryId {
-			return category.DisplayName
-		}
+	query := "SELECT display_name FROM categories WHERE id = ? AND is_active = 1"
+
+	var displayName string
+	err := cs.helper.QuerySingleRow(query, categoryId).Scan(&displayName)
+	if err != nil {
+		return "" // Category not found or error
 	}
-	return ""
+
+	return displayName
+}
+
+// scanCategory scans a database row into a Category struct
+func (cs *CategoryStore) scanCategory(rows *sql.Rows) (types.Category, error) {
+	var category types.Category
+	var parentID sql.NullInt64
+	var color sql.NullString
+
+	err := rows.Scan(
+		&category.Id, &category.DisplayName, &parentID, &color,
+		&category.IsActive, &category.CreatedAt, &category.UpdatedAt,
+	)
+
+	if err != nil {
+		return category, err
+	}
+
+	// Handle nullable fields
+	if parentID.Valid {
+		category.ParentId = &parentID.Int64
+	}
+	if color.Valid {
+		category.Color = color.String
+	}
+
+	return category, nil
 }
 
 // GetCategoryById returns a category by its ID, or nil if not found
 func (cs *CategoryStore) GetCategoryById(categoryId int64) *types.Category {
-	for _, category := range cs.Categories {
-		if category.Id == categoryId {
-			return &category
-		}
+	query := `
+		SELECT id, display_name, parent_id, color, is_active, created_at, updated_at 
+		FROM categories 
+		WHERE id = ? AND is_active = 1
+	`
+
+	row := cs.helper.QuerySingleRow(query, categoryId)
+	category, err := cs.scanCategoryRow(row)
+	if err != nil {
+		return nil // Category not found or error
 	}
-	return nil
+
+	return &category
+}
+
+// scanCategoryRow scans a single database row into a Category struct
+func (cs *CategoryStore) scanCategoryRow(row *sql.Row) (types.Category, error) {
+	var category types.Category
+	var parentID sql.NullInt64
+	var color sql.NullString
+
+	err := row.Scan(
+		&category.Id, &category.DisplayName, &parentID, &color,
+		&category.IsActive, &category.CreatedAt, &category.UpdatedAt,
+	)
+
+	if err != nil {
+		return category, err
+	}
+
+	// Handle nullable fields
+	if parentID.Valid {
+		category.ParentId = &parentID.Int64
+	}
+	if color.Valid {
+		category.Color = color.String
+	}
+
+	return category, nil
 }
 
 // GetCategoryByDisplayName returns a category by its display name (case insensitive), or nil if not found
 func (cs *CategoryStore) GetCategoryByDisplayName(displayName string) *types.Category {
 	trimmed := strings.TrimSpace(displayName)
-	for _, category := range cs.Categories {
-		if strings.EqualFold(category.DisplayName, trimmed) {
-			return &category
-		}
+	if trimmed == "" {
+		return nil
 	}
-	return nil
+
+	query := `
+		SELECT id, display_name, parent_id, color, is_active, created_at, updated_at 
+		FROM categories 
+		WHERE LOWER(display_name) = LOWER(?) AND is_active = 1
+	`
+
+	row := cs.helper.QuerySingleRow(query, trimmed)
+	category, err := cs.scanCategoryRow(row)
+	if err != nil {
+		return nil // Category not found or error
+	}
+
+	return &category
 }
 
 // CreateCategory creates a new category with display name only (legacy method)
@@ -153,46 +238,38 @@ func (cs *CategoryStore) CreateCategory(displayName string) *CategoryResult {
 		return result
 	}
 
-	// Check for duplicates by display name
-	for _, cat := range cs.Categories {
-		if strings.EqualFold(cat.DisplayName, strings.TrimSpace(displayName)) {
-			result.Message = "Category display name already exists"
-			return result
-		}
+	// Check for duplicates by display name (case insensitive)
+	existing := cs.GetCategoryByDisplayName(strings.TrimSpace(displayName))
+	if existing != nil {
+		result.Message = "Category display name already exists"
+		return result
 	}
 
-	err := cs.AddCategory(displayName)
+	// Create new category
+	category := &types.Category{
+		DisplayName: strings.TrimSpace(displayName),
+		IsActive:    true,
+	}
+
+	err := cs.CreateCategoryFull(category)
 	if err != nil {
-		result.Message = fmt.Sprintf("Failed to add category: %v", err)
+		result.Message = fmt.Sprintf("Failed to create category: %v", err)
 		return result
 	}
 
 	result.Success = true
+	result.CategoryId = category.Id
 	result.Message = fmt.Sprintf("Category '%s' created successfully", displayName)
 	return result
 }
 
-// AddCategory adds a new category with display name only
+// AddCategory adds a new category with display name only (legacy wrapper)
 func (cs *CategoryStore) AddCategory(displayName string) error {
-	// Check for duplicates by display name
-	for _, cat := range cs.Categories {
-		if strings.EqualFold(cat.DisplayName, strings.TrimSpace(displayName)) {
-			return fmt.Errorf("category '%s' already exists", displayName)
-		}
+	result := cs.CreateCategory(displayName)
+	if !result.Success {
+		return fmt.Errorf("%s", result.Message)
 	}
-
-	now := time.Now().Format(time.RFC3339)
-	category := types.Category{
-		Id:          cs.NextId,
-		DisplayName: strings.TrimSpace(displayName),
-		IsActive:    true,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-	}
-
-	cs.Categories = append(cs.Categories, category)
-	cs.NextId++
-	return cs.SaveCategories()
+	return nil
 }
 
 // CreateCategoryFull creates a new category with full category object support
@@ -205,25 +282,52 @@ func (cs *CategoryStore) CreateCategoryFull(category *types.Category) error {
 		return fmt.Errorf("%s", result.Errors[0].Message)
 	}
 
-	// Check for duplicates by display name
-	for _, cat := range cs.Categories {
-		if strings.EqualFold(cat.DisplayName, strings.TrimSpace(category.DisplayName)) {
-			return fmt.Errorf("category '%s' already exists", category.DisplayName)
-		}
+	// Check for duplicates by display name (case insensitive)
+	existing := cs.GetCategoryByDisplayName(category.DisplayName)
+	if existing != nil {
+		return fmt.Errorf("category '%s' already exists", category.DisplayName)
 	}
 
-	// Set metadata
 	now := time.Now().Format(time.RFC3339)
-	category.Id = cs.NextId
-	category.CreatedAt = now
-	category.UpdatedAt = now
+
+	query := `
+		INSERT INTO categories (display_name, parent_id, color, is_active, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`
+
+	// Handle nullable fields
+	var parentID interface{}
+	if category.ParentId != nil {
+		parentID = *category.ParentId
+	}
+
+	var color interface{}
+	if category.Color != "" {
+		color = category.Color
+	}
+
+	// Set creation timestamp if not provided
+	createdAt := category.CreatedAt
+	if createdAt == "" {
+		createdAt = now
+	}
+
+	id, err := cs.helper.ExecReturnID(query,
+		strings.TrimSpace(category.DisplayName), parentID, color,
+		true, createdAt, now,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to create category: %w", err)
+	}
+
+	// Update the category ID
+	category.Id = id
 	category.IsActive = true
+	category.CreatedAt = createdAt
+	category.UpdatedAt = now
 
-	// Add to store
-	cs.Categories = append(cs.Categories, *category)
-	cs.NextId++
-
-	return cs.SaveCategories()
+	return nil
 }
 
 // UpdateCategory updates an existing category
@@ -236,126 +340,132 @@ func (cs *CategoryStore) UpdateCategory(category *types.Category) error {
 		return fmt.Errorf("%s", result.Errors[0].Message)
 	}
 
-	// Find the category to update
-	categoryIndex := -1
-	for i, cat := range cs.Categories {
-		if cat.Id == category.Id {
-			categoryIndex = i
-			break
-		}
+	// Check for display name conflicts (excluding self)
+	existing := cs.GetCategoryByDisplayName(category.DisplayName)
+	if existing != nil && existing.Id != category.Id {
+		return fmt.Errorf("category '%s' already exists", category.DisplayName)
 	}
 
-	if categoryIndex == -1 {
-		return fmt.Errorf("category with ID %d not found", category.Id)
+	now := time.Now().Format(time.RFC3339)
+	query := `
+		UPDATE categories SET 
+			display_name = ?, parent_id = ?, color = ?, is_active = ?, updated_at = ?
+		WHERE id = ?
+	`
+
+	// Handle nullable fields
+	var parentID interface{}
+	if category.ParentId != nil {
+		parentID = *category.ParentId
 	}
 
-	// Check for duplicate display name (excluding current category)
-	for i, cat := range cs.Categories {
-		if i != categoryIndex && strings.EqualFold(cat.DisplayName, strings.TrimSpace(category.DisplayName)) {
-			return fmt.Errorf("category '%s' already exists", category.DisplayName)
-		}
+	var color interface{}
+	if category.Color != "" {
+		color = category.Color
 	}
 
-	// Preserve original creation time and update timestamp
-	existingCategory := cs.Categories[categoryIndex]
-	category.CreatedAt = existingCategory.CreatedAt
-	category.UpdatedAt = time.Now().Format(time.RFC3339)
-
-	// Update the category
-	cs.Categories[categoryIndex] = *category
-
-	return cs.SaveCategories()
-}
-
-// DeleteCategory deletes a category with safety checks
-func (cs *CategoryStore) DeleteCategory(categoryId int64) error {
-	// Find the category to delete
-	categoryIndex := -1
-	for i, cat := range cs.Categories {
-		if cat.Id == categoryId {
-			categoryIndex = i
-			break
-		}
-	}
-
-	if categoryIndex == -1 {
-		return fmt.Errorf("category with ID %d not found", categoryId)
-	}
-
-	// NOTE: Transaction usage checks need to be done by the caller (main Store)
-	// since CategoryStore doesn't have access to transactions
-
-	// Check if category has subcategories
-	for _, cat := range cs.Categories {
-		if cat.ParentId != nil && *cat.ParentId == categoryId {
-			return fmt.Errorf("cannot delete category: it has subcategories. Delete or reassign subcategories first")
-		}
-	}
-
-	// Check if this is the default category
-	if cs.DefaultId == categoryId {
-		return fmt.Errorf("cannot delete the default category. Set a different default category first")
-	}
-
-	// Remove the category
-	cs.Categories = append(
-		cs.Categories[:categoryIndex],
-		cs.Categories[categoryIndex+1:]...,
+	rowsAffected, err := cs.helper.ExecReturnRowsAffected(query,
+		strings.TrimSpace(category.DisplayName), parentID, color,
+		category.IsActive, now, category.Id,
 	)
 
-	return cs.SaveCategories()
+	if err != nil {
+		return fmt.Errorf("failed to update category: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("category not found")
+	}
+
+	// Update the category timestamps
+	category.UpdatedAt = now
+	return nil
 }
 
-// ValidateCategoryForDeletion validates if a category can be safely deleted
-// Note: This doesn't check transaction usage - that must be done by the caller
+// DeleteCategory safely deletes a category (sets as inactive)
+func (cs *CategoryStore) DeleteCategory(categoryId int64) error {
+	// First validate that deletion is safe
+	err := cs.ValidateCategoryForDeletion(categoryId)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	query := "UPDATE categories SET is_active = 0, updated_at = ? WHERE id = ?"
+
+	rowsAffected, err := cs.helper.ExecReturnRowsAffected(query, now, categoryId)
+	if err != nil {
+		return fmt.Errorf("failed to delete category: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("category not found")
+	}
+
+	// Check if this was the default category and reset if needed
+	if cs.defaultId == categoryId {
+		// Find first active category to set as new default
+		categories, err := cs.GetCategories()
+		if err == nil && len(categories) > 0 {
+			cs.defaultId = categories[0].Id
+		} else {
+			cs.defaultId = 1 // Fallback to "Uncategorized"
+		}
+	}
+
+	return nil
+}
+
+// ValidateCategoryForDeletion checks if a category can be safely deleted
 func (cs *CategoryStore) ValidateCategoryForDeletion(categoryId int64) error {
-	// Find the category
-	var targetCategory *types.Category
-	for _, cat := range cs.Categories {
-		if cat.Id == categoryId {
-			targetCategory = &cat
-			break
-		}
+	// Check if category exists and is active
+	exists, err := cs.helper.ExistsBy("categories", "id = ? AND is_active = 1", categoryId)
+	if err != nil {
+		return fmt.Errorf("failed to check category existence: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("category not found or already inactive")
 	}
 
-	if targetCategory == nil {
-		return fmt.Errorf("category with ID %d not found", categoryId)
+	// Check for child categories
+	hasChildren, err := cs.helper.ExistsBy("categories", "parent_id = ? AND is_active = 1", categoryId)
+	if err != nil {
+		return fmt.Errorf("failed to check for child categories: %w", err)
+	}
+	if hasChildren {
+		return fmt.Errorf("cannot delete category with active child categories")
 	}
 
-	// NOTE: Transaction usage checks need to be done by caller
-
-	// Check if category has subcategories
-	subcategoryCount := 0
-	var subcategoryNames []string
-	for _, cat := range cs.Categories {
-		if cat.ParentId != nil && *cat.ParentId == categoryId {
-			subcategoryCount++
-			subcategoryNames = append(subcategoryNames, cat.DisplayName)
-		}
+	// Count active categories to ensure at least one remains
+	activeCount, err := cs.helper.CountBy("categories", "is_active = 1")
+	if err != nil {
+		return fmt.Errorf("failed to count active categories: %w", err)
+	}
+	if activeCount <= 1 {
+		return fmt.Errorf("cannot delete the last active category")
 	}
 
-	if subcategoryCount > 0 {
-		return fmt.Errorf("cannot delete category '%s': it has %d subcategorie(s) (%s). Delete or reassign subcategories first",
-			targetCategory.DisplayName, subcategoryCount, strings.Join(subcategoryNames, ", "))
-	}
-
-	// Check if this is the default category
-	if cs.DefaultId == categoryId {
-		return fmt.Errorf("cannot delete category '%s': it is the default category. Set a different default category first",
-			targetCategory.DisplayName)
-	}
+	// Note: We don't check for transaction usage here as that would require
+	// coordination with TransactionStore. The UI or main Store should handle
+	// that validation at a higher level.
 
 	return nil
 }
 
 // GetCategoryHierarchy returns categories sorted by parent-child relationship
 func (cs *CategoryStore) GetCategoryHierarchy() []types.Category {
+	// Get all active categories first
+	categories, err := cs.GetCategories()
+	if err != nil {
+		return []types.Category{}
+	}
+
 	var result []types.Category
 
 	// Helper function to recursively add children
 	var addChildren func(parentId *int64, level int)
 	addChildren = func(parentId *int64, level int) {
-		for _, cat := range cs.Categories {
+		for _, cat := range categories {
 			// Check if this category belongs at this level
 			if (parentId == nil && cat.ParentId == nil) ||
 				(parentId != nil && cat.ParentId != nil && *cat.ParentId == *parentId) {
@@ -374,30 +484,31 @@ func (cs *CategoryStore) GetCategoryHierarchy() []types.Category {
 // GetCategoriesForParentSelection returns categories suitable for parent selection
 // (excludes the category itself and its descendants to prevent circular references)
 func (cs *CategoryStore) GetCategoriesForParentSelection(excludeCategoryId int64) []types.Category {
+	categories, err := cs.GetCategories()
+	if err != nil {
+		return []types.Category{}
+	}
+
 	var result []types.Category
+	excluded := make(map[int64]bool)
 
-	// Get all descendants of the excluded category
-	excludeIds := make(map[int64]bool)
-	excludeIds[excludeCategoryId] = true
-
-	// Helper to find all descendants
-	var findDescendants func(parentId int64)
-	findDescendants = func(parentId int64) {
-		for _, cat := range cs.Categories {
-			if cat.ParentId != nil && *cat.ParentId == parentId {
-				if !excludeIds[cat.Id] {
-					excludeIds[cat.Id] = true
-					findDescendants(cat.Id) // Recursively find deeper descendants
-				}
+	// Helper function to mark category and all descendants as excluded
+	var markExcluded func(categoryId int64)
+	markExcluded = func(categoryId int64) {
+		excluded[categoryId] = true
+		for _, cat := range categories {
+			if cat.ParentId != nil && *cat.ParentId == categoryId {
+				markExcluded(cat.Id)
 			}
 		}
 	}
 
-	findDescendants(excludeCategoryId)
+	// Mark the category and all its descendants as excluded
+	markExcluded(excludeCategoryId)
 
-	// Return categories not in the exclude list
-	for _, cat := range cs.Categories {
-		if !excludeIds[cat.Id] {
+	// Add all non-excluded categories to result
+	for _, cat := range categories {
+		if !excluded[cat.Id] {
 			result = append(result, cat)
 		}
 	}

@@ -14,6 +14,14 @@ func main() {
 	if err := store.Init(); err != nil {
 		log.Fatalf("unable to init store: %v", err)
 	}
+
+	// Ensure proper cleanup of database connection
+	defer func() {
+		if err := store.Close(); err != nil {
+			log.Printf("Error closing store: %v", err)
+		}
+	}()
+
 	m := ui.NewModel(store)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {

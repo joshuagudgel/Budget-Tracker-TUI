@@ -1,334 +1,513 @@
 package storage
 
 import (
+	"budget-tracker-tui/internal/database"
 	"budget-tracker-tui/internal/types"
-	"encoding/json"
+	"database/sql"
 	"fmt"
-	"math"
-	"os"
+	"strconv"
 	"time"
 )
 
-// TransactionStore handles all transaction-related operations
+// TransactionStore handles all transaction-related operations using SQLite
 type TransactionStore struct {
-	filename     string
-	backupName   string
-	transactions []types.Transaction
-	nextId       int64
-	sharedUtils  SharedUtilsInterface
+	db     *database.Connection
+	helper *database.SQLHelper
 }
 
 // NewTransactionStore creates a new TransactionStore instance
-func NewTransactionStore(transactionFile, backupFile string, sharedUtils SharedUtilsInterface) *TransactionStore {
+func NewTransactionStore(db *database.Connection) *TransactionStore {
 	return &TransactionStore{
-		filename:     transactionFile,
-		backupName:   backupFile,
-		transactions: []types.Transaction{},
-		nextId:       1,
-		sharedUtils:  sharedUtils,
+		db:     db,
+		helper: database.NewSQLHelper(db),
 	}
 }
 
-// LoadTransactions loads transactions from the JSON file
+// LoadTransactions is no longer needed with SQLite (data is always persisted)
+// Kept for interface compatibility
 func (ts *TransactionStore) LoadTransactions() error {
-	if _, err := os.Stat(ts.filename); os.IsNotExist(err) {
-		ts.transactions = []types.Transaction{}
-		ts.nextId = 1
-		return nil
-	}
-
-	data, err := os.ReadFile(ts.filename)
-	if err != nil {
-		return err
-	}
-
-	err = json.Unmarshal(data, &ts.transactions)
-	if err != nil {
-		return err
-	}
-	ts.nextId = ts.CalculateNextId()
+	// SQLite data is always persisted, no loading needed
 	return nil
 }
 
-// SaveTransactions saves transactions to the JSON file
+// SaveTransactions is no longer needed with SQLite (data is always persisted)
+// Kept for interface compatibility
 func (ts *TransactionStore) SaveTransactions() error {
-	data, err := json.MarshalIndent(ts.transactions, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(ts.filename, data, 0644)
+	// SQLite data is always persisted, no explicit saving needed
+	return nil
 }
 
-// CalculateNextId calculates the next available ID
+// CalculateNextId calculates the next available ID using SQLite's auto-increment
 func (ts *TransactionStore) CalculateNextId() int64 {
-	var maxId int64 = 0
-	for _, tx := range ts.transactions {
-		if tx.Id > maxId {
-			maxId = tx.Id
-		}
+	maxID, err := ts.helper.GetMaxID("transactions", "id")
+	if err != nil {
+		return 1 // Default to 1 if error or no records
 	}
-	return maxId + 1
+	return maxID + 1
 }
 
-// GetTransactions returns all transactions
+// GetTransactions returns all transactions from the database
 func (ts *TransactionStore) GetTransactions() ([]types.Transaction, error) {
-	return ts.transactions, nil
+	query := `
+		SELECT id, parent_id, amount, description, raw_description, date, 
+		       category_id, auto_category, transaction_type, is_split, 
+		       is_recurring, statement_id, confidence, user_modified, 
+		       created_at, updated_at 
+		FROM transactions 
+		ORDER BY date DESC, id DESC
+	`
+
+	rows, err := ts.helper.QueryRows(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query transactions: %w", err)
+	}
+	defer rows.Close()
+
+	var transactions []types.Transaction
+	for rows.Next() {
+		tx, err := ts.scanTransaction(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan transaction: %w", err)
+		}
+		transactions = append(transactions, tx)
+	}
+
+	return transactions, rows.Err()
 }
 
 // GetTransactionsByStatement returns all transactions for a specific bank statement
 func (ts *TransactionStore) GetTransactionsByStatement(statementId int64) ([]types.Transaction, error) {
-	var filteredTransactions []types.Transaction
+	query := `
+		SELECT id, parent_id, amount, description, raw_description, date, 
+		       category_id, auto_category, transaction_type, is_split, 
+		       is_recurring, statement_id, confidence, user_modified, 
+		       created_at, updated_at 
+		FROM transactions 
+		WHERE statement_id = ? 
+		ORDER BY date DESC, id DESC
+	`
 
-	statementIdStr := fmt.Sprintf("%d", statementId)
-	for _, tx := range ts.transactions {
-		if tx.StatementId == statementIdStr {
-			filteredTransactions = append(filteredTransactions, tx)
+	rows, err := ts.helper.QueryRows(query, statementId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query transactions by statement: %w", err)
+	}
+	defer rows.Close()
+
+	var transactions []types.Transaction
+	for rows.Next() {
+		tx, err := ts.scanTransaction(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan transaction: %w", err)
 		}
+		transactions = append(transactions, tx)
 	}
 
-	return filteredTransactions, nil
+	return transactions, rows.Err()
+}
+
+// scanTransaction scans a database row into a Transaction struct
+func (ts *TransactionStore) scanTransaction(rows *sql.Rows) (types.Transaction, error) {
+	var tx types.Transaction
+	var parentID sql.NullInt64
+	var statementID sql.NullInt64
+	var rawDescription sql.NullString
+	var autoCategory sql.NullString
+	var confidence sql.NullFloat64
+
+	err := rows.Scan(
+		&tx.Id, &parentID, &tx.Amount, &tx.Description, &rawDescription,
+		&tx.Date, &tx.CategoryId, &autoCategory, &tx.TransactionType,
+		&tx.IsSplit, &tx.IsRecurring, &statementID, &confidence,
+		&tx.UserModified, &tx.CreatedAt, &tx.UpdatedAt,
+	)
+
+	if err != nil {
+		return tx, err
+	}
+
+	// Handle nullable fields
+	if parentID.Valid {
+		tx.ParentId = &parentID.Int64
+	}
+	if statementID.Valid {
+		tx.StatementId = fmt.Sprintf("%d", statementID.Int64)
+	}
+	if rawDescription.Valid {
+		tx.RawDescription = rawDescription.String
+	}
+	if autoCategory.Valid {
+		tx.AutoCategory = autoCategory.String
+	}
+	if confidence.Valid {
+		tx.Confidence = confidence.Float64
+	}
+
+	return tx, nil
 }
 
 // GetTransactionByID returns a transaction by ID
 func (ts *TransactionStore) GetTransactionByID(id int64) *types.Transaction {
-	for i := range ts.transactions {
-		if ts.transactions[i].Id == id {
-			return &ts.transactions[i]
+	query := `
+		SELECT id, parent_id, amount, description, raw_description, date, 
+		       category_id, auto_category, transaction_type, is_split, 
+		       is_recurring, statement_id, confidence, user_modified, 
+		       created_at, updated_at 
+		FROM transactions 
+		WHERE id = ?
+	`
+
+	row := ts.helper.QuerySingleRow(query, id)
+	tx, err := ts.scanTransactionRow(row)
+	if err != nil {
+		return nil // Transaction not found or error
+	}
+
+	return &tx
+}
+
+// scanTransactionRow scans a single database row into a Transaction struct
+func (ts *TransactionStore) scanTransactionRow(row *sql.Row) (types.Transaction, error) {
+	var tx types.Transaction
+	var parentID sql.NullInt64
+	var statementID sql.NullInt64
+	var rawDescription sql.NullString
+	var autoCategory sql.NullString
+	var confidence sql.NullFloat64
+
+	err := row.Scan(
+		&tx.Id, &parentID, &tx.Amount, &tx.Description, &rawDescription,
+		&tx.Date, &tx.CategoryId, &autoCategory, &tx.TransactionType,
+		&tx.IsSplit, &tx.IsRecurring, &statementID, &confidence,
+		&tx.UserModified, &tx.CreatedAt, &tx.UpdatedAt,
+	)
+
+	if err != nil {
+		return tx, err
+	}
+
+	// Handle nullable fields
+	if parentID.Valid {
+		tx.ParentId = &parentID.Int64
+	}
+	if statementID.Valid {
+		tx.StatementId = fmt.Sprintf("%d", statementID.Int64)
+	}
+	if rawDescription.Valid {
+		tx.RawDescription = rawDescription.String
+	}
+	if autoCategory.Valid {
+		tx.AutoCategory = autoCategory.String
+	}
+	if confidence.Valid {
+		tx.Confidence = confidence.Float64
+	}
+
+	return tx, nil
+}
+
+// SaveTransaction saves or updates a transaction in the database
+func (ts *TransactionStore) SaveTransaction(transaction types.Transaction) error {
+	now := time.Now().Format(time.RFC3339)
+
+	if transaction.Id == 0 {
+		// Insert new transaction
+		return ts.insertTransaction(transaction, now)
+	} else {
+		// Update existing transaction
+		return ts.updateTransaction(transaction, now)
+	}
+}
+
+// insertTransaction inserts a new transaction into the database
+func (ts *TransactionStore) insertTransaction(transaction types.Transaction, now string) error {
+	query := `
+		INSERT INTO transactions (
+			parent_id, amount, description, raw_description, date, 
+			category_id, auto_category, transaction_type, is_split, 
+			is_recurring, statement_id, confidence, user_modified, 
+			created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`
+
+	// Convert nullable fields
+	var parentID interface{}
+	if transaction.ParentId != nil {
+		parentID = *transaction.ParentId
+	}
+
+	var statementID interface{}
+	if transaction.StatementId != "" {
+		if id, err := strconv.ParseInt(transaction.StatementId, 10, 64); err == nil {
+			statementID = id
 		}
 	}
+
+	var rawDescription interface{}
+	if transaction.RawDescription != "" {
+		rawDescription = transaction.RawDescription
+	}
+
+	var autoCategory interface{}
+	if transaction.AutoCategory != "" {
+		autoCategory = transaction.AutoCategory
+	}
+
+	var confidence interface{}
+	if transaction.Confidence > 0 {
+		confidence = transaction.Confidence
+	}
+
+	// Set creation timestamp if not provided
+	createdAt := transaction.CreatedAt
+	if createdAt == "" {
+		createdAt = now
+	}
+
+	id, err := ts.helper.ExecReturnID(query,
+		parentID, transaction.Amount, transaction.Description, rawDescription,
+		transaction.Date, transaction.CategoryId, autoCategory, transaction.TransactionType,
+		transaction.IsSplit, transaction.IsRecurring, statementID, confidence,
+		transaction.UserModified, createdAt, now,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to insert transaction: %w", err)
+	}
+
+	// Update the transaction ID
+	transaction.Id = id
 	return nil
 }
 
-// SaveTransaction saves or updates a transaction
-func (ts *TransactionStore) SaveTransaction(transaction types.Transaction) error {
-	found := false
-	for i, t := range ts.transactions {
-		if t.Id == transaction.Id {
-			// Set UpdatedAt for existing transactions and mark as user modified
-			transaction.UpdatedAt = time.Now().Format(time.RFC3339)
-			transaction.UserModified = true
-			ts.transactions[i] = transaction
-			found = true
-			break
+// updateTransaction updates an existing transaction in the database
+func (ts *TransactionStore) updateTransaction(transaction types.Transaction, now string) error {
+	query := `
+		UPDATE transactions SET 
+			parent_id = ?, amount = ?, description = ?, raw_description = ?, 
+			date = ?, category_id = ?, auto_category = ?, transaction_type = ?, 
+			is_split = ?, is_recurring = ?, statement_id = ?, confidence = ?, 
+			user_modified = ?, updated_at = ?
+		WHERE id = ?
+	`
+
+	// Convert nullable fields
+	var parentID interface{}
+	if transaction.ParentId != nil {
+		parentID = *transaction.ParentId
+	}
+
+	var statementID interface{}
+	if transaction.StatementId != "" {
+		if id, err := strconv.ParseInt(transaction.StatementId, 10, 64); err == nil {
+			statementID = id
 		}
 	}
 
-	if !found {
-		if transaction.Id == 0 {
-			transaction.Id = ts.nextId
-			ts.nextId++
-		}
-		// Set CreatedAt and UpdatedAt for new transactions
-		now := time.Now().Format(time.RFC3339)
-		if transaction.CreatedAt == "" {
-			transaction.CreatedAt = now
-		}
-		transaction.UpdatedAt = now
-		// Default confidence to 0.0 if not set
-		if transaction.Confidence == 0.0 {
-			transaction.Confidence = 0.0
-		}
-		ts.transactions = append(ts.transactions, transaction)
+	var rawDescription interface{}
+	if transaction.RawDescription != "" {
+		rawDescription = transaction.RawDescription
 	}
 
-	return ts.SaveTransactions()
+	var autoCategory interface{}
+	if transaction.AutoCategory != "" {
+		autoCategory = transaction.AutoCategory
+	}
+
+	var confidence interface{}
+	if transaction.Confidence > 0 {
+		confidence = transaction.Confidence
+	}
+
+	// Mark as user modified when updating
+	transaction.UserModified = true
+
+	_, err := ts.helper.ExecReturnRowsAffected(query,
+		parentID, transaction.Amount, transaction.Description, rawDescription,
+		transaction.Date, transaction.CategoryId, autoCategory, transaction.TransactionType,
+		transaction.IsSplit, transaction.IsRecurring, statementID, confidence,
+		transaction.UserModified, now, transaction.Id,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to update transaction: %w", err)
+	}
+
+	return nil
 }
 
 // DeleteTransaction removes a transaction by ID
 func (ts *TransactionStore) DeleteTransaction(id int64) error {
-	for i, transaction := range ts.transactions {
-		if transaction.Id == id {
-			ts.transactions = append(ts.transactions[:i], ts.transactions[i+1:]...)
-			break
-		}
+	query := "DELETE FROM transactions WHERE id = ?"
+
+	rowsAffected, err := ts.helper.ExecReturnRowsAffected(query, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete transaction: %w", err)
 	}
-	return ts.SaveTransactions()
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("transaction with ID %d not found", id)
+	}
+
+	return nil
 }
 
-// SplitTransaction splits a parent transaction into two transactions
+// SplitTransaction splits a parent transaction into two transactions using database transaction
 func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Transaction) error {
-	// Validate splits add up to parent amount (works for negative amounts)
-	parent := ts.GetTransactionByID(parentId)
-	if parent == nil {
-		return fmt.Errorf("parent transaction not found")
-	}
+	return ts.db.ExecuteInTransaction(func(tx *sql.Tx) error {
+		// Validate splits add up to parent amount
+		parent := ts.GetTransactionByID(parentId)
+		if parent == nil {
+			return fmt.Errorf("parent transaction not found")
+		}
 
-	if len(splits) != 2 {
-		return fmt.Errorf("exactly 2 splits required")
-	}
+		if len(splits) != 2 {
+			return fmt.Errorf("exactly 2 splits required")
+		}
 
-	var totalSplit float64
-	for _, split := range splits {
-		totalSplit += split.Amount
-	}
+		var totalSplit float64
+		for _, split := range splits {
+			totalSplit += split.Amount
+		}
 
-	// Use epsilon comparison for floating point
-	if math.Abs(totalSplit-parent.Amount) > 0.01 {
-		return fmt.Errorf("split amounts (%.2f) don't match parent (%.2f)",
-			totalSplit, parent.Amount)
-	}
+		// Use epsilon comparison for floating point
+		const epsilon = 0.01
+		if totalSplit-parent.Amount > epsilon || parent.Amount-totalSplit > epsilon {
+			return fmt.Errorf("split amounts (%.2f) don't match parent (%.2f)", totalSplit, parent.Amount)
+		}
 
-	// Modify existing transaction to become first split
-	parent.Amount = splits[0].Amount
-	parent.Description = splits[0].Description
-	parent.CategoryId = splits[0].CategoryId
-	parent.IsSplit = true
-	parent.UpdatedAt = time.Now().Format(time.RFC3339)
-	parent.UserModified = true
+		now := time.Now().Format(time.RFC3339)
 
-	// Create only the second split as a new transaction
-	secondSplit := splits[1]
-	secondSplit.Id = ts.nextId
-	secondSplit.Date = parent.Date                       // Ensure same date as original
-	secondSplit.TransactionType = parent.TransactionType // Ensure same type
-	secondSplit.StatementId = parent.StatementId         // Inherit statement ID from parent
-	now := time.Now().Format(time.RFC3339)
-	secondSplit.CreatedAt = now
-	secondSplit.UpdatedAt = now
-	secondSplit.Confidence = 0.0
-	ts.nextId++
+		// Update existing transaction to become first split
+		updateQuery := `
+			UPDATE transactions SET 
+				amount = ?, description = ?, category_id = ?, is_split = ?, 
+				user_modified = ?, updated_at = ?
+			WHERE id = ?
+		`
+		_, err := tx.Exec(updateQuery,
+			splits[0].Amount, splits[0].Description, splits[0].CategoryId,
+			true, true, now, parentId,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to update parent transaction: %w", err)
+		}
 
-	ts.transactions = append(ts.transactions, secondSplit)
+		// Create second split as new transaction
+		insertQuery := `
+			INSERT INTO transactions (
+				amount, description, date, category_id, transaction_type, 
+				statement_id, is_split, user_modified, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`
 
-	return ts.SaveTransactions()
+		var statementID interface{}
+		if parent.StatementId != "" {
+			if id, parseErr := strconv.ParseInt(parent.StatementId, 10, 64); parseErr == nil {
+				statementID = id
+			}
+		}
+
+		_, err = tx.Exec(insertQuery,
+			splits[1].Amount, splits[1].Description, parent.Date,
+			splits[1].CategoryId, parent.TransactionType, statementID,
+			false, true, now, now,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to insert second split: %w", err)
+		}
+
+		return nil
+	})
 }
 
 // ImportTransactionsFromCSV imports a batch of transactions from CSV parsing
 func (ts *TransactionStore) ImportTransactionsFromCSV(transactions []types.Transaction, statementId string) error {
-	// Set StatementId on all transactions and assign IDs
-	for i := range transactions {
-		transactions[i].Id = ts.nextId
-		ts.nextId++
-		transactions[i].StatementId = statementId
+	if len(transactions) == 0 {
+		return nil
+	}
 
+	// Prepare bulk insert data
+	var records [][]interface{}
+	now := time.Now().Format(time.RFC3339)
+
+	var statementID interface{}
+	if statementId != "" {
+		if id, err := strconv.ParseInt(statementId, 10, 64); err == nil {
+			statementID = id
+		}
+	}
+
+	for _, tx := range transactions {
 		// Set default transaction type if not set
-		if transactions[i].TransactionType == "" {
-			transactions[i].TransactionType = "expense"
+		transactionType := tx.TransactionType
+		if transactionType == "" {
+			transactionType = "expense"
 		}
 
 		// Set timestamps for imported transactions
-		now := time.Now().Format(time.RFC3339)
-		if transactions[i].CreatedAt == "" {
-			transactions[i].CreatedAt = now
+		createdAt := tx.CreatedAt
+		if createdAt == "" {
+			createdAt = now
 		}
-		transactions[i].UpdatedAt = now
 
-		// Default confidence to 0.0 if not set
-		if transactions[i].Confidence == 0.0 {
-			transactions[i].Confidence = 0.0
+		// Handle nullable fields
+		var parentID interface{}
+		if tx.ParentId != nil {
+			parentID = *tx.ParentId
 		}
+
+		var rawDescription interface{}
+		if tx.RawDescription != "" {
+			rawDescription = tx.RawDescription
+		}
+
+		var autoCategory interface{}
+		if tx.AutoCategory != "" {
+			autoCategory = tx.AutoCategory
+		}
+
+		var confidence interface{}
+		if tx.Confidence > 0 {
+			confidence = tx.Confidence
+		}
+
+		record := []interface{}{
+			parentID, tx.Amount, tx.Description, rawDescription, tx.Date,
+			tx.CategoryId, autoCategory, transactionType, tx.IsSplit,
+			tx.IsRecurring, statementID, confidence, tx.UserModified,
+			createdAt, now,
+		}
+		records = append(records, record)
 	}
 
-	// Add transactions to store
-	ts.transactions = append(ts.transactions, transactions...)
+	// Bulk insert using transaction
+	fields := []string{
+		"parent_id", "amount", "description", "raw_description", "date",
+		"category_id", "auto_category", "transaction_type", "is_split",
+		"is_recurring", "statement_id", "confidence", "user_modified",
+		"created_at", "updated_at",
+	}
 
-	return ts.SaveTransactions()
+	return ts.helper.BulkInsert("transactions", fields, records)
 }
 
-// CreateBackup creates a backup of current transactions
+// CreateBackup creates a backup of current transactions in a simplified format
 func (ts *TransactionStore) CreateBackup() error {
-	// Convert transactions to backup format
-	var backupTransactions []BackupTransaction
-	for _, tx := range ts.transactions {
-		backupTx := BackupTransaction{
-			Amount:          tx.Amount,
-			Description:     tx.Description,
-			Date:            tx.Date,
-			Category:        "", // Would need category display name from CategoryStore
-			TransactionType: tx.TransactionType,
-		}
-		backupTransactions = append(backupTransactions, backupTx)
-	}
-
-	backup := BackupFile{
-		Transactions: backupTransactions,
-	}
-
-	data, err := json.MarshalIndent(backup, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(ts.backupName, data, 0644)
+	// This functionality would need to be coordinated with a CategoryStore
+	// for category display names. For now, return an error suggesting
+	// backup should be handled at the main Store level.
+	return fmt.Errorf("backup functionality moved to main Store level for cross-domain coordination")
 }
 
 // RestoreFromBackup restores transactions from a backup file
 func (ts *TransactionStore) RestoreFromBackup() (*RestoreResult, error) {
-	result := &RestoreResult{}
-
-	// Read backup file
-	data, err := os.ReadFile(ts.backupName)
-	if err != nil {
-		result.Message = fmt.Sprintf("Cannot read backup file: %v", err)
-		return result, err
-	}
-
-	// Get backup file stats for metadata
-	fileInfo, _ := os.Stat(ts.backupName)
-	if fileInfo != nil {
-		result.BackupDate = fileInfo.ModTime().Format("2006-01-02 15:04:05")
-		result.BackupSize = fileInfo.Size()
-	}
-
-	var backup BackupFile
-	err = json.Unmarshal(data, &backup)
-	if err != nil {
-		result.Message = fmt.Sprintf("Invalid backup format: %v", err)
-		return result, err
-	}
-
-	if len(backup.Transactions) == 0 {
-		result.Message = "Backup file contains no transactions"
-		return result, fmt.Errorf("empty backup file")
-	}
-
-	// Convert backup transactions to current format
-	var newTransactions []types.Transaction
-	now := time.Now().Format(time.RFC3339)
-
-	for i, backupTx := range backup.Transactions {
-		// Note: CategoryId will need to be resolved by the calling Store
-		// using CategoryStore.GetCategoryByDisplayName(backupTx.Category)
-		transaction := types.Transaction{
-			Id:              int64(i + 1),
-			Amount:          backupTx.Amount,
-			Description:     backupTx.Description,
-			RawDescription:  backupTx.Description,
-			Date:            backupTx.Date,
-			CategoryId:      0, // Will be set by calling Store
-			TransactionType: backupTx.TransactionType,
-			CreatedAt:       now,
-			UpdatedAt:       now,
-			Confidence:      0.0,
-		}
-
-		// Set payment method if available (legacy field)
-		if backupTx.PaymentMethod != "" {
-			// Could map to a category or store in description
-			transaction.Description = fmt.Sprintf("%s (%s)", transaction.Description, backupTx.PaymentMethod)
-		}
-
-		newTransactions = append(newTransactions, transaction)
-	}
-
-	// Replace current transactions
-	ts.transactions = newTransactions
-	ts.nextId = int64(len(newTransactions) + 1)
-
-	err = ts.SaveTransactions()
-	if err != nil {
-		result.Message = fmt.Sprintf("Failed to save restored transactions: %v", err)
-		return result, err
-	}
-
-	result.Success = true
-	result.TxCount = len(newTransactions)
-	result.Message = fmt.Sprintf("Successfully restored %d transactions from backup", len(newTransactions))
-	return result, nil
+	// This functionality would need to be coordinated with a CategoryStore
+	// for category name resolution. For now, return an error suggesting
+	// restore should be handled at the main Store level.
+	return nil, fmt.Errorf("restore functionality moved to main Store level for cross-domain coordination")
 }
 
-// Backup-related types for TransactionStore
+// Backup-related types for TransactionStore (kept for interface compatibility)
 type BackupTransaction struct {
 	Amount          float64 `json:"amount"`
 	Description     string  `json:"description"`
