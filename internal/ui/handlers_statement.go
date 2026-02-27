@@ -48,6 +48,7 @@ func (m model) handleStatementOverlapView(key string) (tea.Model, tea.Cmd) {
 		result := m.store.ImportCSVWithOverride(m.selectedFile, m.selectedTemplate)
 		if result.Success {
 			m.transactions, _ = m.store.Transactions.GetTransactions()
+			m.sortTransactionsByDate()
 		}
 		m.statementMessage = result.Message
 		m.state = bankStatementView

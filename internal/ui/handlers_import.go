@@ -22,6 +22,7 @@ func (m model) handleBackupView(key string) (tea.Model, tea.Cmd) {
 			m.backupMessage = "Error: " + err.Error()
 		} else if result.Success {
 			m.transactions, _ = m.store.Transactions.GetTransactions()
+			m.sortTransactionsByDate()
 			m.backupMessage = result.Message
 			m.listIndex = 0
 		} else {
@@ -91,12 +92,17 @@ func (m model) handleFileSelection() (tea.Model, tea.Cmd) {
 			m.overlappingStmts = result.OverlappingStmts
 			m.selectedTemplate = templateToUse
 			m.selectedFile = fullPath
+			// Store current import details for overlap warning
+			m.currentImportFilename = result.Filename
+			m.currentImportPeriodStart = result.PeriodStart
+			m.currentImportPeriodEnd = result.PeriodEnd
 			m.state = statementOverlapView
 			return m, nil
 		}
 
 		if result.Success {
 			m.transactions, _ = m.store.Transactions.GetTransactions()
+			m.sortTransactionsByDate()
 		}
 		m.statementMessage = result.Message
 		m.state = bankStatementView

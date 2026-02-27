@@ -396,9 +396,15 @@ func (m model) View() string {
 	case statementOverlapView:
 		s += headerStyle.Render("Import Overlap Warning") + "\n\n"
 
-		filename := filepath.Base(m.selectedFile)
+		// Display current document details
+		s += lipgloss.NewStyle().Foreground(lipgloss.Color("33")).Render(
+			fmt.Sprintf("📄 Current Document: %s", m.currentImportFilename)) + "\n"
+		s += faintStyle.Render(fmt.Sprintf("   Period: %s to %s",
+			m.currentImportPeriodStart, m.currentImportPeriodEnd)) + "\n\n"
+
+		// Display overlap warning
 		s += lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Render(
-			fmt.Sprintf("⚠ The file '%s' contains transactions that overlap with existing imports:", filename)) + "\n\n"
+			"⚠ This document overlaps with existing imports:") + "\n\n"
 
 		for _, stmt := range m.overlappingStmts {
 			s += faintStyle.Render(fmt.Sprintf("  • %s (%s to %s) - %d transactions",

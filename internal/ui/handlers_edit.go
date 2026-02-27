@@ -85,6 +85,7 @@ func (m model) handleSaveTransaction() (tea.Model, tea.Cmd) {
 		log.Printf("Error saving transaction: %v", err)
 	} else {
 		m.transactions, _ = m.store.Transactions.GetTransactions()
+		m.sortTransactionsByDate()
 		// Reload filtered transactions if we came from statement transaction view
 		if m.previousState == statementTransactionListView {
 			filteredTransactions, err := m.store.Transactions.GetTransactionsByStatement(m.currentStatementId)

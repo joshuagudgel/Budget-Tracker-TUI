@@ -506,6 +506,7 @@ func (m model) handleSaveSplit() (tea.Model, tea.Cmd) {
 
 	// Refresh transactions and exit
 	m.transactions, _ = m.store.Transactions.GetTransactions()
+	m.sortTransactionsByDate()
 	m.state = listView
 	return m.exitSplitMode()
 }

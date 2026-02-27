@@ -46,6 +46,7 @@ func (m model) handleListView(key string) (tea.Model, tea.Cmd) {
 			// Existing single delete logic
 			m.store.Transactions.DeleteTransaction(m.transactions[m.listIndex].Id)
 			m.transactions, _ = m.store.Transactions.GetTransactions()
+			m.sortTransactionsByDate()
 			// Bounds checking for list index
 			if m.listIndex >= len(m.transactions) && len(m.transactions) > 0 {
 				m.listIndex = len(m.transactions) - 1

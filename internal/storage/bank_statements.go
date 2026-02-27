@@ -217,8 +217,8 @@ func (bs *BankStatementStore) CanUndoImport(statementId int64) bool {
 	return err == nil && exists
 }
 
-// DetectOverlap checks for period overlaps with existing completed statements
-func (bs *BankStatementStore) DetectOverlap(periodStart, periodEnd string) []types.BankStatement {
+// DetectOverlap checks for period overlaps with existing completed statements using the same template
+func (bs *BankStatementStore) DetectOverlap(periodStart, periodEnd string, templateId int64) []types.BankStatement {
 	var overlaps []types.BankStatement
 
 	query := `
@@ -227,10 +227,11 @@ func (bs *BankStatementStore) DetectOverlap(periodStart, periodEnd string) []typ
 		       created_at, updated_at
 		FROM bank_statements
 		WHERE status = 'completed' AND period_start IS NOT NULL AND period_end IS NOT NULL
+		  AND template_used = ?
 		  AND ? <= period_end AND ? >= period_start
 	`
 
-	rows, err := bs.helper.QueryRows(query, periodStart, periodEnd)
+	rows, err := bs.helper.QueryRows(query, templateId, periodStart, periodEnd)
 	if err != nil {
 		return overlaps // Return empty slice on error
 	}
@@ -297,10 +298,39 @@ func (bs *BankStatementStore) ExtractPeriodFromTransactions(transactions []types
 	end = transactions[0].Date
 
 	for _, tx := range transactions {
-		if tx.Date < start {
+		// Parse dates for proper chronological comparison
+		txDate, txErr := time.Parse("01-02-2006", tx.Date)
+		if txErr != nil {
+			// Try alternative format
+			txDate, txErr = time.Parse("01/02/2006", tx.Date)
+		}
+
+		startDate, startErr := time.Parse("01-02-2006", start)
+		if startErr != nil {
+			// Try alternative format
+			startDate, startErr = time.Parse("01/02/2006", start)
+		}
+
+		endDate, endErr := time.Parse("01-02-2006", end)
+		if endErr != nil {
+			// Try alternative format
+			endDate, endErr = time.Parse("01/02/2006", end)
+		}
+
+		// Use parsed dates for comparison if successful, otherwise fall back to string comparison
+		if txErr == nil && startErr == nil {
+			if txDate.Before(startDate) {
+				start = tx.Date
+			}
+		} else if tx.Date < start {
 			start = tx.Date
 		}
-		if tx.Date > end {
+
+		if txErr == nil && endErr == nil {
+			if txDate.After(endDate) {
+				end = tx.Date
+			}
+		} else if tx.Date > end {
 			end = tx.Date
 		}
 	}

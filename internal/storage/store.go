@@ -41,6 +41,9 @@ func (s *Store) Init() error {
 	s.Statements = NewBankStatementStore(db)
 	s.Transactions = NewTransactionStore(db)
 
+	// Set cross-references between stores
+	s.Templates.SetTransactionStore(s.Transactions)
+
 	// No need to load stores explicitly with SQLite - data is always persisted
 	// Database health check to ensure everything is working
 	err = s.db.CheckHealth()
@@ -153,7 +156,7 @@ func (s *Store) ValidateAndImportCSV(filePath, templateName string) *types.Impor
 
 	// Extract period and detect overlaps
 	result.PeriodStart, result.PeriodEnd = s.Statements.ExtractPeriodFromTransactions(transactions)
-	result.OverlappingStmts = s.Statements.DetectOverlap(result.PeriodStart, result.PeriodEnd)
+	result.OverlappingStmts = s.Statements.DetectOverlap(result.PeriodStart, result.PeriodEnd, template.Id)
 	result.Filename = filepath.Base(filePath)
 
 	if len(result.OverlappingStmts) > 0 {
@@ -176,7 +179,7 @@ func (s *Store) ValidateAndImportCSV(filePath, templateName string) *types.Impor
 	return result
 }
 
-// ImportCSVWithOverride imports CSV with override (ignoring overlaps)
+// ImportCSVWithOverride imports CSV with duplicate filtering (only new transactions)
 func (s *Store) ImportCSVWithOverride(filePath, templateName string) *types.ImportResult {
 	result := &types.ImportResult{}
 
@@ -186,40 +189,48 @@ func (s *Store) ImportCSVWithOverride(filePath, templateName string) *types.Impo
 		return result
 	}
 
-	// Parse transactions
-	transactions, err := s.Templates.ParseCSVTransactions(filePath, template, s.Categories.GetDefaultCategoryId())
+	// Parse transactions and filter duplicates
+	newTransactions, duplicateTransactions, err := s.Templates.ParseCSVTransactionsWithDuplicateFilter(filePath, template, s.Categories.GetDefaultCategoryId())
 	if err != nil {
 		result.Message = fmt.Sprintf("Parse error: %v", err)
 		return result
 	}
 
-	if len(transactions) == 0 {
-		result.Message = "No valid transactions found"
+	if len(newTransactions) == 0 {
+		if len(duplicateTransactions) > 0 {
+			result.Message = fmt.Sprintf("No new transactions found. %d duplicate transactions were filtered out.", len(duplicateTransactions))
+		} else {
+			result.Message = "No valid transactions found"
+		}
 		return result
 	}
 
 	// Record statement with override status first to get statement ID
-	result.PeriodStart, result.PeriodEnd = s.Statements.ExtractPeriodFromTransactions(transactions)
+	result.PeriodStart, result.PeriodEnd = s.Statements.ExtractPeriodFromTransactions(newTransactions)
 	filename := filepath.Base(filePath)
 	statementId := s.Statements.NextId()
 
-	err = s.Statements.RecordBankStatement(filename, result.PeriodStart, result.PeriodEnd, template.Id, len(transactions), "override")
+	err = s.Statements.RecordBankStatement(filename, result.PeriodStart, result.PeriodEnd, template.Id, len(newTransactions), "override")
 	if err != nil {
 		result.Message = fmt.Sprintf("Failed to record statement: %v", err)
 		return result
 	}
 
-	// Import transactions with statement ID
-	err = s.Transactions.ImportTransactionsFromCSV(transactions, fmt.Sprintf("%d", statementId))
+	// Import only new transactions with statement ID
+	err = s.Transactions.ImportTransactionsFromCSV(newTransactions, fmt.Sprintf("%d", statementId))
 	if err != nil {
 		result.Message = fmt.Sprintf("Save failed: %v", err)
 		return result
 	}
 
 	result.Success = true
-	result.ImportedCount = len(transactions)
+	result.ImportedCount = len(newTransactions)
 	result.Filename = filename
-	result.Message = fmt.Sprintf("Override import successful: %d transactions from %s", len(transactions), filename)
+	if len(duplicateTransactions) > 0 {
+		result.Message = fmt.Sprintf("Override import successful: %d new transactions from %s. %d duplicates filtered out.", len(newTransactions), filename, len(duplicateTransactions))
+	} else {
+		result.Message = fmt.Sprintf("Override import successful: %d new transactions from %s", len(newTransactions), filename)
+	}
 	return result
 }
 
@@ -243,8 +254,8 @@ func (s *Store) ImportTransactionsFromCSV(filePath, templateName string) error {
 	// Extract period from transactions
 	periodStart, periodEnd := s.Statements.ExtractPeriodFromTransactions(transactions)
 
-	// Check for overlaps
-	overlaps := s.Statements.DetectOverlap(periodStart, periodEnd)
+	// Check for overlaps with same template
+	overlaps := s.Statements.DetectOverlap(periodStart, periodEnd, template.Id)
 	if len(overlaps) > 0 {
 		// Return special error for overlap detection
 		return fmt.Errorf("OVERLAP_DETECTED")

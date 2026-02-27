@@ -477,6 +477,36 @@ func (ts *TransactionStore) ImportTransactionsFromCSV(transactions []types.Trans
 	return ts.helper.BulkInsert("transactions", fields, records)
 }
 
+// FindDuplicateTransactions finds existing transactions that match date, amount, and description
+func (ts *TransactionStore) FindDuplicateTransactions(date string, amount float64, description string) ([]types.Transaction, error) {
+	query := `
+		SELECT id, parent_id, amount, description, raw_description, date, 
+		       category_id, auto_category, transaction_type, is_split, 
+		       is_recurring, statement_id, confidence, user_modified, 
+		       created_at, updated_at 
+		FROM transactions 
+		WHERE date = ? AND ABS(amount - ?) < 0.01 AND description = ?
+		ORDER BY id
+	`
+
+	rows, err := ts.helper.QueryRows(query, date, amount, description)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query duplicate transactions: %w", err)
+	}
+	defer rows.Close()
+
+	var duplicates []types.Transaction
+	for rows.Next() {
+		tx, err := ts.scanTransaction(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan transaction: %w", err)
+		}
+		duplicates = append(duplicates, tx)
+	}
+
+	return duplicates, rows.Err()
+}
+
 // CreateBackup creates a backup of current transactions in a simplified format
 func (ts *TransactionStore) CreateBackup() error {
 	// This functionality would need to be coordinated with a CategoryStore

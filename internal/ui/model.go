@@ -5,6 +5,8 @@ import (
 	"budget-tracker-tui/internal/validation"
 	"fmt"
 	"log"
+	"sort"
+	"time"
 
 	"budget-tracker-tui/internal/types"
 
@@ -149,6 +151,11 @@ type model struct {
 	pendingStatement types.BankStatement
 	statementMessage string
 
+	// Current import document details (for overlap warnings)
+	currentImportFilename    string
+	currentImportPeriodStart string
+	currentImportPeriodEnd   string
+
 	// Enhanced bank statement management
 	bankStatementListIndex   int
 	selectedBankStatementId  int64
@@ -179,13 +186,39 @@ type model struct {
 	validationNotification string
 }
 
+// sortTransactionsByDate sorts transactions by date in descending order (newest first)
+func (m *model) sortTransactionsByDate() {
+	sort.Slice(m.transactions, func(i, j int) bool {
+		// Parse dates for comparison
+		dateI, errI := time.Parse("01-02-2006", m.transactions[i].Date)
+		if errI != nil {
+			// Try alternative format
+			dateI, errI = time.Parse("01/02/2006", m.transactions[i].Date)
+		}
+
+		dateJ, errJ := time.Parse("01-02-2006", m.transactions[j].Date)
+		if errJ != nil {
+			// Try alternative format
+			dateJ, errJ = time.Parse("01/02/2006", m.transactions[j].Date)
+		}
+
+		// If both dates parsed successfully, compare them
+		if errI == nil && errJ == nil {
+			return dateI.After(dateJ) // Descending order (newest first)
+		}
+
+		// Fallback to string comparison if parsing fails (reverse order)
+		return m.transactions[i].Date > m.transactions[j].Date
+	})
+}
+
 // NewModel creates a new model instance
 func NewModel(store *storage.Store) model {
 	transactions, err := store.Transactions.GetTransactions()
 	if err != nil {
 		log.Fatalf("unable to get transactions: %v", err)
 	}
-	return model{
+	m := model{
 		state:          menuView,
 		store:          store,
 		transactions:   transactions,
@@ -196,6 +229,9 @@ func NewModel(store *storage.Store) model {
 		validator:      validation.NewTransactionValidator(),
 		previousState:  listView, // Default to listView for backward compatibility
 	}
+	// Sort transactions by date (newest first)
+	m.sortTransactionsByDate()
+	return m
 }
 
 // getCategoryDisplayName returns the display name for a category ID, or empty string if not found
@@ -345,6 +381,8 @@ func (m *model) executeUndo() {
 
 	// Refresh transactions
 	m.transactions, _ = m.store.Transactions.GetTransactions()
+	// Sort transactions by date (newest first)
+	m.sortTransactionsByDate()
 
 	// Set success message for both views
 	successMsg := fmt.Sprintf("Successfully undone import of %s - removed %d transactions",

@@ -5,6 +5,7 @@ import (
 	"budget-tracker-tui/internal/types"
 	"database/sql"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -13,9 +14,10 @@ import (
 
 // CSVTemplateStore handles all CSV template-related operations using SQLite
 type CSVTemplateStore struct {
-	db              *database.Connection
-	helper          *database.SQLHelper
-	defaultTemplate string
+	db               *database.Connection
+	helper           *database.SQLHelper
+	defaultTemplate  string
+	transactionStore *TransactionStore
 }
 
 // NewCSVTemplateStore creates a new CSVTemplateStore instance
@@ -30,6 +32,11 @@ func NewCSVTemplateStore(db *database.Connection) *CSVTemplateStore {
 	store.ensureDefaultTemplates()
 
 	return store
+}
+
+// SetTransactionStore sets the transaction store reference (called after all stores are initialized)
+func (cts *CSVTemplateStore) SetTransactionStore(ts *TransactionStore) {
+	cts.transactionStore = ts
 }
 
 // ensureDefaultTemplates creates default CSV templates if none exist
@@ -479,4 +486,64 @@ func (cts *CSVTemplateStore) ParseCSVTransactions(filePath string, template *typ
 	}
 
 	return transactions, nil
+}
+
+// ParseCSVTransactionsWithDuplicateFilter parses CSV transactions and separates new from duplicate transactions
+func (cts *CSVTemplateStore) ParseCSVTransactionsWithDuplicateFilter(filePath string, template *types.CSVTemplate, defaultCategoryId int64) ([]types.Transaction, []types.Transaction, error) {
+	// First parse all transactions
+	allTransactions, err := cts.ParseCSVTransactions(filePath, template, defaultCategoryId)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var newTransactions []types.Transaction
+	var duplicateTransactions []types.Transaction
+
+	// If transaction store is not set, return all as new (fallback)
+	if cts.transactionStore == nil {
+		return allTransactions, duplicateTransactions, nil
+	}
+
+	// Check each transaction for duplicates
+	for _, tx := range allTransactions {
+		// Find existing transactions with same date, amount, and description
+		existingTxs, err := cts.transactionStore.FindDuplicateTransactions(tx.Date, tx.Amount, tx.Description)
+		if err != nil {
+			// If error querying, assume it's new to be safe
+			newTransactions = append(newTransactions, tx)
+			continue
+		}
+
+		// Count how many transactions with these details we're trying to import
+		importCount := 0
+		for _, importTx := range allTransactions {
+			if importTx.Date == tx.Date &&
+				math.Abs(importTx.Amount-tx.Amount) < 0.01 &&
+				importTx.Description == tx.Description {
+				importCount++
+			}
+		}
+
+		existingCount := len(existingTxs)
+
+		// If we have more transactions to import than already exist, this one is new
+		// Count how many of this specific transaction we've already processed as "new"
+		previousNewCount := 0
+		for _, newTx := range newTransactions {
+			if newTx.Date == tx.Date &&
+				math.Abs(newTx.Amount-tx.Amount) < 0.01 &&
+				newTx.Description == tx.Description {
+				previousNewCount++
+			}
+		}
+
+		// Check if this transaction is truly new
+		if existingCount+previousNewCount < importCount {
+			newTransactions = append(newTransactions, tx)
+		} else {
+			duplicateTransactions = append(duplicateTransactions, tx)
+		}
+	}
+
+	return newTransactions, duplicateTransactions, nil
 }

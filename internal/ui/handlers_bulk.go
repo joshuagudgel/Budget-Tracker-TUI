@@ -249,6 +249,7 @@ func (m model) handleSaveBulkEdit() (tea.Model, tea.Cmd) {
 	}
 
 	m.transactions, _ = m.store.Transactions.GetTransactions()
+	m.sortTransactionsByDate()
 
 	// Reload filtered transactions if we came from statement transaction view
 	if m.previousState == statementTransactionListView {

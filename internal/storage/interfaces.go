@@ -10,6 +10,7 @@ type TransactionStoreInterface interface {
 	GetTransactionByID(id int64) *types.Transaction
 	SaveTransaction(transaction types.Transaction) error
 	DeleteTransaction(id int64) error
+	FindDuplicateTransactions(date string, amount float64, description string) ([]types.Transaction, error)
 
 	// Bulk Operations
 	ImportTransactionsFromCSV(transactions []types.Transaction, statementId string) error
@@ -58,7 +59,7 @@ type BankStatementStoreInterface interface {
 	// Import Operations
 	ValidateAndImportCSV(filePath, templateName string) *types.ImportResult
 	ImportCSVWithOverride(templateName string) *types.ImportResult
-	DetectOverlap(periodStart, periodEnd string) []types.BankStatement
+	DetectOverlap(periodStart, periodEnd string, templateId int64) []types.BankStatement
 	ExtractPeriodFromTransactions(transactions []types.Transaction) (start, end string)
 
 	// Undo Operations
@@ -84,6 +85,7 @@ type CSVTemplateStoreInterface interface {
 	ParseCSVLine(line string, delimiter string) []string
 	ParseTransactionFromTemplate(fields []string, template *types.CSVTemplate, lineNum int) (*types.Transaction, error)
 	ParseCSVTransactions(filePath string, template *types.CSVTemplate) ([]types.Transaction, error)
+	ParseCSVTransactionsWithDuplicateFilter(filePath string, template *types.CSVTemplate, defaultCategoryId int64) ([]types.Transaction, []types.Transaction, error)
 
 	// Utilities
 	ParseAmount(amountStr string) (float64, error)
