@@ -80,7 +80,7 @@ func (m model) handleFileSelection() (tea.Model, tea.Cmd) {
 	if strings.HasSuffix(strings.ToLower(selected), ".csv") {
 		templateToUse := m.store.Templates.GetDefaultTemplate()
 		if templateToUse == "" {
-			templates := m.store.Templates.GetCSVTemplates()
+			templates, _ := m.store.Templates.GetCSVTemplates()
 			if len(templates) > 0 {
 				templateToUse = templates[0].Name
 			}
@@ -146,7 +146,8 @@ func (m *model) loadDirectoryEntries() error {
 
 func (m model) getSelectedTemplate() string {
 	templateToUse := m.store.Templates.GetDefaultTemplate()
-	if templateToUse == "" && len(m.store.Templates.GetCSVTemplates()) > 0 {
+	templates, _ := m.store.Templates.GetCSVTemplates()
+	if templateToUse == "" && len(templates) > 0 {
 		templateToUse = "unsorted"
 	}
 	return templateToUse
@@ -155,7 +156,7 @@ func (m model) getSelectedTemplate() string {
 // CSV Template View
 
 func (m model) handleCSVTemplateView(key string) (tea.Model, tea.Cmd) {
-	templates := m.store.Templates.GetCSVTemplates()
+	templates, _ := m.store.Templates.GetCSVTemplates()
 
 	switch key {
 	case "esc":

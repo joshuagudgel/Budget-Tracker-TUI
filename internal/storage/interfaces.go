@@ -23,10 +23,6 @@ type TransactionStoreInterface interface {
 
 	// Utilities
 	CalculateNextId() int64
-
-	// Persistence
-	SaveTransactions() error
-	LoadTransactions() error
 }
 
 // CategoryStoreInterface defines the contract for category operations
@@ -49,10 +45,6 @@ type CategoryStoreInterface interface {
 
 	// Utilities
 	CalculateNextCategoryId() int64
-
-	// Persistence
-	SaveCategories() error
-	LoadCategories() error
 }
 
 // BankStatementStoreInterface defines the contract for bank statement operations
@@ -75,10 +67,6 @@ type BankStatementStoreInterface interface {
 
 	// Template Integration
 	GetTemplateNameById(templateId string) string
-
-	// Persistence
-	SaveBankStatements() error
-	LoadBankStatements() error
 }
 
 // CSVTemplateStoreInterface defines the contract for CSV template operations
@@ -99,18 +87,10 @@ type CSVTemplateStoreInterface interface {
 
 	// Utilities
 	ParseAmount(amountStr string) (float64, error)
-
-	// Persistence
-	SaveCSVTemplates() error
-	LoadCSVTemplates() error
 }
 
 // SharedUtilsInterface defines the contract for shared utilities
 type SharedUtilsInterface interface {
-	// File Management
-	Init() error
-	GetFilePaths() (transactions, categories, statements, templates string)
-
 	// Cross-domain Operations
 	MigrateTransactionCategories() error
 
@@ -129,8 +109,9 @@ type RestoreResult struct {
 }
 
 type CategoryResult struct {
-	Success bool
-	Message string
+	Success    bool
+	Message    string
+	CategoryId int64
 }
 
 type TemplateResult struct {
