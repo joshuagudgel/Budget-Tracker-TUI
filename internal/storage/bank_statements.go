@@ -25,20 +25,6 @@ func NewBankStatementStore(db *database.Connection) *BankStatementStore {
 	}
 }
 
-// LoadBankStatements is no longer needed with SQLite (data is always persisted)
-// Kept for interface compatibility
-func (bs *BankStatementStore) LoadBankStatements() error {
-	// SQLite data is always persisted, no loading needed
-	return nil
-}
-
-// SaveBankStatements is no longer needed with SQLite (data is always persisted)
-// Kept for interface compatibility
-func (bs *BankStatementStore) SaveBankStatements() error {
-	// SQLite data is always persisted, no explicit saving needed
-	return nil
-}
-
 // NextId calculates the next available ID for bank statements
 func (bs *BankStatementStore) NextId() int64 {
 	maxID, err := bs.helper.GetMaxID("bank_statements", "id")

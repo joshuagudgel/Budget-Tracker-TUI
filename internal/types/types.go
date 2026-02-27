@@ -8,61 +8,61 @@ import (
 )
 
 type Transaction struct {
-	Id              int64   `json:"id"`
-	ParentId        *int64  `json:"parentId,omitempty"`
-	Amount          float64 `json:"amount"`
-	Description     string  `json:"description"`
-	RawDescription  string  `json:"rawDescription"`
-	Date            string  `json:"date"`
-	CategoryId      int64   `json:"categoryId"`
-	AutoCategory    string  `json:"autoCategory"`
-	TransactionType string  `json:"transactionType"`
-	IsSplit         bool    `json:"isSplit"`
-	IsRecurring     bool    `json:"isRecurring"`
-	StatementId     string  `json:"statementId"`
-	Confidence      float64 `json:"confidence,omitempty"`
-	UserModified    bool    `json:"userModified,omitempty"`
-	CreatedAt       string  `json:"createdAt"`
-	UpdatedAt       string  `json:"updatedAt"`
+	Id              int64
+	ParentId        *int64
+	Amount          float64
+	Description     string
+	RawDescription  string
+	Date            string
+	CategoryId      int64
+	AutoCategory    string
+	TransactionType string
+	IsSplit         bool
+	IsRecurring     bool
+	StatementId     string
+	Confidence      float64
+	UserModified    bool
+	CreatedAt       string
+	UpdatedAt       string
 }
 
 type Category struct {
-	Id          int64  `json:"id"`
-	DisplayName string `json:"displayName"`
-	ParentId    *int64 `json:"parentId,omitempty"`
-	Color       string `json:"color,omitempty"`
-	IsActive    bool   `json:"isActive"`
-	CreatedAt   string `json:"createdAt"`
-	UpdatedAt   string `json:"updatedAt"`
+	Id          int64
+	DisplayName string
+	ParentId    *int64
+	Color       string
+	IsActive    bool
+	CreatedAt   string
+	UpdatedAt   string
 }
 
 type BankStatement struct {
-	Id             int64  `json:"id"`
-	Filename       string `json:"filename"`
-	ImportDate     string `json:"importDate"`
-	PeriodStart    string `json:"periodStart"`
-	PeriodEnd      string `json:"periodEnd"`
-	TemplateUsed   int64  `json:"templateUsed"`
-	TxCount        int    `json:"txCount"`
-	Status         string `json:"status"`
-	ProcessingTime int64  `json:"processingTime,omitempty"`
-	ErrorLog       string `json:"errorLog,omitempty"`
-	CreatedAt      string `json:"createdAt"`
-	UpdatedAt      string `json:"updatedAt"`
+	Id             int64
+	Filename       string
+	ImportDate     string
+	PeriodStart    string
+	PeriodEnd      string
+	TemplateUsed   int64
+	TxCount        int
+	Status         string
+	ProcessingTime int64
+	ErrorLog       string
+	CreatedAt      string
+	UpdatedAt      string
 }
 
 type CSVTemplate struct {
-	Id             int64  `json:"id"`
-	Name           string `json:"name"`
-	DateColumn     int    `json:"dateColumn"`
-	AmountColumn   int    `json:"amountColumn"`
-	DescColumn     int    `json:"descColumn"`
-	HasHeader      bool   `json:"hasHeader"`
-	DateFormat     string `json:"dateFormat,omitempty"`
-	MerchantColumn *int   `json:"merchantColumn,omitempty"`
-	Delimiter      string `json:"delimiter,omitempty"`
-	CreatedAt      string `json:"createdAt"`
-	UpdatedAt      string `json:"updatedAt"`
+	Id             int64
+	Name           string
+	DateColumn     int
+	AmountColumn   int
+	DescColumn     int
+	HasHeader      bool
+	DateFormat     string
+	MerchantColumn *int
+	Delimiter      string
+	CreatedAt      string
+	UpdatedAt      string
 }
 
 type ImportResult struct {
@@ -78,14 +78,14 @@ type ImportResult struct {
 
 // ValidationError represents a single validation error
 type ValidationError struct {
-	Field   string `json:"field"`
-	Message string `json:"message"`
+	Field   string
+	Message string
 }
 
 // ValidationResult represents the result of validation
 type ValidationResult struct {
-	IsValid bool              `json:"isValid"`
-	Errors  []ValidationError `json:"errors"`
+	IsValid bool
+	Errors  []ValidationError
 }
 
 // AddError adds a validation error to the result

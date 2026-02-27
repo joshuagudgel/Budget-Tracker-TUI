@@ -53,20 +53,6 @@ func (cs *CategoryStore) ensureDefaultCategories() {
 	}
 }
 
-// LoadCategories is no longer needed with SQLite (data is always persisted)
-// Kept for interface compatibility
-func (cs *CategoryStore) LoadCategories() error {
-	// SQLite data is always persisted, no loading needed
-	return nil
-}
-
-// SaveCategories is no longer needed with SQLite (data is always persisted)
-// Kept for interface compatibility
-func (cs *CategoryStore) SaveCategories() error {
-	// SQLite data is always persisted, no explicit saving needed
-	return nil
-}
-
 // CalculateNextCategoryId calculates the next available category ID using SQLite
 func (cs *CategoryStore) CalculateNextCategoryId() int64 {
 	maxID, err := cs.helper.GetMaxID("categories", "id")

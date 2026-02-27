@@ -299,11 +299,6 @@ func (s *Store) UndoImport(statementId int64) (int, error) {
 		return removedCount, err
 	}
 
-	err = s.Transactions.SaveTransactions()
-	if err != nil {
-		return 0, err
-	}
-
 	return removedCount, nil
 }
 

@@ -50,20 +50,6 @@ func (cts *CSVTemplateStore) ensureDefaultTemplates() {
 	}
 }
 
-// LoadCSVTemplates is no longer needed with SQLite (data is always persisted)
-// Kept for interface compatibility
-func (cts *CSVTemplateStore) LoadCSVTemplates() error {
-	// SQLite data is always persisted, no loading needed
-	return nil
-}
-
-// SaveCSVTemplates is no longer needed with SQLite (data is always persisted)
-// Kept for interface compatibility
-func (cts *CSVTemplateStore) SaveCSVTemplates() error {
-	// SQLite data is always persisted, no explicit saving needed
-	return nil
-}
-
 // GetCSVTemplates returns all CSV templates from the database
 func (cts *CSVTemplateStore) GetCSVTemplates() ([]types.CSVTemplate, error) {
 	query := `

@@ -23,20 +23,6 @@ func NewTransactionStore(db *database.Connection) *TransactionStore {
 	}
 }
 
-// LoadTransactions is no longer needed with SQLite (data is always persisted)
-// Kept for interface compatibility
-func (ts *TransactionStore) LoadTransactions() error {
-	// SQLite data is always persisted, no loading needed
-	return nil
-}
-
-// SaveTransactions is no longer needed with SQLite (data is always persisted)
-// Kept for interface compatibility
-func (ts *TransactionStore) SaveTransactions() error {
-	// SQLite data is always persisted, no explicit saving needed
-	return nil
-}
-
 // CalculateNextId calculates the next available ID using SQLite's auto-increment
 func (ts *TransactionStore) CalculateNextId() int64 {
 	maxID, err := ts.helper.GetMaxID("transactions", "id")
