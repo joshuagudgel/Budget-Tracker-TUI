@@ -183,6 +183,20 @@ func (m model) handleCSVTemplateView(key string) (tea.Model, tea.Cmd) {
 			m.importMessage = result.Message
 			m.state = bankStatementView
 		}
+	case "d":
+		if len(templates) > 0 && m.templateIndex < len(templates) {
+			selectedTemplate := templates[m.templateIndex]
+
+			result := m.store.Templates.DeleteCSVTemplate(selectedTemplate.Id)
+			m.importMessage = result.Message
+
+			if result.Success {
+				// Adjust template index if we deleted the last item
+				if m.templateIndex > 0 && m.templateIndex >= len(templates)-1 {
+					m.templateIndex--
+				}
+			}
+		}
 	case "c":
 		m.newTemplate = types.CSVTemplate{}
 		m.createField = templateName

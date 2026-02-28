@@ -277,7 +277,7 @@ func (m model) View() string {
 			}
 		}
 
-		s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: Select | c: Create Template | Esc: Cancel")
+		s += "\n" + faintStyle.Render("Up/Down: Navigate | Enter: Select | d: Delete | c: Create Template | Esc: Cancel")
 	case createTemplateView:
 		s += headerStyle.Render("Create CSV Template") + "\n\n"
 

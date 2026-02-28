@@ -80,6 +80,7 @@ type CSVTemplateStoreInterface interface {
 	GetCSVTemplates() []types.CSVTemplate
 	GetTemplateByName(name string) *types.CSVTemplate
 	CreateCSVTemplate(template types.CSVTemplate) *TemplateResult
+	DeleteCSVTemplate(id int64) *TemplateResult
 
 	// Default handling
 	GetDefaultTemplate() string

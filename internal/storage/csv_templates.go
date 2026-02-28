@@ -368,6 +368,51 @@ func (cts *CSVTemplateStore) updateTemplate(template types.CSVTemplate, now stri
 	return nil
 }
 
+// DeleteCSVTemplate deletes a CSV template by ID
+func (cts *CSVTemplateStore) DeleteCSVTemplate(id int64) *TemplateResult {
+	// Check if template is being used by any bank statements
+	query := `SELECT COUNT(*) FROM bank_statements WHERE template_used = ?`
+	row := cts.helper.QuerySingleRow(query, id)
+
+	var count int
+	err := row.Scan(&count)
+	if err != nil {
+		return &TemplateResult{
+			Success: false,
+			Message: fmt.Sprintf("Failed to check template usage: %v", err),
+		}
+	}
+
+	if count > 0 {
+		return &TemplateResult{
+			Success: false,
+			Message: fmt.Sprintf("Cannot delete template: it is used by %d bank statement(s)", count),
+		}
+	}
+
+	// Delete the template
+	deleteQuery := `DELETE FROM csv_templates WHERE id = ?`
+	rowsAffected, err := cts.helper.ExecReturnRowsAffected(deleteQuery, id)
+	if err != nil {
+		return &TemplateResult{
+			Success: false,
+			Message: fmt.Sprintf("Failed to delete template: %v", err),
+		}
+	}
+
+	if rowsAffected == 0 {
+		return &TemplateResult{
+			Success: false,
+			Message: "Template not found",
+		}
+	}
+
+	return &TemplateResult{
+		Success: true,
+		Message: "Template deleted successfully",
+	}
+}
+
 // ParseCSVLine parses a CSV line handling quoted fields
 func (cts *CSVTemplateStore) ParseCSVLine(line string, delimiter string) []string {
 	if delimiter == "" {
