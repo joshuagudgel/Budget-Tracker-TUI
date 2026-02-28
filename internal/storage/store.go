@@ -43,6 +43,7 @@ func (s *Store) Init() error {
 
 	// Set cross-references between stores
 	s.Templates.SetTransactionStore(s.Transactions)
+	s.Templates.SetCategoryStore(s.Categories)
 
 	// No need to load stores explicitly with SQLite - data is always persisted
 	// Database health check to ensure everything is working

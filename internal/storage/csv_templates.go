@@ -18,6 +18,7 @@ type CSVTemplateStore struct {
 	helper           *database.SQLHelper
 	defaultTemplate  string
 	transactionStore *TransactionStore
+	categoryStore    *CategoryStore
 }
 
 // NewCSVTemplateStore creates a new CSVTemplateStore instance
@@ -37,6 +38,11 @@ func NewCSVTemplateStore(db *database.Connection) *CSVTemplateStore {
 // SetTransactionStore sets the transaction store reference (called after all stores are initialized)
 func (cts *CSVTemplateStore) SetTransactionStore(ts *TransactionStore) {
 	cts.transactionStore = ts
+}
+
+// SetCategoryStore sets the category store reference (called after all stores are initialized)
+func (cts *CSVTemplateStore) SetCategoryStore(cs *CategoryStore) {
+	cts.categoryStore = cs
 }
 
 // ensureDefaultTemplates creates default CSV templates if none exist
@@ -161,12 +167,13 @@ func (cts *CSVTemplateStore) GetTemplateByName(name string) *types.CSVTemplate {
 // scanCSVTemplateRow scans a single database row into a CSVTemplate struct
 func (cts *CSVTemplateStore) scanCSVTemplateRow(row *sql.Row) (types.CSVTemplate, error) {
 	var template types.CSVTemplate
+	var categoryColumn sql.NullInt64
 	var merchantColumn sql.NullInt64
 	var dateFormat, delimiter sql.NullString
 
 	err := row.Scan(
 		&template.Id, &template.Name, &template.PostDateColumn, &template.AmountColumn,
-		&template.DescColumn, &merchantColumn, &template.HasHeader, &dateFormat,
+		&template.DescColumn, &categoryColumn, &merchantColumn, &template.HasHeader, &dateFormat,
 		&delimiter, &template.CreatedAt, &template.UpdatedAt,
 	)
 
@@ -175,6 +182,10 @@ func (cts *CSVTemplateStore) scanCSVTemplateRow(row *sql.Row) (types.CSVTemplate
 	}
 
 	// Handle nullable fields
+	if categoryColumn.Valid {
+		categoryInt := int(categoryColumn.Int64)
+		template.CategoryColumn = &categoryInt
+	}
 	if merchantColumn.Valid {
 		merchantInt := int(merchantColumn.Int64)
 		template.MerchantColumn = &merchantInt
@@ -470,6 +481,9 @@ func (cts *CSVTemplateStore) ParseTransactionFromTemplate(fields []string, templ
 	if template.MerchantColumn != nil && *template.MerchantColumn > maxColumn {
 		maxColumn = *template.MerchantColumn
 	}
+	if template.CategoryColumn != nil && *template.CategoryColumn > maxColumn {
+		maxColumn = *template.CategoryColumn
+	}
 
 	if len(fields) <= maxColumn {
 		return nil, fmt.Errorf("line %d: insufficient columns (%d), need at least %d", lineNum, len(fields), maxColumn+1)
@@ -499,8 +513,33 @@ func (cts *CSVTemplateStore) ParseTransactionFromTemplate(fields []string, templ
 		return nil, fmt.Errorf("line %d: invalid amount '%s': %v", lineNum, amountStr, err)
 	}
 
-	// Use provided default category
-	transaction.CategoryId = defaultCategoryId
+	// Handle category assignment - use CSV category if available, otherwise default
+	var categoryId int64
+	var confidence float64
+	var autoCategory string
+
+	if template.CategoryColumn != nil {
+		// Extract category from CSV
+		categoryText := strings.Trim(fields[*template.CategoryColumn], "\"")
+		autoCategory = categoryText // Store original bank category text for ML
+
+		if cts.categoryStore != nil {
+			// Use category store to resolve or create category
+			categoryId, confidence = cts.categoryStore.ResolveOrCreateCategory(categoryText)
+		} else {
+			// Fallback to default if category store not available
+			categoryId = defaultCategoryId
+			confidence = 0.5 // Medium confidence - we have bank category but using default
+		}
+	} else {
+		// No category column, use default
+		categoryId = defaultCategoryId
+		confidence = 0.0 // Low confidence - pure default assignment
+	}
+
+	transaction.CategoryId = categoryId
+	transaction.AutoCategory = autoCategory
+	transaction.Confidence = confidence
 
 	return &transaction, nil
 }

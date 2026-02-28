@@ -219,6 +219,35 @@ func (cs *CategoryStore) GetCategoryByDisplayName(displayName string) *types.Cat
 	return &category
 }
 
+// ResolveOrCreateCategory resolves a category by name or creates it if it doesn't exist
+// Returns the category ID and confidence score for ML tracking
+func (cs *CategoryStore) ResolveOrCreateCategory(categoryText string) (int64, float64) {
+	if categoryText == "" {
+		return cs.defaultId, 0.0 // Default category, low confidence
+	}
+
+	// Clean up category text
+	cleanText := strings.TrimSpace(categoryText)
+	if cleanText == "" {
+		return cs.defaultId, 0.0
+	}
+
+	// Try exact match first
+	existingCategory := cs.GetCategoryByDisplayName(cleanText)
+	if existingCategory != nil {
+		return existingCategory.Id, 1.0 // Exact match, high confidence
+	}
+
+	// Create new category for unmatched text
+	result := cs.CreateCategory(cleanText)
+	if result.Success {
+		return result.CategoryId, 1.0 // New category created, high confidence
+	}
+
+	// Fallback to default category if creation failed
+	return cs.defaultId, 0.0
+}
+
 // CreateCategory creates a new category with display name only (legacy method)
 func (cs *CategoryStore) CreateCategory(displayName string) *CategoryResult {
 	result := &CategoryResult{}
