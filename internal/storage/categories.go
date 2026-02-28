@@ -110,6 +110,11 @@ func (cs *CategoryStore) SetDefaultCategoryId(categoryId int64) error {
 	return nil
 }
 
+// CategoryExists checks if a category with the given ID exists and is active
+func (cs *CategoryStore) CategoryExists(categoryId int64) (bool, error) {
+	return cs.helper.ExistsBy("categories", "id = ? AND is_active = 1", categoryId)
+}
+
 // GetCategoryDisplayName returns the display name for a category ID, or empty string if not found
 func (cs *CategoryStore) GetCategoryDisplayName(categoryId int64) string {
 	query := "SELECT display_name FROM categories WHERE id = ? AND is_active = 1"

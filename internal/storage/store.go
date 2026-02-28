@@ -251,6 +251,21 @@ func (s *Store) ImportTransactionsFromCSV(filePath, templateName string) error {
 		return fmt.Errorf("no valid transactions found in CSV")
 	}
 
+	// Validate that default category exists before importing
+	defaultCategoryId := s.Categories.GetDefaultCategoryId()
+	if defaultCategoryId <= 0 {
+		return fmt.Errorf("no default category configured")
+	}
+
+	// Verify the category exists in the database
+	exists, err := s.Categories.CategoryExists(defaultCategoryId)
+	if err != nil {
+		return fmt.Errorf("failed to validate default category: %v", err)
+	}
+	if !exists {
+		return fmt.Errorf("default category (ID: %d) not found in database. Please create categories first.", defaultCategoryId)
+	}
+
 	// Extract period from transactions
 	periodStart, periodEnd := s.Statements.ExtractPeriodFromTransactions(transactions)
 
@@ -261,17 +276,25 @@ func (s *Store) ImportTransactionsFromCSV(filePath, templateName string) error {
 		return fmt.Errorf("OVERLAP_DETECTED")
 	}
 
-	// Record successful import first to get statement ID
+	// Get statement ID for import
 	filename := filepath.Base(filePath)
 	statementId := s.Statements.NextId()
 
-	err = s.Statements.RecordBankStatement(filename, periodStart, periodEnd, template.Id, len(transactions), "completed")
+	// Try to import transactions first
+	err = s.Transactions.ImportTransactionsFromCSV(transactions, fmt.Sprintf("%d", statementId))
 	if err != nil {
-		return fmt.Errorf("failed to record statement: %v", err)
+		return fmt.Errorf("failed to import transactions: %v", err)
 	}
 
-	// Import transactions with statement ID
-	return s.Transactions.ImportTransactionsFromCSV(transactions, fmt.Sprintf("%d", statementId))
+	// Only record statement as completed AFTER successful transaction import
+	err = s.Statements.RecordBankStatement(filename, periodStart, periodEnd, template.Id, len(transactions), "completed")
+	if err != nil {
+		// If statement recording fails, we should ideally roll back transactions
+		// For now, just return error - transactions are imported but statement isn't recorded
+		return fmt.Errorf("failed to record statement (transactions were imported): %v", err)
+	}
+
+	return nil
 }
 
 // UndoImport removes all transactions from a specific statement import

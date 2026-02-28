@@ -39,6 +39,7 @@ type CategoryStoreInterface interface {
 
 	// Validation
 	ValidateCategoryForDeletion(categoryId int64) error
+	CategoryExists(categoryId int64) (bool, error)
 
 	// Default handling
 	GetDefaultCategoryId() int64
