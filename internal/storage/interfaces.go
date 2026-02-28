@@ -67,6 +67,8 @@ type BankStatementStoreInterface interface {
 	// Undo Operations
 	CanUndoImport(statementId int64) bool
 	UndoImport(statementId int64) (int, error)
+	MarkStatementFailed(statementId int64, errorMsg string) error
+	MarkStatementCompleted(statementId int64) error
 
 	// Template Integration
 	GetTemplateNameById(templateId string) string

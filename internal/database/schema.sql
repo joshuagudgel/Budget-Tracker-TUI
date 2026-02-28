@@ -56,7 +56,7 @@ CREATE TABLE bank_statements (
     FOREIGN KEY (template_used) REFERENCES csv_templates(id) ON DELETE RESTRICT,
     CHECK (length(filename) > 0),
     CHECK (tx_count >= 0),
-    CHECK (status IN ('completed', 'failed', 'override', 'undone')),
+    CHECK (status IN ('completed', 'failed', 'override', 'undone', 'importing')),
     CHECK (processing_time IS NULL OR processing_time >= 0)
 );
 

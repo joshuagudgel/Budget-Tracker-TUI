@@ -217,6 +217,40 @@ func (bs *BankStatementStore) CanUndoImport(statementId int64) bool {
 	return err == nil && exists
 }
 
+// MarkStatementFailed marks a statement as failed with error message
+func (bs *BankStatementStore) MarkStatementFailed(statementId int64, errorMsg string) error {
+	query := "UPDATE bank_statements SET status = 'failed', error_log = ?, updated_at = ? WHERE id = ?"
+	now := time.Now().Format(time.RFC3339)
+
+	rowsAffected, err := bs.helper.ExecReturnRowsAffected(query, errorMsg, now, statementId)
+	if err != nil {
+		return fmt.Errorf("failed to mark statement as failed: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("statement not found")
+	}
+
+	return nil
+}
+
+// MarkStatementCompleted marks a statement as completed
+func (bs *BankStatementStore) MarkStatementCompleted(statementId int64) error {
+	query := "UPDATE bank_statements SET status = 'completed', updated_at = ? WHERE id = ?"
+	now := time.Now().Format(time.RFC3339)
+
+	rowsAffected, err := bs.helper.ExecReturnRowsAffected(query, now, statementId)
+	if err != nil {
+		return fmt.Errorf("failed to mark statement as completed: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("statement not found")
+	}
+
+	return nil
+}
+
 // DetectOverlap checks for period overlaps with existing completed statements using the same template
 func (bs *BankStatementStore) DetectOverlap(periodStart, periodEnd string, templateId int64) []types.BankStatement {
 	var overlaps []types.BankStatement

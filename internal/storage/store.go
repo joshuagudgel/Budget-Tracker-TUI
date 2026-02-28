@@ -280,18 +280,24 @@ func (s *Store) ImportTransactionsFromCSV(filePath, templateName string) error {
 	filename := filepath.Base(filePath)
 	statementId := s.Statements.NextId()
 
-	// Try to import transactions first
+	// Create statement record first with "importing" status to satisfy foreign key
+	err = s.Statements.RecordBankStatement(filename, periodStart, periodEnd, template.Id, len(transactions), "importing")
+	if err != nil {
+		return fmt.Errorf("failed to create statement record: %v", err)
+	}
+
+	// Now import transactions with valid statement_id reference
 	err = s.Transactions.ImportTransactionsFromCSV(transactions, fmt.Sprintf("%d", statementId))
 	if err != nil {
+		// If transaction import fails, mark statement as failed
+		s.Statements.MarkStatementFailed(statementId, fmt.Sprintf("Transaction import failed: %v", err))
 		return fmt.Errorf("failed to import transactions: %v", err)
 	}
 
-	// Only record statement as completed AFTER successful transaction import
-	err = s.Statements.RecordBankStatement(filename, periodStart, periodEnd, template.Id, len(transactions), "completed")
+	// Update statement status to completed after successful import
+	err = s.Statements.MarkStatementCompleted(statementId)
 	if err != nil {
-		// If statement recording fails, we should ideally roll back transactions
-		// For now, just return error - transactions are imported but statement isn't recorded
-		return fmt.Errorf("failed to record statement (transactions were imported): %v", err)
+		return fmt.Errorf("failed to mark statement as completed: %v", err)
 	}
 
 	return nil
