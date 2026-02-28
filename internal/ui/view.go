@@ -66,12 +66,13 @@ func (m model) View() string {
 		s += headerStyle.Render("Quit ('q')") + "\n"
 	case listView:
 		// view transactions in one large list
-		// headers stay along top
-		s += headerStyle.Render("Date") + " | " +
-			headerStyle.Render("Description") + " | " +
-			headerStyle.Render("Amount") + " | " +
-			headerStyle.Render("Category") + " | " +
-			headerStyle.Render("Type") + "\n\n"
+		// headers stay along top with aligned columns
+		s += fmt.Sprintf("%-12s | %-40s | %12s | %-20s | %-15s\n",
+			headerStyle.Render("Date"),
+			headerStyle.Render("Description"),
+			headerStyle.Render("Amount"),
+			headerStyle.Render("Category"),
+			headerStyle.Render("Type")) + "\n"
 
 		headerLines := 4 // App title + debug + empty line + header line
 		availableHeight := m.windowHeight - headerLines - 2
@@ -118,11 +119,28 @@ func (m model) View() string {
 				prefix = ">"
 			}
 
-			s += enumeratorStyle.Render(prefix) + t.Date + " | " +
-				t.Description + " | " +
-				fmt.Sprintf("%.2f", t.Amount) + " | " +
-				m.getCategoryDisplayName(t.CategoryId) + " | " +
-				t.TransactionType + "\n"
+			// Format transaction data with aligned columns
+			description := t.Description
+			if len(description) > 40 {
+				description = description[:37] + "..."
+			}
+
+			categoryName := m.getCategoryDisplayName(t.CategoryId)
+			if len(categoryName) > 20 {
+				categoryName = categoryName[:17] + "..."
+			}
+
+			transactionType := t.TransactionType
+			if len(transactionType) > 15 {
+				transactionType = transactionType[:12] + "..."
+			}
+
+			s += enumeratorStyle.Render(prefix) + fmt.Sprintf("%-12s | %-40s | %12.2f | %-20s | %-15s\n",
+				t.Date,
+				description,
+				t.Amount,
+				categoryName,
+				transactionType)
 		}
 
 		// Fill remaining space if needed
@@ -1659,12 +1677,13 @@ func (m model) renderStatementTransactionListView() string {
 	s += faintStyle.Render("Period: "+stmt.PeriodStart+" to "+stmt.PeriodEnd) + " | " +
 		faintStyle.Render(fmt.Sprintf("%d transactions", len(m.filteredTransactions))) + "\n\n"
 
-	// Column headers
-	s += headerStyle.Render("Date") + " | " +
-		headerStyle.Render("Description") + " | " +
-		headerStyle.Render("Amount") + " | " +
-		headerStyle.Render("Category") + " | " +
-		headerStyle.Render("Type") + "\n\n"
+	// Column headers with aligned columns
+	s += fmt.Sprintf("%-12s | %-40s | %12s | %-20s | %-15s\n",
+		headerStyle.Render("Date"),
+		headerStyle.Render("Description"),
+		headerStyle.Render("Amount"),
+		headerStyle.Render("Category"),
+		headerStyle.Render("Type")) + "\n"
 
 	// Display message if exists
 	if m.statementTxMessage != "" {
@@ -1716,11 +1735,28 @@ func (m model) renderStatementTransactionListView() string {
 			prefix = ">"
 		}
 
-		s += enumeratorStyle.Render(prefix) + t.Date + " | " +
-			t.Description + " | " +
-			fmt.Sprintf("%.2f", t.Amount) + " | " +
-			m.getCategoryDisplayName(t.CategoryId) + " | " +
-			t.TransactionType + "\n"
+		// Format transaction data with aligned columns
+		description := t.Description
+		if len(description) > 40 {
+			description = description[:37] + "..."
+		}
+
+		categoryName := m.getCategoryDisplayName(t.CategoryId)
+		if len(categoryName) > 20 {
+			categoryName = categoryName[:17] + "..."
+		}
+
+		transactionType := t.TransactionType
+		if len(transactionType) > 15 {
+			transactionType = transactionType[:12] + "..."
+		}
+
+		s += enumeratorStyle.Render(prefix) + fmt.Sprintf("%-12s | %-40s | %12.2f | %-20s | %-15s\n",
+			t.Date,
+			description,
+			t.Amount,
+			categoryName,
+			transactionType)
 	}
 
 	// Fill remaining space if needed
