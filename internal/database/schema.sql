@@ -21,9 +21,10 @@ CREATE TABLE categories (
 CREATE TABLE csv_templates (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
-    date_column INTEGER NOT NULL,
+    post_date_column INTEGER NOT NULL,
     amount_column INTEGER NOT NULL,
     desc_column INTEGER NOT NULL,
+    category_column INTEGER,
     merchant_column INTEGER,
     has_header BOOLEAN NOT NULL DEFAULT 0,
     date_format TEXT DEFAULT '2006-01-02',
@@ -31,9 +32,10 @@ CREATE TABLE csv_templates (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CHECK (length(name) > 0),
-    CHECK (date_column >= 0),
+    CHECK (post_date_column >= 0),
     CHECK (amount_column >= 0),
     CHECK (desc_column >= 0),
+    CHECK (category_column IS NULL OR category_column >= 0),
     CHECK (merchant_column IS NULL OR merchant_column >= 0),
     CHECK (has_header IN (0, 1)),
     CHECK (length(delimiter) > 0)

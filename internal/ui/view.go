@@ -271,7 +271,7 @@ func (m model) View() string {
 
 				// Show template details
 				templateDetails := fmt.Sprintf("%s - Date:%d, Amount:%d, Desc:%d, Header:%v%s",
-					template.Name, template.DateColumn, template.AmountColumn, template.DescColumn, template.HasHeader, suffix)
+					template.Name, template.PostDateColumn, template.AmountColumn, template.DescColumn, template.HasHeader, suffix)
 
 				s += enumeratorStyle.Render(prefix) + templateDetails + "\n"
 			}
@@ -285,46 +285,72 @@ func (m model) View() string {
 			s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.createMessage) + "\n\n"
 		}
 
-		// Template Name field
-		nameStyle := formFieldStyle
-		if m.createField == createTemplateName {
-			nameStyle = activeFieldStyle
+		// Validation notification
+		if m.templateValidationNotification != "" {
+			s += lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Background(lipgloss.Color("0")).
+				Padding(0, 1).Render(m.templateValidationNotification) + "\n\n"
 		}
-		s += formLabelStyle.Render("Template Name:") + nameStyle.Render(m.newTemplate.Name) + "\n\n"
 
-		// Date Column field
-		dateStyle := formFieldStyle
-		if m.createField == createTemplateDate {
-			dateStyle = activeFieldStyle
+		// Template Name field
+		nameStyle := m.getTemplateFieldStyle("name", m.createField == templateName, m.isEditingTemplateName)
+		nameValue := m.newTemplate.Name
+		if m.isEditingTemplateName {
+			nameValue = m.editingTemplateNameStr
 		}
-		s += formLabelStyle.Render("Date Column:") + dateStyle.Render(fmt.Sprintf("%d", m.newTemplate.DateColumn)) + "\n\n"
+		s += formLabelStyle.Render("Template Name:") + nameStyle.Render(nameValue) + "\n"
+		s += m.renderTemplateFieldError("name")
+
+		// Post Date Column field
+		postDateStyle := m.getTemplateFieldStyle("postdate", m.createField == templatePostDate, m.isEditingTemplatePostDate)
+		postDateValue := fmt.Sprintf("%d", m.newTemplate.PostDateColumn)
+		if m.isEditingTemplatePostDate {
+			postDateValue = m.editingTemplatePostDateStr
+		}
+		s += formLabelStyle.Render("Post Date Column:") + postDateStyle.Render(postDateValue) + "\n"
+		s += m.renderTemplateFieldError("postdate")
 
 		// Amount Column field
-		amountStyle := formFieldStyle
-		if m.createField == createTemplateAmount {
-			amountStyle = activeFieldStyle
+		amountStyle := m.getTemplateFieldStyle("amount", m.createField == templateAmount, m.isEditingTemplateAmount)
+		amountValue := fmt.Sprintf("%d", m.newTemplate.AmountColumn)
+		if m.isEditingTemplateAmount {
+			amountValue = m.editingTemplateAmountStr
 		}
-		s += formLabelStyle.Render("Amount Column:") + amountStyle.Render(fmt.Sprintf("%d", m.newTemplate.AmountColumn)) + "\n\n"
+		s += formLabelStyle.Render("Amount Column:") + amountStyle.Render(amountValue) + "\n"
+		s += m.renderTemplateFieldError("amount")
 
 		// Description Column field
-		descStyle := formFieldStyle
-		if m.createField == createTemplateDesc {
-			descStyle = activeFieldStyle
+		descStyle := m.getTemplateFieldStyle("description", m.createField == templateDesc, m.isEditingTemplateDesc)
+		descValue := fmt.Sprintf("%d", m.newTemplate.DescColumn)
+		if m.isEditingTemplateDesc {
+			descValue = m.editingTemplateDescStr
 		}
-		s += formLabelStyle.Render("Desc Column:") + descStyle.Render(fmt.Sprintf("%d", m.newTemplate.DescColumn)) + "\n\n"
+		s += formLabelStyle.Render("Description Column:") + descStyle.Render(descValue) + "\n"
+		s += m.renderTemplateFieldError("description")
+
+		// Category Column field (optional)
+		categoryStyle := m.getTemplateFieldStyle("category", m.createField == templateCategory, m.isEditingTemplateCategory)
+		categoryValue := "Not specified"
+		if m.isEditingTemplateCategory {
+			if m.editingTemplateCategoryStr != "" {
+				categoryValue = m.editingTemplateCategoryStr
+			} else {
+				categoryValue = ""
+			}
+		} else if m.newTemplate.CategoryColumn != nil {
+			categoryValue = fmt.Sprintf("%d", *m.newTemplate.CategoryColumn)
+		}
+		s += formLabelStyle.Render("Category Column (optional):") + categoryStyle.Render(categoryValue) + "\n"
+		s += m.renderTemplateFieldError("category")
 
 		// Has Header field
-		headerStyle := formFieldStyle
-		if m.createField == createTemplateHeader {
-			headerStyle = activeFieldStyle
-		}
+		headerStyle := m.getTemplateFieldStyle("header", m.createField == templateHeader, false)
 		headerValue := "No"
 		if m.newTemplate.HasHeader {
 			headerValue = "Yes"
 		}
-		s += formLabelStyle.Render("Has Header:") + headerStyle.Render(headerValue) + " (y/n)\n\n"
+		s += formLabelStyle.Render("Has Header:") + headerStyle.Render(headerValue) + "\n\n"
 
-		s += faintStyle.Render("Up/Down: Navigate fields | Enter: Save | Esc: Cancel")
+		s += faintStyle.Render("Up/Down: Navigate | Enter/Backspace: Edit | Ctrl+S: Save | Esc: Cancel")
 	case bulkEditView:
 		s += headerStyle.Render(fmt.Sprintf("Bulk Edit %d Transactions", len(m.selectedTxIds))) + "\n\n"
 
@@ -1781,4 +1807,41 @@ func (m model) renderStatementTransactionListView() string {
 	}
 
 	return s
+}
+
+// Template field styling and error rendering functions
+
+// getTemplateFieldStyle returns the appropriate style for template fields based on state
+func (m model) getTemplateFieldStyle(fieldName string, isActive bool, isEditing bool) lipgloss.Style {
+	// Check for validation errors and show red border if errors exist
+	if m.templateFieldErrors != nil {
+		if _, hasError := m.templateFieldErrors[fieldName]; hasError {
+			if isEditing {
+				return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("1")).Padding(0, 1).Width(30) // Red editing
+			}
+			if isActive {
+				return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("1")).Padding(0, 1).Width(30) // Red active
+			}
+			return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("1")).Padding(0, 1).Width(30) // Red default
+		}
+	}
+
+	// No validation errors - use standard styling
+	if isEditing {
+		return selectingFieldStyle
+	}
+	if isActive {
+		return activeFieldStyle
+	}
+	return formFieldStyle
+}
+
+// renderTemplateFieldError renders inline error messages for template fields
+func (m model) renderTemplateFieldError(fieldName string) string {
+	if m.templateFieldErrors != nil {
+		if errorMsg, hasError := m.templateFieldErrors[fieldName]; hasError {
+			return lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("  └─ "+errorMsg) + "\n"
+		}
+	}
+	return ""
 }

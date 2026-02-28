@@ -37,11 +37,12 @@ const (
 
 // Template creation field constants
 const (
-	createTemplateName uint = iota
-	createTemplateDate
-	createTemplateAmount
-	createTemplateDesc
-	createTemplateHeader
+	templateName uint = iota
+	templatePostDate
+	templateAmount
+	templateDesc
+	templateCategory
+	templateHeader
 )
 
 // Split transaction field constants

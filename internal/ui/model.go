@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"time"
 
 	"budget-tracker-tui/internal/types"
@@ -54,6 +55,23 @@ type model struct {
 	newTemplate      types.CSVTemplate
 	createField      uint
 	createMessage    string
+
+	// Template creation editing state
+	isEditingTemplateName      bool
+	isEditingTemplatePostDate  bool
+	isEditingTemplateAmount    bool
+	isEditingTemplateDesc      bool
+	isEditingTemplateCategory  bool
+	editingTemplateNameStr     string
+	editingTemplatePostDateStr string
+	editingTemplateAmountStr   string
+	editingTemplateDescStr     string
+	editingTemplateCategoryStr string
+
+	// Template validation state
+	templateFieldErrors            map[string]string
+	templateValidationErrors       bool
+	templateValidationNotification string
 
 	// Category management
 	categoryIndex       int
@@ -219,15 +237,16 @@ func NewModel(store *storage.Store) model {
 		log.Fatalf("unable to get transactions: %v", err)
 	}
 	m := model{
-		state:          menuView,
-		store:          store,
-		transactions:   transactions,
-		listIndex:      0,
-		availableTypes: []string{"income", "expense", "transfer"},
-		selectedTxIds:  make(map[int64]bool),
-		fieldErrors:    make(map[string]string),
-		validator:      validation.NewTransactionValidator(),
-		previousState:  listView, // Default to listView for backward compatibility
+		state:               menuView,
+		store:               store,
+		transactions:        transactions,
+		listIndex:           0,
+		availableTypes:      []string{"income", "expense", "transfer"},
+		selectedTxIds:       make(map[int64]bool),
+		fieldErrors:         make(map[string]string),
+		templateFieldErrors: make(map[string]string),
+		validator:           validation.NewTransactionValidator(),
+		previousState:       listView, // Default to listView for backward compatibility
 	}
 	// Sort transactions by date (newest first)
 	m.sortTransactionsByDate()
@@ -1056,4 +1075,39 @@ func (m *model) appendToCategoryField(field, char string) {
 	case "color":
 		m.editingCategory.Color += char
 	}
+}
+
+// Template validation functions
+
+// validateCurrentTemplate validates the current template and updates field errors
+func (m *model) validateCurrentTemplate() {
+	// Clear existing errors
+	m.templateFieldErrors = make(map[string]string)
+	m.templateValidationErrors = false
+	m.templateValidationNotification = ""
+
+	// Validate all template fields
+	result := m.newTemplate.Validate()
+	if !result.IsValid {
+		m.templateValidationErrors = true
+		for _, err := range result.Errors {
+			m.templateFieldErrors[err.Field] = err.Message
+		}
+	}
+
+	m.buildTemplateValidationNotification()
+}
+
+// buildTemplateValidationNotification builds user-friendly template validation notification
+func (m *model) buildTemplateValidationNotification() {
+	if !m.templateValidationErrors {
+		m.templateValidationNotification = ""
+		return
+	}
+
+	var errors []string
+	for field, err := range m.templateFieldErrors {
+		errors = append(errors, fmt.Sprintf("%s: %s", field, err))
+	}
+	m.templateValidationNotification = "Validation errors: " + strings.Join(errors, "; ")
 }

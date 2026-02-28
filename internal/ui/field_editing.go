@@ -280,3 +280,307 @@ func (m model) handleTypeSelection(key string) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
+
+// Template Field Navigation
+
+func (m model) handleTemplateFieldNavigation(direction int) (tea.Model, tea.Cmd) {
+	if direction > 0 && m.createField < templateHeader {
+		m.createField++
+	} else if direction < 0 && m.createField > templateName {
+		m.createField--
+	}
+
+	// Initialize editing strings when entering fields
+	m.initTemplateEditingStrings()
+
+	return m, nil
+}
+
+func (m *model) initTemplateEditingStrings() {
+	if m.editingTemplateNameStr == "" {
+		m.editingTemplateNameStr = m.newTemplate.Name
+	}
+	if m.editingTemplatePostDateStr == "" {
+		m.editingTemplatePostDateStr = strconv.Itoa(m.newTemplate.PostDateColumn)
+	}
+	if m.editingTemplateAmountStr == "" {
+		m.editingTemplateAmountStr = strconv.Itoa(m.newTemplate.AmountColumn)
+	}
+	if m.editingTemplateDescStr == "" {
+		m.editingTemplateDescStr = strconv.Itoa(m.newTemplate.DescColumn)
+	}
+	if m.editingTemplateCategoryStr == "" && m.newTemplate.CategoryColumn != nil {
+		m.editingTemplateCategoryStr = strconv.Itoa(*m.newTemplate.CategoryColumn)
+	}
+}
+
+func (m model) handleTemplateBackspaceActivation() (tea.Model, tea.Cmd) {
+	switch m.createField {
+	case templateName:
+		return m.enterTemplateNameEditingWithBackspace()
+	case templatePostDate:
+		return m.enterTemplatePostDateEditingWithBackspace()
+	case templateAmount:
+		return m.enterTemplateAmountEditingWithBackspace()
+	case templateDesc:
+		return m.enterTemplateDescEditingWithBackspace()
+	case templateCategory:
+		return m.enterTemplateCategoryEditingWithBackspace()
+	}
+	return m, nil
+}
+
+func (m model) handleTemplateFieldActivation() (tea.Model, tea.Cmd) {
+	switch m.createField {
+	case templateName:
+		return m.enterTemplateNameEditing()
+	case templatePostDate:
+		return m.enterTemplatePostDateEditing()
+	case templateAmount:
+		return m.enterTemplateAmountEditing()
+	case templateDesc:
+		return m.enterTemplateDescEditing()
+	case templateCategory:
+		return m.enterTemplateCategoryEditing()
+	case templateHeader:
+		return m.enterTemplateHeaderMode()
+	}
+	return m, nil
+}
+
+// Template Name Editing
+
+func (m model) enterTemplateNameEditing() (tea.Model, tea.Cmd) {
+	m.isEditingTemplateName = true
+	if m.editingTemplateNameStr == "" {
+		m.editingTemplateNameStr = m.newTemplate.Name
+	}
+	return m, nil
+}
+
+func (m model) enterTemplateNameEditingWithBackspace() (tea.Model, tea.Cmd) {
+	m.isEditingTemplateName = true
+	if m.editingTemplateNameStr == "" {
+		m.editingTemplateNameStr = m.newTemplate.Name
+	}
+	if len(m.editingTemplateNameStr) > 0 {
+		m.editingTemplateNameStr = m.editingTemplateNameStr[:len(m.editingTemplateNameStr)-1]
+	}
+	return m, nil
+}
+
+func (m model) handleTemplateNameInput(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "enter", "esc":
+		if key == "enter" {
+			m.newTemplate.Name = m.editingTemplateNameStr
+		}
+		m.validateTemplateField("name")
+		m.isEditingTemplateName = false
+	case "backspace":
+		if len(m.editingTemplateNameStr) > 0 {
+			m.editingTemplateNameStr = m.editingTemplateNameStr[:len(m.editingTemplateNameStr)-1]
+		}
+	default:
+		if len(key) == 1 {
+			m.editingTemplateNameStr += key
+		}
+	}
+	return m, nil
+}
+
+// Template Column Editing (Post Date, Amount, Description, Category)
+
+func (m model) enterTemplatePostDateEditing() (tea.Model, tea.Cmd) {
+	m.isEditingTemplatePostDate = true
+	if m.editingTemplatePostDateStr == "" {
+		m.editingTemplatePostDateStr = strconv.Itoa(m.newTemplate.PostDateColumn)
+	}
+	return m, nil
+}
+
+func (m model) enterTemplatePostDateEditingWithBackspace() (tea.Model, tea.Cmd) {
+	m.isEditingTemplatePostDate = true
+	if m.editingTemplatePostDateStr == "" {
+		m.editingTemplatePostDateStr = strconv.Itoa(m.newTemplate.PostDateColumn)
+	}
+	if len(m.editingTemplatePostDateStr) > 0 {
+		m.editingTemplatePostDateStr = m.editingTemplatePostDateStr[:len(m.editingTemplatePostDateStr)-1]
+	}
+	return m, nil
+}
+
+func (m model) handleTemplatePostDateInput(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "enter", "esc":
+		if key == "enter" {
+			if value, err := strconv.Atoi(m.editingTemplatePostDateStr); err == nil && value >= 0 {
+				m.newTemplate.PostDateColumn = value
+			}
+		}
+		m.validateTemplateField("postdate")
+		m.isEditingTemplatePostDate = false
+	case "backspace":
+		if len(m.editingTemplatePostDateStr) > 0 {
+			m.editingTemplatePostDateStr = m.editingTemplatePostDateStr[:len(m.editingTemplatePostDateStr)-1]
+		}
+	default:
+		if len(key) == 1 && key >= "0" && key <= "9" {
+			m.editingTemplatePostDateStr += key
+		}
+	}
+	return m, nil
+}
+
+func (m model) enterTemplateAmountEditing() (tea.Model, tea.Cmd) {
+	m.isEditingTemplateAmount = true
+	if m.editingTemplateAmountStr == "" {
+		m.editingTemplateAmountStr = strconv.Itoa(m.newTemplate.AmountColumn)
+	}
+	return m, nil
+}
+
+func (m model) enterTemplateAmountEditingWithBackspace() (tea.Model, tea.Cmd) {
+	m.isEditingTemplateAmount = true
+	if m.editingTemplateAmountStr == "" {
+		m.editingTemplateAmountStr = strconv.Itoa(m.newTemplate.AmountColumn)
+	}
+	if len(m.editingTemplateAmountStr) > 0 {
+		m.editingTemplateAmountStr = m.editingTemplateAmountStr[:len(m.editingTemplateAmountStr)-1]
+	}
+	return m, nil
+}
+
+func (m model) handleTemplateAmountInput(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "enter", "esc":
+		if key == "enter" {
+			if value, err := strconv.Atoi(m.editingTemplateAmountStr); err == nil && value >= 0 {
+				m.newTemplate.AmountColumn = value
+			}
+		}
+		m.validateTemplateField("amount")
+		m.isEditingTemplateAmount = false
+	case "backspace":
+		if len(m.editingTemplateAmountStr) > 0 {
+			m.editingTemplateAmountStr = m.editingTemplateAmountStr[:len(m.editingTemplateAmountStr)-1]
+		}
+	default:
+		if len(key) == 1 && key >= "0" && key <= "9" {
+			m.editingTemplateAmountStr += key
+		}
+	}
+	return m, nil
+}
+
+func (m model) enterTemplateDescEditing() (tea.Model, tea.Cmd) {
+	m.isEditingTemplateDesc = true
+	if m.editingTemplateDescStr == "" {
+		m.editingTemplateDescStr = strconv.Itoa(m.newTemplate.DescColumn)
+	}
+	return m, nil
+}
+
+func (m model) enterTemplateDescEditingWithBackspace() (tea.Model, tea.Cmd) {
+	m.isEditingTemplateDesc = true
+	if m.editingTemplateDescStr == "" {
+		m.editingTemplateDescStr = strconv.Itoa(m.newTemplate.DescColumn)
+	}
+	if len(m.editingTemplateDescStr) > 0 {
+		m.editingTemplateDescStr = m.editingTemplateDescStr[:len(m.editingTemplateDescStr)-1]
+	}
+	return m, nil
+}
+
+func (m model) handleTemplateDescInput(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "enter", "esc":
+		if key == "enter" {
+			if value, err := strconv.Atoi(m.editingTemplateDescStr); err == nil && value >= 0 {
+				m.newTemplate.DescColumn = value
+			}
+		}
+		m.validateTemplateField("description")
+		m.isEditingTemplateDesc = false
+	case "backspace":
+		if len(m.editingTemplateDescStr) > 0 {
+			m.editingTemplateDescStr = m.editingTemplateDescStr[:len(m.editingTemplateDescStr)-1]
+		}
+	default:
+		if len(key) == 1 && key >= "0" && key <= "9" {
+			m.editingTemplateDescStr += key
+		}
+	}
+	return m, nil
+}
+
+func (m model) enterTemplateCategoryEditing() (tea.Model, tea.Cmd) {
+	m.isEditingTemplateCategory = true
+	if m.editingTemplateCategoryStr == "" && m.newTemplate.CategoryColumn != nil {
+		m.editingTemplateCategoryStr = strconv.Itoa(*m.newTemplate.CategoryColumn)
+	}
+	return m, nil
+}
+
+func (m model) enterTemplateCategoryEditingWithBackspace() (tea.Model, tea.Cmd) {
+	m.isEditingTemplateCategory = true
+	if m.editingTemplateCategoryStr == "" && m.newTemplate.CategoryColumn != nil {
+		m.editingTemplateCategoryStr = strconv.Itoa(*m.newTemplate.CategoryColumn)
+	}
+	if len(m.editingTemplateCategoryStr) > 0 {
+		m.editingTemplateCategoryStr = m.editingTemplateCategoryStr[:len(m.editingTemplateCategoryStr)-1]
+	}
+	return m, nil
+}
+
+func (m model) handleTemplateCategoryInput(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "enter", "esc":
+		if key == "enter" {
+			if m.editingTemplateCategoryStr == "" {
+				m.newTemplate.CategoryColumn = nil
+			} else if value, err := strconv.Atoi(m.editingTemplateCategoryStr); err == nil && value >= 0 {
+				m.newTemplate.CategoryColumn = &value
+			}
+		}
+		m.validateTemplateField("category")
+		m.isEditingTemplateCategory = false
+	case "backspace":
+		if len(m.editingTemplateCategoryStr) > 0 {
+			m.editingTemplateCategoryStr = m.editingTemplateCategoryStr[:len(m.editingTemplateCategoryStr)-1]
+		}
+	default:
+		if len(key) == 1 && key >= "0" && key <= "9" {
+			m.editingTemplateCategoryStr += key
+		}
+	}
+	return m, nil
+}
+
+// Template Header Mode (Yes/No selection)
+
+func (m model) enterTemplateHeaderMode() (tea.Model, tea.Cmd) {
+	// Header is a simple boolean toggle, no editing mode needed
+	m.newTemplate.HasHeader = !m.newTemplate.HasHeader
+	return m, nil
+}
+
+// Template Validation
+
+func (m *model) validateTemplateField(field string) {
+	if m.templateFieldErrors == nil {
+		m.templateFieldErrors = make(map[string]string)
+	}
+
+	// Clear previous error for this field
+	delete(m.templateFieldErrors, field)
+
+	// Validate the specific field
+	if err := m.newTemplate.ValidateField(field); err != nil {
+		m.templateFieldErrors[field] = err.Error()
+	}
+
+	// Update overall validation status
+	m.templateValidationErrors = len(m.templateFieldErrors) > 0
+	m.buildTemplateValidationNotification()
+}

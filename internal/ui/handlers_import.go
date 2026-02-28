@@ -185,7 +185,7 @@ func (m model) handleCSVTemplateView(key string) (tea.Model, tea.Cmd) {
 		}
 	case "c":
 		m.newTemplate = types.CSVTemplate{}
-		m.createField = createTemplateName
+		m.createField = templateName
 		m.createMessage = ""
 		m.state = createTemplateView
 	}
@@ -195,80 +195,86 @@ func (m model) handleCSVTemplateView(key string) (tea.Model, tea.Cmd) {
 // Create CSV Template View
 
 func (m model) handleCreateTemplateView(key string) (tea.Model, tea.Cmd) {
+	// Handle field-specific editing input first
+	if m.isEditingTemplateName {
+		return m.handleTemplateNameInput(key)
+	}
+	if m.isEditingTemplatePostDate {
+		return m.handleTemplatePostDateInput(key)
+	}
+	if m.isEditingTemplateAmount {
+		return m.handleTemplateAmountInput(key)
+	}
+	if m.isEditingTemplateDesc {
+		return m.handleTemplateDescInput(key)
+	}
+	if m.isEditingTemplateCategory {
+		return m.handleTemplateCategoryInput(key)
+	}
+
+	// Handle navigation and general commands
 	switch key {
 	case "esc":
 		m.state = csvTemplateView
+		m.createMessage = ""
 	case "down", "tab":
-		if m.createField < createTemplateHeader {
-			m.createField++
-		}
-	case "up":
-		if m.createField > createTemplateName {
-			m.createField--
-		}
+		return m.handleTemplateFieldNavigation(1)
+	case "up", "shift+tab":
+		return m.handleTemplateFieldNavigation(-1)
 	case "enter":
-		// Use store's business logic instead of UI logic
-		result := m.store.Templates.CreateCSVTemplate(m.newTemplate)
-		if result.Success {
-			m.createMessage = ""
-			m.state = csvTemplateView
-		} else {
-			m.createMessage = result.Message
-		}
+		return m.handleTemplateFieldActivation()
 	case "backspace":
-		return m.handleCreateTemplateBackspace()
-	default:
-		if len(key) == 1 {
-			return m.handleCreateTemplateInput(key)
-		}
+		return m.handleTemplateBackspaceActivation()
+	case "ctrl+s":
+		return m.handleTemplateSave()
 	}
 	return m, nil
 }
 
 func (m model) handleCreateTemplateInput(key string) (tea.Model, tea.Cmd) {
-	switch m.createField {
-	case createTemplateName:
-		m.newTemplate.Name += key
-	case createTemplateDate:
-		if key >= "0" && key <= "9" {
-			digit := int(key[0] - '0')
-			m.newTemplate.DateColumn = m.newTemplate.DateColumn*10 + digit
-		}
-	case createTemplateAmount:
-		if key >= "0" && key <= "9" {
-			digit := int(key[0] - '0')
-			m.newTemplate.AmountColumn = m.newTemplate.AmountColumn*10 + digit
-		}
-	case createTemplateDesc:
-		if key >= "0" && key <= "9" {
-			digit := int(key[0] - '0')
-			m.newTemplate.DescColumn = m.newTemplate.DescColumn*10 + digit
-		}
-	case createTemplateHeader:
-		switch key {
-		case "y", "Y":
-			m.newTemplate.HasHeader = true
-		case "n", "N":
-			m.newTemplate.HasHeader = false
-		}
-	}
+	// This function is deprecated - field editing now handled by two-phase system
 	return m, nil
 }
 
 func (m model) handleCreateTemplateBackspace() (tea.Model, tea.Cmd) {
-	switch m.createField {
-	case createTemplateName:
-		if len(m.newTemplate.Name) > 0 {
-			m.newTemplate.Name = m.newTemplate.Name[:len(m.newTemplate.Name)-1]
-		}
-	case createTemplateDate:
-		m.newTemplate.DateColumn = m.newTemplate.DateColumn / 10
-	case createTemplateAmount:
-		m.newTemplate.AmountColumn = m.newTemplate.AmountColumn / 10
-	case createTemplateDesc:
-		m.newTemplate.DescColumn = m.newTemplate.DescColumn / 10
-	case createTemplateHeader:
-		m.newTemplate.HasHeader = false
+	// This function is deprecated - field editing now handled by two-phase system
+	return m, nil
+}
+
+func (m model) handleTemplateSave() (tea.Model, tea.Cmd) {
+	// Validate template before saving
+	m.validateCurrentTemplate()
+	if m.templateValidationErrors {
+		return m, nil // Don't save if there are validation errors
+	}
+
+	// Use store's business logic to create template
+	result := m.store.Templates.CreateCSVTemplate(m.newTemplate)
+	if result.Success {
+		m.createMessage = "Template created successfully"
+		m.state = csvTemplateView
+		// Reset template state
+		m.newTemplate = types.CSVTemplate{}
+		m.createField = templateName
+		m.clearTemplateEditingState()
+	} else {
+		m.createMessage = result.Message
 	}
 	return m, nil
+}
+
+func (m *model) clearTemplateEditingState() {
+	m.isEditingTemplateName = false
+	m.isEditingTemplatePostDate = false
+	m.isEditingTemplateAmount = false
+	m.isEditingTemplateDesc = false
+	m.isEditingTemplateCategory = false
+	m.editingTemplateNameStr = ""
+	m.editingTemplatePostDateStr = ""
+	m.editingTemplateAmountStr = ""
+	m.editingTemplateDescStr = ""
+	m.editingTemplateCategoryStr = ""
+	m.templateFieldErrors = make(map[string]string)
+	m.templateValidationErrors = false
+	m.templateValidationNotification = ""
 }

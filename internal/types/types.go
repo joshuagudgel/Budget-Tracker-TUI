@@ -54,9 +54,10 @@ type BankStatement struct {
 type CSVTemplate struct {
 	Id             int64
 	Name           string
-	DateColumn     int
+	PostDateColumn int
 	AmountColumn   int
 	DescColumn     int
+	CategoryColumn *int
 	HasHeader      bool
 	DateFormat     string
 	MerchantColumn *int
@@ -367,8 +368,8 @@ func (ct *CSVTemplate) validateName() error {
 // validateColumns ensures columns are properly configured
 func (ct *CSVTemplate) validateColumns() error {
 	// Check for negative column indices
-	if ct.DateColumn < 0 {
-		return fmt.Errorf("date column index cannot be negative")
+	if ct.PostDateColumn < 0 {
+		return fmt.Errorf("post date column index cannot be negative")
 	}
 	if ct.AmountColumn < 0 {
 		return fmt.Errorf("amount column index cannot be negative")
@@ -376,12 +377,18 @@ func (ct *CSVTemplate) validateColumns() error {
 	if ct.DescColumn < 0 {
 		return fmt.Errorf("description column index cannot be negative")
 	}
+	if ct.CategoryColumn != nil && *ct.CategoryColumn < 0 {
+		return fmt.Errorf("category column index cannot be negative")
+	}
 	if ct.MerchantColumn != nil && *ct.MerchantColumn < 0 {
 		return fmt.Errorf("merchant column index cannot be negative")
 	}
 
 	// Check for duplicate column assignments
-	columns := []int{ct.DateColumn, ct.AmountColumn, ct.DescColumn}
+	columns := []int{ct.PostDateColumn, ct.AmountColumn, ct.DescColumn}
+	if ct.CategoryColumn != nil {
+		columns = append(columns, *ct.CategoryColumn)
+	}
 	if ct.MerchantColumn != nil {
 		columns = append(columns, *ct.MerchantColumn)
 	}
@@ -444,6 +451,22 @@ func (ct *CSVTemplate) ValidateField(field string) error {
 	switch strings.ToLower(field) {
 	case "name":
 		return ct.validateName()
+	case "postdate", "postdatecolumn":
+		if ct.PostDateColumn < 0 {
+			return fmt.Errorf("post date column index cannot be negative")
+		}
+	case "amount", "amountcolumn":
+		if ct.AmountColumn < 0 {
+			return fmt.Errorf("amount column index cannot be negative")
+		}
+	case "description", "desc", "desccolumn":
+		if ct.DescColumn < 0 {
+			return fmt.Errorf("description column index cannot be negative")
+		}
+	case "category", "categorycolumn":
+		if ct.CategoryColumn != nil && *ct.CategoryColumn < 0 {
+			return fmt.Errorf("category column index cannot be negative")
+		}
 	case "columns":
 		return ct.validateColumns()
 	case "dateformat":
@@ -453,6 +476,7 @@ func (ct *CSVTemplate) ValidateField(field string) error {
 	default:
 		return fmt.Errorf("unknown field: %s", field)
 	}
+	return nil
 }
 
 // isValidHexColor is a helper function for hex color validation
