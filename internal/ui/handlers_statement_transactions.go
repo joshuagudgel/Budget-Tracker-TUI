@@ -54,6 +54,10 @@ func (m model) handleStatementTransactionListView(key string) (tea.Model, tea.Cm
 				m.filteredTransactions = filteredTransactions
 			}
 
+			// Also reload main transaction list so deletion is reflected everywhere
+			m.transactions, _ = m.store.Transactions.GetTransactions()
+			m.sortTransactionsByDate()
+
 			// Bounds checking for list index
 			if m.filteredListIndex >= len(m.filteredTransactions) && len(m.filteredTransactions) > 0 {
 				m.filteredListIndex = len(m.filteredTransactions) - 1
