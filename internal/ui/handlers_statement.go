@@ -106,15 +106,6 @@ func (m model) handleBankStatementListView(key string) (tea.Model, tea.Cmd) {
 				m.bankStatementListMessage = "Cannot undo this import - invalid status or already undone"
 			}
 		}
-	case "d":
-		// Show details shortcut
-		if len(statements) > 0 && m.bankStatementListIndex >= 0 && m.bankStatementListIndex < len(statements) {
-			stmt := statements[m.bankStatementListIndex]
-			m.bankStatementListMessage = m.store.Statements.GetStatementSummary(stmt)
-			if stmt.ErrorLog != "" {
-				m.bankStatementListMessage += " | Error: " + stmt.ErrorLog
-			}
-		}
 	case "esc":
 		m.state = menuView
 	}
@@ -154,7 +145,7 @@ func (m model) handleBankStatementManageView(key string) (tea.Model, tea.Cmd) {
 
 // getAvailableActions returns available actions for a statement
 func (m model) getAvailableActions(stmt types.BankStatement) []string {
-	actions := []string{"View Details"}
+	var actions []string
 
 	// Add manage transactions option for completed statements
 	if stmt.Status == "completed" {
@@ -163,6 +154,11 @@ func (m model) getAvailableActions(stmt types.BankStatement) []string {
 
 	if m.store.Statements.CanUndoImport(stmt.Id) {
 		actions = append(actions, "Undo Import")
+	}
+
+	// Add delete option for undone statements
+	if stmt.Status == "undone" {
+		actions = append(actions, "Delete Statement")
 	}
 
 	// Add reimport option for failed statements
@@ -176,12 +172,6 @@ func (m model) getAvailableActions(stmt types.BankStatement) []string {
 // executeStatementAction executes the selected action on a statement
 func (m model) executeStatementAction(stmt types.BankStatement, action string) (tea.Model, tea.Cmd) {
 	switch action {
-	case "View Details":
-		m.bankStatementListMessage = m.store.Statements.GetStatementSummary(stmt)
-		if stmt.ErrorLog != "" {
-			m.bankStatementListMessage += " | Error: " + stmt.ErrorLog
-		}
-		m.state = bankStatementListView
 	case "Manage Transactions":
 		// Load filtered transactions for this statement
 		filteredTransactions, err := m.store.Transactions.GetTransactionsByStatement(stmt.Id)
@@ -197,6 +187,19 @@ func (m model) executeStatementAction(stmt types.BankStatement, action string) (
 		m.state = statementTransactionListView
 	case "Undo Import":
 		m.initUndoConfirmationById(stmt.Id)
+	case "Delete Statement":
+		err := m.store.Statements.DeleteStatement(stmt.Id)
+		if err != nil {
+			m.bankStatementListMessage = "Error deleting statement: " + err.Error()
+		} else {
+			m.bankStatementListMessage = "Statement deleted successfully"
+			// Adjust index if necessary after deletion
+			statements := m.store.Statements.GetStatementHistory()
+			if len(statements) > 0 && m.bankStatementListIndex >= len(statements) {
+				m.bankStatementListIndex = len(statements) - 1
+			}
+		}
+		m.state = bankStatementListView
 	case "Retry Import":
 		// TODO: Implement retry import functionality
 		m.bankStatementListMessage = "Retry import not yet implemented"

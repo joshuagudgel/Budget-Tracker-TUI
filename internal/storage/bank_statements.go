@@ -288,6 +288,20 @@ func (bs *BankStatementStore) GetUndoableStatements() []types.BankStatement {
 	return bs.GetStatementsByStatus("completed")
 }
 
+// DeleteStatement permanently removes a bank statement from the database
+func (bs *BankStatementStore) DeleteStatement(id int64) error {
+	rowsAffected, err := bs.helper.DeleteBy("bank_statements", "id = ?", id)
+	if err != nil {
+		return fmt.Errorf("failed to delete statement: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("statement not found")
+	}
+
+	return nil
+}
+
 // ExtractPeriodFromTransactions extracts start and end dates from transactions
 func (bs *BankStatementStore) ExtractPeriodFromTransactions(transactions []types.Transaction) (start, end string) {
 	if len(transactions) == 0 {

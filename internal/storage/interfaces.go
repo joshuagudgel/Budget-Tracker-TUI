@@ -55,6 +55,7 @@ type BankStatementStoreInterface interface {
 	GetStatementByIndex(index int) (*types.BankStatement, error)
 	GetStatementById(id int64) (*types.BankStatement, error)
 	GetStatementDetails(index int) (types.BankStatement, bool)
+	DeleteStatement(id int64) error
 
 	// Import Operations
 	ValidateAndImportCSV(filePath, templateName string) *types.ImportResult

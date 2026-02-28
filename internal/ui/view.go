@@ -1591,7 +1591,7 @@ func (m model) renderBankStatementListView() string {
 		s += successStyle.Render(m.bankStatementListMessage) + "\n\n"
 	}
 
-	s += faintStyle.Render("Up/Down: Navigate | Enter: Manage | u: Quick Undo | d: Details | i: Import New | Esc: Menu")
+	s += faintStyle.Render("Up/Down: Navigate | Enter: Manage | u: Quick Undo | i: Import New | Esc: Menu")
 	return s
 }
 
