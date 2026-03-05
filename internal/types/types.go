@@ -67,20 +67,23 @@ type CSVTemplate struct {
 }
 
 type ImportResult struct {
-	Success          bool
-	ImportedCount    int
-	OverlapDetected  bool
-	OverlappingStmts []BankStatement
-	PeriodStart      string
-	PeriodEnd        string
-	Message          string
-	Filename         string
+	Success             bool
+	ImportedCount       int
+	OverlapDetected     bool
+	OverlappingStmts    []BankStatement
+	PeriodStart         string
+	PeriodEnd           string
+	Message             string
+	Filename            string
+	HasValidationErrors bool
+	ValidationErrors    []ValidationError
 }
 
 // ValidationError represents a single validation error
 type ValidationError struct {
-	Field   string
-	Message string
+	Field      string
+	Message    string
+	LineNumber int // CSV row number (0 = not applicable, >0 = CSV line)
 }
 
 // ValidationResult represents the result of validation
@@ -491,4 +494,20 @@ func isValidHexColor(color string) bool {
 		}
 	}
 	return true
+}
+
+// ValidateDateWithFormat validates a date string against a specific format
+// Returns error if the date cannot be parsed using the provided format
+func ValidateDateWithFormat(dateStr string, format string) error {
+	trimmed := strings.TrimSpace(dateStr)
+	if trimmed == "" {
+		return fmt.Errorf("date cannot be empty")
+	}
+
+	_, err := time.Parse(format, trimmed)
+	if err != nil {
+		return fmt.Errorf("invalid format. Expected: %s", format)
+	}
+
+	return nil
 }
