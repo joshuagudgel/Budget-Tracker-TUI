@@ -143,6 +143,21 @@ func (s *Store) ValidateAndImportCSV(filePath, templateName string) *types.Impor
 		return result
 	}
 
+	// Validate CSV data before importing
+	validationErrors, err := s.Templates.ValidateCSVData(filePath, template, s.Categories.GetDefaultCategoryId())
+	if err != nil {
+		result.Message = fmt.Sprintf("Validation error: %v", err)
+		return result
+	}
+
+	if len(validationErrors) > 0 {
+		result.HasValidationErrors = true
+		result.ValidationErrors = validationErrors
+		result.Success = false
+		result.Message = fmt.Sprintf("Found %d formatting error(s) in CSV file", len(validationErrors))
+		return result
+	}
+
 	// Parse transactions to check for overlaps
 	transactions, err := s.Templates.ParseCSVTransactions(filePath, template, s.Categories.GetDefaultCategoryId())
 	if err != nil {
@@ -187,6 +202,21 @@ func (s *Store) ImportCSVWithOverride(filePath, templateName string) *types.Impo
 	template := s.Templates.GetTemplateByName(templateName)
 	if template == nil {
 		result.Message = "Template not found"
+		return result
+	}
+
+	// Validate CSV data before importing
+	validationErrors, err := s.Templates.ValidateCSVData(filePath, template, s.Categories.GetDefaultCategoryId())
+	if err != nil {
+		result.Message = fmt.Sprintf("Validation error: %v", err)
+		return result
+	}
+
+	if len(validationErrors) > 0 {
+		result.HasValidationErrors = true
+		result.ValidationErrors = validationErrors
+		result.Success = false
+		result.Message = fmt.Sprintf("Found %d formatting error(s) in CSV file", len(validationErrors))
 		return result
 	}
 

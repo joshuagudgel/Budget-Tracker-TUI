@@ -645,3 +645,174 @@ func (cts *CSVTemplateStore) ParseCSVTransactionsWithDuplicateFilter(filePath st
 
 	return newTransactions, duplicateTransactions, nil
 }
+
+// ValidateCSVData validates all transactions in a CSV file without importing them
+// Returns a slice of ValidationError objects, each with a line number
+func (cts *CSVTemplateStore) ValidateCSVData(filePath string, template *types.CSVTemplate, defaultCategoryId int64) ([]types.ValidationError, error) {
+	// Read CSV file
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CSV file: %w", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	if len(lines) == 0 {
+		return nil, fmt.Errorf("empty CSV file")
+	}
+
+	var validationErrors []types.ValidationError
+	startLine := 0
+	if template.HasHeader {
+		startLine = 1
+	}
+
+	delimiter := ","
+	if template.Delimiter != "" {
+		delimiter = template.Delimiter
+	}
+
+	// Get date format from template, use default if not specified
+	dateFormat := template.DateFormat
+	if dateFormat == "" {
+		dateFormat = "01/02/2006" // Default MM/DD/YYYY format
+	}
+
+	// Load categories if we need to validate category column
+	var categories []types.Category
+	if template.CategoryColumn != nil && cts.categoryStore != nil {
+		categories, err = cts.categoryStore.GetCategories()
+		if err != nil {
+			return nil, fmt.Errorf("failed to load categories for validation: %w", err)
+		}
+	}
+
+	// Validate each line
+	for i := startLine; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue // Skip empty lines
+		}
+
+		lineNumber := i + 1 // 1-based line numbers for user display
+		fields := cts.ParseCSVLine(line, delimiter)
+
+		// Validate field count
+		maxColumn := template.PostDateColumn
+		if template.AmountColumn > maxColumn {
+			maxColumn = template.AmountColumn
+		}
+		if template.DescColumn > maxColumn {
+			maxColumn = template.DescColumn
+		}
+		if template.MerchantColumn != nil && *template.MerchantColumn > maxColumn {
+			maxColumn = *template.MerchantColumn
+		}
+		if template.CategoryColumn != nil && *template.CategoryColumn > maxColumn {
+			maxColumn = *template.CategoryColumn
+		}
+
+		if len(fields) <= maxColumn {
+			validationErrors = append(validationErrors, types.ValidationError{
+				Field:      "CSV Structure",
+				Message:    fmt.Sprintf("Insufficient columns (%d), need at least %d", len(fields), maxColumn+1),
+				LineNumber: lineNumber,
+			})
+			continue // Skip to next line
+		}
+
+		// Validate Date field
+		dateStr := strings.Trim(fields[template.PostDateColumn], "\"")
+		if err := types.ValidateDateWithFormat(dateStr, dateFormat); err != nil {
+			validationErrors = append(validationErrors, types.ValidationError{
+				Field:      "Date",
+				Message:    err.Error(),
+				LineNumber: lineNumber,
+			})
+		}
+
+		// Validate Amount field
+		amountStr := strings.Trim(fields[template.AmountColumn], "\"")
+		amount, err := cts.ParseAmount(amountStr)
+		if err != nil {
+			validationErrors = append(validationErrors, types.ValidationError{
+				Field:      "Amount",
+				Message:    fmt.Sprintf("Invalid amount '%s': %v", amountStr, err),
+				LineNumber: lineNumber,
+			})
+		} else {
+			// Check for zero amount
+			if amount == 0 {
+				validationErrors = append(validationErrors, types.ValidationError{
+					Field:      "Amount",
+					Message:    "Amount cannot be zero",
+					LineNumber: lineNumber,
+				})
+			}
+			// Check for max 2 decimal places
+			rounded := math.Round(amount*100) / 100
+			if math.Abs(amount-rounded) > 0.001 {
+				validationErrors = append(validationErrors, types.ValidationError{
+					Field:      "Amount",
+					Message:    "Amount cannot have more than 2 decimal places",
+					LineNumber: lineNumber,
+				})
+			}
+		}
+
+		// Validate Description field
+		desc := strings.Trim(fields[template.DescColumn], "\"")
+		trimmedDesc := strings.TrimSpace(desc)
+		if trimmedDesc == "" {
+			validationErrors = append(validationErrors, types.ValidationError{
+				Field:      "Description",
+				Message:    "Description cannot be empty",
+				LineNumber: lineNumber,
+			})
+		}
+		if len(trimmedDesc) > 255 {
+			validationErrors = append(validationErrors, types.ValidationError{
+				Field:      "Description",
+				Message:    "Description cannot exceed 255 characters",
+				LineNumber: lineNumber,
+			})
+		}
+
+		// Validate Category field if present
+		if template.CategoryColumn != nil {
+			categoryText := strings.Trim(fields[*template.CategoryColumn], "\"")
+			categoryText = strings.TrimSpace(categoryText)
+
+			// If category text is provided, validate it exists
+			if categoryText != "" && cts.categoryStore != nil {
+				// Check if category exists
+				categoryExists := false
+				for _, cat := range categories {
+					if strings.EqualFold(cat.DisplayName, categoryText) {
+						categoryExists = true
+						break
+					}
+				}
+
+				if !categoryExists {
+					// Build list of available categories for error message
+					categoryNames := make([]string, len(categories))
+					for idx, cat := range categories {
+						categoryNames[idx] = cat.DisplayName
+					}
+					availableList := strings.Join(categoryNames, ", ")
+					if len(availableList) > 100 {
+						availableList = availableList[:97] + "..." // Truncate if too long
+					}
+
+					validationErrors = append(validationErrors, types.ValidationError{
+						Field:      "Category",
+						Message:    fmt.Sprintf("Category '%s' does not exist. Available: %s", categoryText, availableList),
+						LineNumber: lineNumber,
+					})
+				}
+			}
+		}
+	}
+
+	return validationErrors, nil
+}
