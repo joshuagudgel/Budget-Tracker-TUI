@@ -490,7 +490,12 @@ func (cts *CSVTemplateStore) ParseTransactionFromTemplate(fields []string, templ
 	}
 
 	// Extract date from specified column
-	transaction.Date = strings.Trim(fields[template.PostDateColumn], "\"")
+	rawDate := strings.Trim(fields[template.PostDateColumn], "\"")
+	normalizedDate, err := types.NormalizeDateToISO8601(rawDate, template.DateFormat)
+	if err != nil {
+		return nil, fmt.Errorf("line %d: invalid date '%s': %v", lineNum, rawDate, err)
+	}
+	transaction.Date = normalizedDate
 
 	// Extract description from specified column
 	desc := strings.Trim(fields[template.DescColumn], "\"")
@@ -677,6 +682,8 @@ func (cts *CSVTemplateStore) ValidateCSVData(filePath string, template *types.CS
 		dateFormat = "01/02/2006" // Default MM/DD/YYYY format
 	}
 
+	_ = cts.getDateFormatsToTry(dateFormat)
+
 	// Load categories if we need to validate category column
 	var categories []types.Category
 	if template.CategoryColumn != nil && cts.categoryStore != nil {
@@ -720,12 +727,13 @@ func (cts *CSVTemplateStore) ValidateCSVData(filePath string, template *types.CS
 			continue // Skip to next line
 		}
 
-		// Validate Date field
+		// Validate Date field using flexible multi-format validation
 		dateStr := strings.Trim(fields[template.PostDateColumn], "\"")
-		if err := types.ValidateDateWithFormat(dateStr, dateFormat); err != nil {
+		_, err := types.TryParseMultipleDateFormats(dateStr)
+		if err != nil {
 			validationErrors = append(validationErrors, types.ValidationError{
 				Field:      "Date",
-				Message:    err.Error(),
+				Message:    fmt.Sprintf("Invalid date '%s': must be in MM/DD/YYYY or MM-DD-YYYY format", dateStr),
 				LineNumber: lineNumber,
 			})
 		}

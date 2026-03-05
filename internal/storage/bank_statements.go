@@ -337,6 +337,7 @@ func (bs *BankStatementStore) DeleteStatement(id int64) error {
 }
 
 // ExtractPeriodFromTransactions extracts start and end dates from transactions
+// All dates are now in ISO 8601 format (YYYY-MM-DD), so simple string comparison works
 func (bs *BankStatementStore) ExtractPeriodFromTransactions(transactions []types.Transaction) (start, end string) {
 	if len(transactions) == 0 {
 		return "", ""
@@ -344,41 +345,11 @@ func (bs *BankStatementStore) ExtractPeriodFromTransactions(transactions []types
 
 	start = transactions[0].Date
 	end = transactions[0].Date
-
 	for _, tx := range transactions {
-		// Parse dates for proper chronological comparison
-		txDate, txErr := time.Parse("01-02-2006", tx.Date)
-		if txErr != nil {
-			// Try alternative format
-			txDate, txErr = time.Parse("01/02/2006", tx.Date)
-		}
-
-		startDate, startErr := time.Parse("01-02-2006", start)
-		if startErr != nil {
-			// Try alternative format
-			startDate, startErr = time.Parse("01/02/2006", start)
-		}
-
-		endDate, endErr := time.Parse("01-02-2006", end)
-		if endErr != nil {
-			// Try alternative format
-			endDate, endErr = time.Parse("01/02/2006", end)
-		}
-
-		// Use parsed dates for comparison if successful, otherwise fall back to string comparison
-		if txErr == nil && startErr == nil {
-			if txDate.Before(startDate) {
-				start = tx.Date
-			}
-		} else if tx.Date < start {
+		if tx.Date < start {
 			start = tx.Date
 		}
-
-		if txErr == nil && endErr == nil {
-			if txDate.After(endDate) {
-				end = tx.Date
-			}
-		} else if tx.Date > end {
+		if tx.Date > end {
 			end = tx.Date
 		}
 	}
