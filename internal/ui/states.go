@@ -23,6 +23,7 @@ const (
 	bankStatementListView             = 18
 	bankStatementManageView           = 19
 	statementTransactionListView      = 20
+	validationErrorView               = 21
 )
 
 // Edit field constants

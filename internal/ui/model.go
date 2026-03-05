@@ -192,6 +192,9 @@ type model struct {
 	backupMessage string
 	importMessage string
 
+	// Validation errors
+	validationErrors []types.ValidationError
+
 	// Undo import functionality
 	undoStatementId   int64
 	undoStatementName string
@@ -312,6 +315,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleBankStatementView(key)
 		case statementOverlapView:
 			return m.handleStatementOverlapView(key)
+		case validationErrorView:
+			return m.handleValidationErrorView(key)
 		case undoConfirmView:
 			return m.handleUndoConfirmView(key)
 		case bankStatementListView:

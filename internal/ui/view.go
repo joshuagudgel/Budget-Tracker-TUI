@@ -459,6 +459,41 @@ func (m model) View() string {
 
 		s += faintStyle.Render("y: Import Anyway | n: Cancel Import | Esc: Cancel")
 
+	case validationErrorView:
+		s += headerStyle.Render("CSV Validation Errors") + "\n\n"
+
+		// Display error summary
+		errorCount := len(m.validationErrors)
+		s += notificationStyle.Render(fmt.Sprintf(" ✗ Found %d formatting error(s) in CSV file ", errorCount)) + "\n\n"
+		s += faintStyle.Render("Please fix these errors and try importing again.") + "\n\n"
+
+		// Display errors (first 5)
+		displayCount := errorCount
+		if displayCount > 5 {
+			displayCount = 5
+		}
+
+		s += lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("Errors (showing first %d):", displayCount)) + "\n\n"
+
+		for i := 0; i < displayCount; i++ {
+			err := m.validationErrors[i]
+			lineInfo := ""
+			if err.LineNumber > 0 {
+				lineInfo = fmt.Sprintf("Line %d: ", err.LineNumber)
+			}
+
+			s += lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render("  • ") +
+				lipgloss.NewStyle().Bold(true).Render(lineInfo) +
+				lipgloss.NewStyle().Foreground(lipgloss.Color("33")).Render("["+err.Field+"]") +
+				" - " + err.Message + "\n"
+		}
+
+		if errorCount > 5 {
+			s += "\n" + faintStyle.Render(fmt.Sprintf("... and %d more error(s)", errorCount-5)) + "\n"
+		}
+
+		s += "\n" + faintStyle.Render("Esc: Go Back")
+
 	case bankStatementListView:
 		return m.renderBankStatementListView()
 

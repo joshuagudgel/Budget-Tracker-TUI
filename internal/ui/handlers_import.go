@@ -88,6 +88,15 @@ func (m model) handleFileSelection() (tea.Model, tea.Cmd) {
 		}
 
 		result := m.store.ValidateAndImportCSV(fullPath, templateToUse)
+
+		// Check for validation errors first
+		if result.HasValidationErrors {
+			m.validationErrors = result.ValidationErrors
+			m.statementMessage = result.Message
+			m.state = validationErrorView
+			return m, nil
+		}
+
 		if result.OverlapDetected {
 			m.overlappingStmts = result.OverlappingStmts
 			m.selectedTemplate = templateToUse
@@ -291,4 +300,17 @@ func (m *model) clearTemplateEditingState() {
 	m.templateFieldErrors = make(map[string]string)
 	m.templateValidationErrors = false
 	m.templateValidationNotification = ""
+}
+
+// Validation Error View Handler
+
+func (m model) handleValidationErrorView(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "esc":
+		// Clear validation errors and return to file picker
+		m.validationErrors = nil
+		m.statementMessage = ""
+		m.state = filePickerView
+	}
+	return m, nil
 }
