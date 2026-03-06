@@ -4,6 +4,7 @@ import (
 	"budget-tracker-tui/internal/types"
 	"budget-tracker-tui/internal/validation"
 	"testing"
+	"time"
 )
 
 func TestAmountValidator(t *testing.T) {
@@ -197,15 +198,15 @@ func TestTransactionValidation(t *testing.T) {
 	validTransaction := &types.Transaction{
 		Amount:      123.45,
 		Description: "Coffee purchase",
-		Date:        "12-31-2023",
+		Date:        time.Date(2023, 12, 31, 0, 0, 0, 0, time.UTC),
 		CategoryId:  1, // Food category
 	}
 
 	invalidTransaction := &types.Transaction{
-		Amount:      0,              // Invalid: zero amount
-		Description: "",             // Invalid: empty description
-		Date:        "invalid-date", // Invalid: wrong format
-		CategoryId:  99,             // Invalid: category ID doesn't exist
+		Amount:      0,           // Invalid: zero amount
+		Description: "",          // Invalid: empty description
+		Date:        time.Time{}, // Invalid: zero value date
+		CategoryId:  99,          // Invalid: category ID doesn't exist
 	}
 
 	t.Run("Valid transaction", func(t *testing.T) {
