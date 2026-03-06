@@ -418,22 +418,22 @@ func (s *Store) GetTransactionSummaryByDateRange(startDate, endDate time.Time) (
 	query := "SELECT COALESCE(SUM(CASE WHEN transaction_type = 'income' THEN amount ELSE 0 END), 0) as total_income, " +
 		"COALESCE(SUM(CASE WHEN transaction_type = 'expense' THEN ABS(amount) ELSE 0 END), 0) as total_expense, " +
 		"COUNT(*) as transaction_count FROM transactions WHERE date >= ? AND date <= ?"
-	
+
 	startStr := startDate.Format("2006-01-02")
 	endStr := endDate.Format("2006-01-02")
-	
+
 	helper := database.NewSQLHelper(s.db)
 	row := helper.QuerySingleRow(query, startStr, endStr)
-	
+
 	var summary types.AnalyticsSummary
 	err := row.Scan(&summary.TotalIncome, &summary.TotalExpenses, &summary.TransactionCount)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transaction summary: %w", err)
 	}
-	
+
 	summary.NetAmount = summary.TotalIncome - summary.TotalExpenses
 	summary.DateRange = fmt.Sprintf("%s to %s", startStr, endStr)
-	
+
 	return &summary, nil
 }
 
@@ -442,22 +442,22 @@ func (s *Store) GetCategorySpendingByDateRange(startDate, endDate time.Time) ([]
 	helper := database.NewSQLHelper(s.db)
 	startStr := startDate.Format("2006-01-02")
 	endStr := endDate.Format("2006-01-02")
-	
+
 	// Main query - get expenses with positive amounts
 	query := "SELECT c.display_name, COALESCE(SUM(ABS(t.amount)), 0) as total_amount, COUNT(t.id) as transaction_count " +
 		"FROM categories c INNER JOIN transactions t ON c.id = t.category_id " +
 		"AND t.date >= ? AND t.date <= ? AND t.transaction_type = 'expense' " +
 		"WHERE c.is_active = true GROUP BY c.id, c.display_name ORDER BY total_amount DESC"
-	
+
 	rows, err := helper.QueryRows(query, startStr, endStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query category spending: %w", err)
 	}
 	defer rows.Close()
-	
+
 	var categorySpending []types.CategorySpending
 	var totalExpenses float64
-	
+
 	// First pass: collect data and calculate total
 	for rows.Next() {
 		var spending types.CategorySpending
@@ -468,13 +468,13 @@ func (s *Store) GetCategorySpendingByDateRange(startDate, endDate time.Time) ([]
 		categorySpending = append(categorySpending, spending)
 		totalExpenses += spending.Amount
 	}
-	
+
 	// Second pass: calculate percentages
 	for i := range categorySpending {
 		if totalExpenses > 0 {
 			categorySpending[i].Percentage = (categorySpending[i].Amount / totalExpenses) * 100
 		}
 	}
-	
+
 	return categorySpending, rows.Err()
 }

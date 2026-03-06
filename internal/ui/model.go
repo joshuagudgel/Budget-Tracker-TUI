@@ -11,8 +11,8 @@ import (
 
 	"budget-tracker-tui/internal/types"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/table"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // Main application model
@@ -208,17 +208,17 @@ type model struct {
 	validationNotification string
 
 	// Analytics state
-	analyticsTable          table.Model
-	analyticsStartDate      time.Time
-	analyticsEndDate        time.Time
-	analyticsSummary        *types.AnalyticsSummary
-	categorySpending        []types.CategorySpending
-	analyticsMessage        string
-	isEditingStartDate      bool
-	isEditingEndDate        bool
-	editingStartDateStr     string
-	editingEndDateStr       string
-	analyticsDateField      int // 0 for start date, 1 for end date
+	analyticsTable      table.Model
+	analyticsStartDate  time.Time
+	analyticsEndDate    time.Time
+	analyticsSummary    *types.AnalyticsSummary
+	categorySpending    []types.CategorySpending
+	analyticsMessage    string
+	isEditingStartDate  bool
+	isEditingEndDate    bool
+	editingStartDateStr string
+	editingEndDateStr   string
+	analyticsDateField  int // 0 for start date, 1 for end date
 }
 
 // sortTransactionsByDate sorts transactions by date in descending order (newest first)

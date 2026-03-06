@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/table"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -15,12 +15,12 @@ func (m model) initAnalytics() (model, tea.Cmd) {
 	// Set default to previous month
 	now := time.Now()
 	firstOfCurrentMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-	m.analyticsStartDate = firstOfCurrentMonth.AddDate(0, -1, 0) // First of previous month
+	m.analyticsStartDate = firstOfCurrentMonth.AddDate(0, -1, 0)   // First of previous month
 	m.analyticsEndDate = firstOfCurrentMonth.Add(-time.Nanosecond) // Last moment of previous month
 
 	// Initialize date editing strings
 	m.editingStartDateStr = m.analyticsStartDate.Format("01/02/2006")
-	m.editingEndDateStr = m.analyticsEndDate.Format("01/02/2006") 
+	m.editingEndDateStr = m.analyticsEndDate.Format("01/02/2006")
 
 	// Initialize table
 	columns := []table.Column{
@@ -51,7 +51,7 @@ func (m model) initAnalytics() (model, tea.Cmd) {
 
 	// Load initial data
 	m.loadAnalyticsData()
-	
+
 	return m, nil
 }
 
@@ -91,7 +91,7 @@ func (m *model) loadAnalyticsData() {
 	} else if tableHeight > 15 {
 		tableHeight = 15 // Maximum height to prevent screen overflow
 	}
-	
+
 	// Recreate table with dynamic height
 	columns := []table.Column{
 		{Title: "Category", Width: 25},
@@ -120,7 +120,7 @@ func (m *model) loadAnalyticsData() {
 
 	t.SetStyles(s)
 	m.analyticsTable = t
-	
+
 	// Add helpful message about category distribution
 	if len(categorySpending) == 1 && categorySpending[0].CategoryName == "uncategorized" {
 		m.analyticsMessage = "All expenses are uncategorized. Use main menu 't' to edit transactions and assign categories."
@@ -141,7 +141,7 @@ func (m model) handleAnalyticsView(key string) (tea.Model, tea.Cmd) {
 		// Refresh data with debug info
 		m.analyticsMessage = "Refreshing analytics data..."
 		m.loadAnalyticsData()
-		
+
 		// Add debug info about categories
 		categories, err := m.store.Categories.GetCategories()
 		if err == nil {
@@ -171,8 +171,8 @@ func (m model) handleAnalyticsView(key string) (tea.Model, tea.Cmd) {
 			if date, err := m.parseDateInput(m.editingStartDateStr); err == nil {
 				m.analyticsStartDate = date
 				m.isEditingStartDate = false
-			m.loadAnalyticsData()
-			return m, nil
+				m.loadAnalyticsData()
+				return m, nil
 			} else {
 				m.analyticsMessage = fmt.Sprintf("Invalid start date format: %v", err)
 			}
@@ -181,8 +181,8 @@ func (m model) handleAnalyticsView(key string) (tea.Model, tea.Cmd) {
 			if date, err := m.parseDateInput(m.editingEndDateStr); err == nil {
 				m.analyticsEndDate = date
 				m.isEditingEndDate = false
-			m.loadAnalyticsData()
-			return m, nil
+				m.loadAnalyticsData()
+				return m, nil
 			} else {
 				m.analyticsMessage = fmt.Sprintf("Invalid end date format: %v", err)
 			}
