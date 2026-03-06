@@ -28,6 +28,23 @@ type Transaction struct {
 	UpdatedAt       time.Time `db:"updated_at"`
 }
 
+// Analytics data structures
+type AnalyticsSummary struct {
+	DateRange         string
+	TotalIncome       float64
+	TotalExpenses     float64
+	NetAmount         float64
+	TransactionCount  int
+	CategoryBreakdown []CategorySpending
+}
+
+type CategorySpending struct {
+	CategoryName     string
+	Amount           float64
+	Percentage       float64
+	TransactionCount int
+}
+
 // TransactionEditState manages UI editing state for transactions
 type TransactionEditState struct {
 	// Original transaction being edited

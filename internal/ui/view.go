@@ -98,6 +98,7 @@ func (m model) View() string {
 		s += headerStyle.Render("Import Bank Statement ('i')") + "\n"
 		s += headerStyle.Render("Manage Bank Statements ('b')") + "\n"
 		s += headerStyle.Render("Manage Categories ('c')") + "\n"
+		s += headerStyle.Render("Analytics ('a')") + "\n"
 		s += headerStyle.Render("Settings ('r')") + "\n"
 		s += headerStyle.Render("Quit ('q')") + "\n"
 	case listView:
@@ -538,6 +539,9 @@ func (m model) View() string {
 
 	case statementTransactionListView:
 		return m.renderStatementTransactionListView()
+
+	case analyticsView:
+		return m.renderAnalyticsView()
 	}
 
 	return s
@@ -1582,6 +1586,70 @@ func (m model) getFieldNameFromConstant(field int) string {
 		return "parentId"
 	default:
 		return ""
+	}
+}
+
+// renderAnalyticsView renders the spending analysis dashboard
+func (m model) renderAnalyticsView() string {
+	var s string
+	s += headerStyle.Render("📊 Spending Analysis Dashboard") + "\n\n"
+
+	// Show any error messages
+	if m.analyticsMessage != "" {
+		s += errorFieldStyle.Render(m.analyticsMessage) + "\n\n"
+	}
+
+	// Date range inputs
+	startDateStyle := formFieldStyle
+	endDateStyle := formFieldStyle
+	
+	if m.isEditingStartDate {
+		startDateStyle = selectingFieldStyle
+	}
+	if m.isEditingEndDate {
+		endDateStyle = selectingFieldStyle
+	}
+
+	s += formLabelStyle.Render("Date Range:") + "\n"
+	s += "Start Date ('s'): " + startDateStyle.Render(m.editingStartDateStr) + "\n"
+	s += "End Date   ('e'): " + endDateStyle.Render(m.editingEndDateStr) + "\n\n"
+
+	if m.analyticsSummary != nil {
+		// Summary section
+		s += headerStyle.Render("💰 Summary") + "\n"
+		s += fmt.Sprintf("Period: %s\n", m.analyticsSummary.DateRange)
+		s += fmt.Sprintf("Total Income:    %s\n", 
+			successStyle.Render(fmt.Sprintf("$%.2f", m.analyticsSummary.TotalIncome)))
+		s += fmt.Sprintf("Total Expenses:  %s\n", 
+			warningStyle.Render(fmt.Sprintf("$%.2f", m.analyticsSummary.TotalExpenses)))
+		s += fmt.Sprintf("Net Amount:      %s\n", 
+			m.formatNetAmount(m.analyticsSummary.NetAmount))
+		s += fmt.Sprintf("Transactions:    %d\n\n", m.analyticsSummary.TransactionCount)
+
+		// Category spending table
+		if len(m.categorySpending) > 0 {
+			s += headerStyle.Render("📋 Category Breakdown") + "\n"
+			s += m.analyticsTable.View() + "\n\n"
+		} else {
+			s += headerStyle.Render("📋 Category Breakdown") + "\n"
+			s += faintStyle.Render("No expense data found for this period") + "\n\n"
+		}
+	} else {
+		s += faintStyle.Render("Loading analytics data...") + "\n\n"
+	}
+
+	// Command tips at bottom like other views
+	s += faintStyle.Render("s: Start Date | e: End Date | r: Refresh | Esc: Menu")
+
+	return s
+}
+
+// formatNetAmount formats net amount with appropriate styling
+func (m model) formatNetAmount(amount float64) string {
+	if amount >= 0 {
+		return successStyle.Render(fmt.Sprintf("$%.2f", amount))
+	} else {
+		return notificationStyle.Render(fmt.Sprintf("-$%.2f", -amount))
 	}
 }
 

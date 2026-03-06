@@ -25,6 +25,10 @@ func (m model) handleMenuView(key string) (tea.Model, tea.Cmd) {
 		m.categoryMessage = ""
 		m.selectedCategoryIdx = 0
 		return m, m.loadCategories()
+	case "a":
+		m.state = analyticsView
+		m.analyticsMessage = ""
+		return m.initAnalytics()
 	case "q":
 		return m, tea.Quit
 	}

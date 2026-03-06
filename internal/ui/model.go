@@ -12,6 +12,7 @@ import (
 	"budget-tracker-tui/internal/types"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/table"
 )
 
 // Main application model
@@ -205,6 +206,19 @@ type model struct {
 	fieldErrors            map[string]string
 	hasValidationErrors    bool
 	validationNotification string
+
+	// Analytics state
+	analyticsTable          table.Model
+	analyticsStartDate      time.Time
+	analyticsEndDate        time.Time
+	analyticsSummary        *types.AnalyticsSummary
+	categorySpending        []types.CategorySpending
+	analyticsMessage        string
+	isEditingStartDate      bool
+	isEditingEndDate        bool
+	editingStartDateStr     string
+	editingEndDateStr       string
+	analyticsDateField      int // 0 for start date, 1 for end date
 }
 
 // sortTransactionsByDate sorts transactions by date in descending order (newest first)
@@ -322,6 +336,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleBankStatementManageView(key)
 		case statementTransactionListView:
 			return m.handleStatementTransactionListView(key)
+		case analyticsView:
+			return m.handleAnalyticsView(key)
 		}
 	case tea.WindowSizeMsg:
 		m.windowHeight = msg.Height
