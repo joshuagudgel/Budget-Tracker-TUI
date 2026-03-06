@@ -239,16 +239,15 @@ func (s *Store) ImportCSVWithOverride(filePath, templateName string) *types.Impo
 	// Record statement with override status first to get statement ID
 	result.PeriodStart, result.PeriodEnd = s.Statements.ExtractPeriodFromTransactions(newTransactions)
 	filename := filepath.Base(filePath)
-	statementId := s.Statements.NextId()
 
-	err = s.Statements.RecordBankStatement(filename, result.PeriodStart, result.PeriodEnd, template.Id, len(newTransactions), "override")
+	actualStatementId, err := s.Statements.RecordBankStatement(filename, result.PeriodStart, result.PeriodEnd, template.Id, len(newTransactions), "override")
 	if err != nil {
 		result.Message = fmt.Sprintf("Failed to record statement: %v", err)
 		return result
 	}
 
-	// Import only new transactions with statement ID
-	err = s.Transactions.ImportTransactionsFromCSV(newTransactions, fmt.Sprintf("%d", statementId))
+	// Import only new transactions with actual statement ID
+	err = s.Transactions.ImportTransactionsFromCSV(newTransactions, fmt.Sprintf("%d", actualStatementId))
 	if err != nil {
 		result.Message = fmt.Sprintf("Save failed: %v", err)
 		return result
@@ -307,26 +306,25 @@ func (s *Store) ImportTransactionsFromCSV(filePath, templateName string) error {
 		return fmt.Errorf("OVERLAP_DETECTED")
 	}
 
-	// Get statement ID for import
+	// Create statement record first and get actual assigned ID
 	filename := filepath.Base(filePath)
-	statementId := s.Statements.NextId()
 
 	// Create statement record first with "importing" status to satisfy foreign key
-	err = s.Statements.RecordBankStatement(filename, periodStart, periodEnd, template.Id, len(transactions), "importing")
+	actualStatementId, err := s.Statements.RecordBankStatement(filename, periodStart, periodEnd, template.Id, len(transactions), "importing")
 	if err != nil {
 		return fmt.Errorf("failed to create statement record: %v", err)
 	}
 
-	// Now import transactions with valid statement_id reference
-	err = s.Transactions.ImportTransactionsFromCSV(transactions, fmt.Sprintf("%d", statementId))
+	// Now import transactions with actual statement_id reference
+	err = s.Transactions.ImportTransactionsFromCSV(transactions, fmt.Sprintf("%d", actualStatementId))
 	if err != nil {
-		// If transaction import fails, mark statement as failed
-		s.Statements.MarkStatementFailed(statementId, fmt.Sprintf("Transaction import failed: %v", err))
+		// If transaction import fails, mark statement as failed using actual ID
+		s.Statements.MarkStatementFailed(actualStatementId, fmt.Sprintf("Transaction import failed: %v", err))
 		return fmt.Errorf("failed to import transactions: %v", err)
 	}
 
 	// Update statement status to completed after successful import
-	err = s.Statements.MarkStatementCompleted(statementId)
+	err = s.Statements.MarkStatementCompleted(actualStatementId)
 	if err != nil {
 		return fmt.Errorf("failed to mark statement as completed: %v", err)
 	}

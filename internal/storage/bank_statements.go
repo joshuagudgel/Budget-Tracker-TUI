@@ -167,8 +167,8 @@ func (bs *BankStatementStore) GetStatementById(id int64) (*types.BankStatement, 
 	return &stmt, nil
 }
 
-// RecordBankStatement records a new bank statement import
-func (bs *BankStatementStore) RecordBankStatement(filename, periodStart, periodEnd string, templateId int64, txCount int, status string) error {
+// RecordBankStatement records a new bank statement import and returns the actual assigned ID
+func (bs *BankStatementStore) RecordBankStatement(filename, periodStart, periodEnd string, templateId int64, txCount int, status string) (int64, error) {
 	now := time.Now().Format(time.RFC3339)
 
 	query := `
@@ -186,12 +186,10 @@ func (bs *BankStatementStore) RecordBankStatement(filename, periodStart, periodE
 		periodEndVal = periodEnd
 	}
 
-	_, err := bs.helper.ExecReturnID(query,
+	return bs.helper.ExecReturnID(query,
 		filename, now, periodStartVal, periodEndVal,
 		templateId, txCount, status, now, now,
 	)
-
-	return err
 }
 
 // MarkStatementUndone marks a statement as undone
@@ -411,4 +409,44 @@ func (bs *BankStatementStore) LoadDirectoryEntriesWithFallback(currentDir string
 		}
 	}
 	return result
+}
+
+// CleanupOrphanedImportingStatements finds and removes bank statements stuck in "importing" status
+// These can occur when imports fail after statement creation but before completion
+func (bs *BankStatementStore) CleanupOrphanedImportingStatements() (int, error) {
+	query := "DELETE FROM bank_statements WHERE status = 'importing'"
+	rowsAffected, err := bs.helper.ExecReturnRowsAffected(query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to cleanup orphaned statements: %v", err)
+	}
+	return int(rowsAffected), nil
+}
+
+// GetOrphanedImportingStatements returns bank statements stuck in "importing" status
+func (bs *BankStatementStore) GetOrphanedImportingStatements() ([]types.BankStatement, error) {
+	query := `
+		SELECT id, filename, import_date, period_start, period_end,
+		       template_used, tx_count, status, processing_time, error_log,
+		       created_at, updated_at
+		FROM bank_statements 
+		WHERE status = 'importing'
+		ORDER BY import_date DESC
+	`
+
+	rows, err := bs.helper.QueryRows(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query orphaned statements: %v", err)
+	}
+	defer rows.Close()
+
+	var statements []types.BankStatement
+	for rows.Next() {
+		stmt, err := bs.scanBankStatement(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan statement row: %v", err)
+		}
+		statements = append(statements, stmt)
+	}
+
+	return statements, nil
 }
