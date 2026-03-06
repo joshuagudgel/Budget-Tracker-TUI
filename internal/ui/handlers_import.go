@@ -254,16 +254,6 @@ func (m model) handleCreateTemplateView(key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) handleCreateTemplateInput(key string) (tea.Model, tea.Cmd) {
-	// This function is deprecated - field editing now handled by two-phase system
-	return m, nil
-}
-
-func (m model) handleCreateTemplateBackspace() (tea.Model, tea.Cmd) {
-	// This function is deprecated - field editing now handled by two-phase system
-	return m, nil
-}
-
 func (m model) handleTemplateSave() (tea.Model, tea.Cmd) {
 	// Validate template before saving
 	m.validateCurrentTemplate()
