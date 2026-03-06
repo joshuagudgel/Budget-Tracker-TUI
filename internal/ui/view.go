@@ -1602,7 +1602,7 @@ func (m model) renderAnalyticsView() string {
 	// Date range inputs
 	startDateStyle := formFieldStyle
 	endDateStyle := formFieldStyle
-	
+
 	if m.isEditingStartDate {
 		startDateStyle = selectingFieldStyle
 	}
@@ -1611,18 +1611,18 @@ func (m model) renderAnalyticsView() string {
 	}
 
 	s += formLabelStyle.Render("Date Range:") + "\n"
-	s += "Start Date ('s'): " + startDateStyle.Render(m.editingStartDateStr) + "\n"
-	s += "End Date   ('e'): " + endDateStyle.Render(m.editingEndDateStr) + "\n\n"
+	s += "Start Date ('s'): " + "\n" + startDateStyle.Render(m.editingStartDateStr) + "\n"
+	s += "End Date   ('e'): " + "\n" + endDateStyle.Render(m.editingEndDateStr) + "\n\n"
 
 	if m.analyticsSummary != nil {
 		// Summary section
 		s += headerStyle.Render("💰 Summary") + "\n"
 		s += fmt.Sprintf("Period: %s\n", m.analyticsSummary.DateRange)
-		s += fmt.Sprintf("Total Income:    %s\n", 
+		s += fmt.Sprintf("Total Income:    %s\n",
 			successStyle.Render(fmt.Sprintf("$%.2f", m.analyticsSummary.TotalIncome)))
-		s += fmt.Sprintf("Total Expenses:  %s\n", 
+		s += fmt.Sprintf("Total Expenses:  %s\n",
 			warningStyle.Render(fmt.Sprintf("$%.2f", m.analyticsSummary.TotalExpenses)))
-		s += fmt.Sprintf("Net Amount:      %s\n", 
+		s += fmt.Sprintf("Net Amount:      %s\n",
 			m.formatNetAmount(m.analyticsSummary.NetAmount))
 		s += fmt.Sprintf("Transactions:    %d\n\n", m.analyticsSummary.TransactionCount)
 

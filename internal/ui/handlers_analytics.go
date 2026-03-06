@@ -33,7 +33,6 @@ func (m model) initAnalytics() (model, tea.Cmd) {
 	t := table.New(
 		table.WithColumns(columns),
 		table.WithFocused(false),
-		table.WithHeight(10),
 	)
 
 	s := table.DefaultStyles()
@@ -85,7 +84,42 @@ func (m *model) loadAnalyticsData() {
 		})
 	}
 
-	m.analyticsTable.SetRows(rows)
+	// Adjust table height to show all categories (with reasonable limits)
+	tableHeight := len(categorySpending)
+	if tableHeight < 3 {
+		tableHeight = 3 // Minimum height
+	} else if tableHeight > 15 {
+		tableHeight = 15 // Maximum height to prevent screen overflow
+	}
+	
+	// Recreate table with dynamic height
+	columns := []table.Column{
+		{Title: "Category", Width: 25},
+		{Title: "Amount", Width: 15},
+		{Title: "Percentage", Width: 12},
+		{Title: "Transactions", Width: 12},
+	}
+
+	t := table.New(
+		table.WithColumns(columns),
+		table.WithFocused(false),
+		table.WithHeight(tableHeight),
+		table.WithRows(rows),
+	)
+
+	s := table.DefaultStyles()
+	s.Header = s.Header.
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		BorderBottom(true).
+		Bold(false)
+	s.Selected = s.Selected.
+		Foreground(lipgloss.Color("229")).
+		Background(lipgloss.Color("57")).
+		Bold(false)
+
+	t.SetStyles(s)
+	m.analyticsTable = t
 	
 	// Add helpful message about category distribution
 	if len(categorySpending) == 1 && categorySpending[0].CategoryName == "uncategorized" {
