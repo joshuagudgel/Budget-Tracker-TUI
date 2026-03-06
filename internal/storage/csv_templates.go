@@ -684,15 +684,6 @@ func (cts *CSVTemplateStore) ValidateCSVData(filePath string, template *types.CS
 
 	_ = cts.getDateFormatsToTry(dateFormat)
 
-	// Load categories if we need to validate category column
-	var categories []types.Category
-	if template.CategoryColumn != nil && cts.categoryStore != nil {
-		categories, err = cts.categoryStore.GetCategories()
-		if err != nil {
-			return nil, fmt.Errorf("failed to load categories for validation: %w", err)
-		}
-	}
-
 	// Validate each line
 	for i := startLine; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
@@ -785,40 +776,21 @@ func (cts *CSVTemplateStore) ValidateCSVData(filePath string, template *types.CS
 			})
 		}
 
-		// Validate Category field if present
+		// Validate Category field if present (basic validation only)
 		if template.CategoryColumn != nil {
 			categoryText := strings.Trim(fields[*template.CategoryColumn], "\"")
 			categoryText = strings.TrimSpace(categoryText)
 
-			// If category text is provided, validate it exists
-			if categoryText != "" && cts.categoryStore != nil {
-				// Check if category exists
-				categoryExists := false
-				for _, cat := range categories {
-					if strings.EqualFold(cat.DisplayName, categoryText) {
-						categoryExists = true
-						break
-					}
-				}
-
-				if !categoryExists {
-					// Build list of available categories for error message
-					categoryNames := make([]string, len(categories))
-					for idx, cat := range categories {
-						categoryNames[idx] = cat.DisplayName
-					}
-					availableList := strings.Join(categoryNames, ", ")
-					if len(availableList) > 100 {
-						availableList = availableList[:97] + "..." // Truncate if too long
-					}
-
-					validationErrors = append(validationErrors, types.ValidationError{
-						Field:      "Category",
-						Message:    fmt.Sprintf("Category '%s' does not exist. Available: %s", categoryText, availableList),
-						LineNumber: lineNumber,
-					})
-				}
+			// Validate category text format (length, characters, etc.)
+			if len(categoryText) > 100 {
+				validationErrors = append(validationErrors, types.ValidationError{
+					Field:      "Category",
+					Message:    "Category name cannot exceed 100 characters",
+					LineNumber: lineNumber,
+				})
 			}
+			// Note: We don't validate if category exists here - unknown categories
+			// will be automatically created during import via ResolveOrCreateCategory
 		}
 	}
 
