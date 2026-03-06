@@ -11,7 +11,7 @@ Upload bank statements, organize transactions and generate spending summaries th
 - **Transaction CRUD**: Create, read, update, and delete transactions with intuitive navigation
 - **Multi-select Operations**: Bulk edit multiple transactions using 'm' to toggle selection and 'e' to edit
 - **Split Transactions**: Divide transactions into multiple entries while preserving the original
-- **Real-time Validation**: Comprehensive field validation with immediate feedback during editing
+- **Real-time Editing Validation**: Editing field validation with immediate feedback
 
 ### Bank Statement Import
 
@@ -27,11 +27,20 @@ Upload bank statements, organize transactions and generate spending summaries th
 - **Auto-categorization**: Intelligent category suggestions based on transaction descriptions
 - **Category Validation**: Ensure data integrity with category existence validation
 
+### Analytics
+
+- **Spending Analysis Dashboard**: Comprehensive spending insights accessible via 'a' from main menu
+- **Date Range Selection**: Flexible date filtering with default to previous month for monthly workflows
+- **Summary Overview**: Total income, expenses, net amount, and transaction count for selected period
+- **Category Breakdown**: Detailed spending by category with amounts, percentages, and transaction counts
+- **Dynamic Display**: All categories with transactions shown in responsive table layout
+- **Positive Values**: Expense amounts displayed as positive values for clearer financial insights
+
 ### Data Management
 
 - **Backup & Restore**: Save and restore transaction data to/from saved states
 - **Undo Operations**: Complete undo functionality for imports and bulk operations
-- **Data Persistence**: JSON-based storage in the user's home directory
+- **Data Persistence**: SQLite-based storage in the user's home directory
 - **Error Handling**: Graceful error handling with user-friendly messages
 
 ### User Interface
@@ -64,4 +73,3 @@ go run .
 # Build Dist
 
 ./build.bat
-
