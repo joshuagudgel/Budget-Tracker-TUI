@@ -189,14 +189,16 @@ func formatDateForEditing(dateStr string) string {
 
 func (m model) enterDateEditing() (tea.Model, tea.Cmd) {
 	m.isEditingDate = true
-	m.editingDateStr = formatDateForEditing(m.currTransaction.Date)
+	dateStr := m.currTransaction.Date.Format("2006-01-02")
+	m.editingDateStr = formatDateForEditing(dateStr)
 	return m, nil
 }
 
 func (m model) enterDateEditingWithBackspace() (tea.Model, tea.Cmd) {
 	m.isEditingDate = true
 	// Start with formatted value and immediately apply backspace
-	m.editingDateStr = formatDateForEditing(m.currTransaction.Date)
+	dateStr := m.currTransaction.Date.Format("2006-01-02")
+	m.editingDateStr = formatDateForEditing(dateStr)
 	if len(m.editingDateStr) > 0 {
 		m.editingDateStr = m.editingDateStr[:len(m.editingDateStr)-1]
 	}
@@ -210,10 +212,16 @@ func (m model) handleDateEditing(key string) (tea.Model, tea.Cmd) {
 		if key == "enter" && m.editingDateStr != "" {
 			// Use the normalization function to convert MM/DD/YYYY input to storage format
 			if normalizedDate, err := types.NormalizeDateToISO8601(m.editingDateStr, ""); err == nil {
-				m.currTransaction.Date = normalizedDate
+				// Parse the normalized ISO 8601 date string into time.Time
+				if parsedDate, parseErr := time.Parse("2006-01-02", normalizedDate); parseErr == nil {
+					m.currTransaction.Date = parsedDate
+				} else {
+					// Set to zero time if parse fails - validation will catch it
+					m.currTransaction.Date = time.Time{}
+				}
 			} else {
-				// If normalization fails, store the raw input (validation will catch it)
-				m.currTransaction.Date = m.editingDateStr
+				// If normalization fails, set to zero time (validation will catch it)
+				m.currTransaction.Date = time.Time{}
 			}
 			// Validate field on enter (field commit)
 			m.validateCurrentTransaction()

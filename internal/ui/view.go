@@ -172,7 +172,7 @@ func (m model) View() string {
 			}
 
 			s += enumeratorStyle.Render(prefix) + fmt.Sprintf("%-12s | %-40s | %12.2f | %-20s | %-15s\n",
-				formatDateForDisplay(t.Date),
+				formatDateForDisplay(t.Date.Format("2006-01-02")),
 				description,
 				t.Amount,
 				categoryName,
@@ -939,7 +939,7 @@ func (m model) renderNormalEditView() string {
 	// Date field
 	dateStyle := m.getFieldStyle("date", m.editField == editDate, m.isEditingDate)
 
-	dateValue := formatDateForDisplay(m.currTransaction.Date)
+	dateValue := formatDateForDisplay(m.currTransaction.Date.Format("2006-01-02"))
 	if m.isEditingDate && m.editingDateStr != "" {
 		dateValue = m.editingDateStr
 	}
@@ -1670,11 +1670,11 @@ func (m model) renderBankStatementListView() string {
 			filename = filename[:22] + "..."
 		}
 
-		dateRange := fmt.Sprintf("%s - %s", formatDateForDisplay(stmt.PeriodStart), formatDateForDisplay(stmt.PeriodEnd))
+		dateRange := fmt.Sprintf("%s - %s", formatDateForDisplay(stmt.PeriodStart.Format("2006-01-02")), formatDateForDisplay(stmt.PeriodEnd.Format("2006-01-02")))
 		txCount := fmt.Sprintf("%d txns", stmt.TxCount)
 
 		// Format import date compactly
-		importDate := formatTimestampForDisplay(stmt.ImportDate)
+		importDate := formatTimestampForDisplay(stmt.ImportDate.Format(time.RFC3339))
 
 		line := style.Render(prefix +
 			fmt.Sprintf("%-28s", filename) + " | " +
@@ -1718,14 +1718,14 @@ func (m model) renderBankStatementManageView() string {
 
 	// Statement details
 	s += formLabelStyle.Render("File:") + " " + stmt.Filename + "\n"
-	s += formLabelStyle.Render("Period:") + " " + formatDateForDisplay(stmt.PeriodStart) + " to " + formatDateForDisplay(stmt.PeriodEnd) + "\n"
+	s += formLabelStyle.Render("Period:") + " " + formatDateForDisplay(stmt.PeriodStart.Format("2006-01-02")) + " to " + formatDateForDisplay(stmt.PeriodEnd.Format("2006-01-02")) + "\n"
 	s += formLabelStyle.Render("Transactions:") + " " + fmt.Sprintf("%d", stmt.TxCount) + "\n"
 	templateName := m.store.Templates.GetTemplateNameById(stmt.TemplateUsed)
 	if templateName == "" {
 		templateName = fmt.Sprintf("Template ID: %d", stmt.TemplateUsed)
 	}
 	s += formLabelStyle.Render("Template:") + " " + templateName + "\n"
-	s += formLabelStyle.Render("Import Date:") + " " + formatTimestampForDisplay(stmt.ImportDate) + "\n"
+	s += formLabelStyle.Render("Import Date:") + " " + formatTimestampForDisplay(stmt.ImportDate.Format(time.RFC3339)) + "\n"
 
 	// Status with color
 	statusStyle := successStyle
@@ -1768,7 +1768,7 @@ func (m model) renderStatementTransactionListView() string {
 
 	var s string
 	s += headerStyle.Render("Transactions: "+stmt.Filename) + "\n"
-	s += faintStyle.Render("Period: "+stmt.PeriodStart+" to "+stmt.PeriodEnd) + " | " +
+	s += faintStyle.Render("Period: "+stmt.PeriodStart.Format("2006-01-02")+" to "+stmt.PeriodEnd.Format("2006-01-02")) + " | " +
 		faintStyle.Render(fmt.Sprintf("%d transactions", len(m.filteredTransactions))) + "\n\n"
 
 	// Column headers with aligned columns
@@ -1846,7 +1846,7 @@ func (m model) renderStatementTransactionListView() string {
 		}
 
 		s += enumeratorStyle.Render(prefix) + fmt.Sprintf("%-12s | %-40s | %12.2f | %-20s | %-15s\n",
-			formatDateForDisplay(t.Date),
+			formatDateForDisplay(t.Date.Format("2006-01-02")),
 			description,
 			t.Amount,
 			categoryName,

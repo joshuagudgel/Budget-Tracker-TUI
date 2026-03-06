@@ -3,67 +3,87 @@ package types
 import (
 	"fmt"
 	"math"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
 
 type Transaction struct {
-	Id              int64
-	ParentId        *int64
-	Amount          float64
-	Description     string
-	RawDescription  string
-	Date            string
-	CategoryId      int64
-	AutoCategory    string
-	TransactionType string
-	IsSplit         bool
-	IsRecurring     bool
-	StatementId     string
-	Confidence      float64
-	UserModified    bool
-	CreatedAt       string
-	UpdatedAt       string
+	Id              int64     `db:"id"`
+	ParentId        *int64    `db:"parent_id"`
+	Amount          float64   `db:"amount"`
+	Description     string    `db:"description"`
+	RawDescription  string    `db:"raw_description"`
+	Date            time.Time `db:"date"`
+	CategoryId      int64     `db:"category_id"`
+	AutoCategory    string    `db:"auto_category"`
+	TransactionType string    `db:"transaction_type"`
+	IsSplit         bool      `db:"is_split"`
+	IsRecurring     bool      `db:"is_recurring"`
+	StatementId     string    `db:"statement_id"`
+	Confidence      float64   `db:"confidence"`
+	UserModified    bool      `db:"user_modified"`
+	CreatedAt       time.Time `db:"created_at"`
+	UpdatedAt       time.Time `db:"updated_at"`
+}
+
+// TransactionEditState manages UI editing state for transactions
+type TransactionEditState struct {
+	// Original transaction being edited
+	Original *Transaction
+
+	// UI input fields (what user types)
+	AmountInput      string
+	DescriptionInput string
+	DateInput        string // MM/DD/YYYY or MM-DD-YYYY format
+	CategoryId       int64
+	TransactionType  string
+
+	// Validation state
+	FieldErrors   map[string]string
+	IsValid       bool
+	ValidationMsg string
 }
 
 type Category struct {
-	Id          int64
-	DisplayName string
-	ParentId    *int64
-	Color       string
-	IsActive    bool
-	CreatedAt   string
-	UpdatedAt   string
+	Id          int64     `db:"id"`
+	DisplayName string    `db:"display_name"`
+	ParentId    *int64    `db:"parent_id"`
+	Color       string    `db:"color"`
+	IsActive    bool      `db:"is_active"`
+	CreatedAt   time.Time `db:"created_at"`
+	UpdatedAt   time.Time `db:"updated_at"`
 }
 
 type BankStatement struct {
-	Id             int64
-	Filename       string
-	ImportDate     string
-	PeriodStart    string
-	PeriodEnd      string
-	TemplateUsed   int64
-	TxCount        int
-	Status         string
-	ProcessingTime int64
-	ErrorLog       string
-	CreatedAt      string
-	UpdatedAt      string
+	Id             int64     `db:"id"`
+	Filename       string    `db:"filename"`
+	ImportDate     time.Time `db:"import_date"`
+	PeriodStart    time.Time `db:"period_start"`
+	PeriodEnd      time.Time `db:"period_end"`
+	TemplateUsed   int64     `db:"template_used"`
+	TxCount        int       `db:"tx_count"`
+	Status         string    `db:"status"`
+	ProcessingTime int64     `db:"processing_time"`
+	ErrorLog       string    `db:"error_log"`
+	CreatedAt      time.Time `db:"created_at"`
+	UpdatedAt      time.Time `db:"updated_at"`
 }
 
 type CSVTemplate struct {
-	Id             int64
-	Name           string
-	PostDateColumn int
-	AmountColumn   int
-	DescColumn     int
-	CategoryColumn *int
-	HasHeader      bool
-	DateFormat     string
-	MerchantColumn *int
-	Delimiter      string
-	CreatedAt      string
-	UpdatedAt      string
+	Id             int64     `db:"id"`
+	Name           string    `db:"name"`
+	PostDateColumn int       `db:"post_date_column"`
+	AmountColumn   int       `db:"amount_column"`
+	DescColumn     int       `db:"desc_column"`
+	CategoryColumn *int      `db:"category_column"`
+	HasHeader      bool      `db:"has_header"`
+	DateFormat     string    `db:"date_format"`
+	MerchantColumn *int      `db:"merchant_column"`
+	Delimiter      string    `db:"delimiter"`
+	CreatedAt      time.Time `db:"created_at"`
+	UpdatedAt      time.Time `db:"updated_at"`
 }
 
 type ImportResult struct {
@@ -167,31 +187,16 @@ func (t *Transaction) validateAmount() error {
 
 // validateDate validates the date field
 func (t *Transaction) validateDate() error {
-	if strings.TrimSpace(t.Date) == "" {
+	if t.Date.IsZero() {
 		return fmt.Errorf("date cannot be empty")
 	}
 
-	// Try parsing ISO 8601 format (storage format)
-	if _, err := time.Parse("2006-01-02", t.Date); err == nil {
-		return nil
+	// Add business rule validation
+	if t.Date.After(time.Now().AddDate(1, 0, 0)) {
+		return fmt.Errorf("date cannot be more than 1 year in the future")
 	}
 
-	// Try parsing mm-dd-yyyy format
-	if _, err := time.Parse("01-02-2006", t.Date); err == nil {
-		return nil
-	}
-
-	// Try parsing mm/dd/yyyy format
-	if _, err := time.Parse("01/02/2006", t.Date); err == nil {
-		return nil
-	}
-
-	// Try parsing mm-dd-yy format
-	if _, err := time.Parse("01-02-06", t.Date); err == nil {
-		return nil
-	}
-
-	return fmt.Errorf("date must be in mm-dd-yyyy, mm/dd/yyyy, or yyyy-mm-dd format")
+	return nil
 }
 
 // validateDescription validates the description field
@@ -239,6 +244,107 @@ func (t *Transaction) ValidateField(field string, availableCategories []Category
 	default:
 		return fmt.Errorf("unknown field: %s", field)
 	}
+}
+
+// NewTransactionEditState creates a new edit state from an existing transaction
+func NewTransactionEditState(tx *Transaction) *TransactionEditState {
+	if tx == nil {
+		return &TransactionEditState{
+			Original:    nil,
+			FieldErrors: make(map[string]string),
+			IsValid:     true,
+		}
+	}
+
+	return &TransactionEditState{
+		Original:         tx,
+		AmountInput:      fmt.Sprintf("%.2f", tx.Amount),
+		DescriptionInput: tx.Description,
+		DateInput:        tx.GetDateForDisplay(),
+		CategoryId:       tx.CategoryId,
+		TransactionType:  tx.TransactionType,
+		FieldErrors:      make(map[string]string),
+		IsValid:          true,
+	}
+}
+
+// ToTransaction converts edit state back to a Transaction
+func (es *TransactionEditState) ToTransaction() (*Transaction, error) {
+	var tx Transaction
+
+	// Copy original fields if editing existing transaction
+	if es.Original != nil {
+		tx = *es.Original
+	}
+
+	// Parse amount
+	var err error
+	if es.AmountInput != "" {
+		tx.Amount, err = parseAmount(es.AmountInput)
+		if err != nil {
+			return nil, fmt.Errorf("amount: %w", err)
+		}
+	}
+
+	// Set description
+	tx.Description = strings.TrimSpace(es.DescriptionInput)
+
+	// Parse date
+	if es.DateInput != "" {
+		tx.Date, err = TryParseMultipleDateFormats(es.DateInput)
+		if err != nil {
+			return nil, fmt.Errorf("date: %w", err)
+		}
+	}
+
+	// Set category and type
+	tx.CategoryId = es.CategoryId
+	tx.TransactionType = es.TransactionType
+
+	// Update timestamps
+	now := time.Now()
+	if es.Original == nil {
+		tx.CreatedAt = now
+	}
+	tx.UpdatedAt = now
+
+	return &tx, nil
+}
+
+// Helper method for amount parsing
+func parseAmount(amountStr string) (float64, error) {
+	trimmed := strings.TrimSpace(amountStr)
+	if trimmed == "" {
+		return 0, fmt.Errorf("amount cannot be empty")
+	}
+
+	// Remove currency symbols and commas
+	cleaned := regexp.MustCompile(`[\$,]`).ReplaceAllString(trimmed, "")
+
+	amount, err := strconv.ParseFloat(cleaned, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid amount format")
+	}
+
+	return amount, nil
+}
+
+// Display and conversion methods for Transaction
+func (t *Transaction) GetDateForDisplay() string {
+	return t.Date.Format("01/02/2006") // MM/DD/YYYY for UI display
+}
+
+func (t *Transaction) GetDateForStorage() string {
+	return t.Date.Format("2006-01-02") // ISO 8601 for database
+}
+
+func (t *Transaction) SetDateFromUserInput(dateStr string) error {
+	parsed, err := TryParseMultipleDateFormats(dateStr)
+	if err != nil {
+		return err
+	}
+	t.Date = parsed
+	return nil
 }
 
 // Category validation methods

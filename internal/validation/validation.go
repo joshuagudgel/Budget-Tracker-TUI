@@ -75,6 +75,20 @@ func (dv DateValidator) Validate(dateStr string) error {
 	return fmt.Errorf("date must be in mm-dd-yyyy, mm/dd/yyyy, or yyyy-mm-dd format")
 }
 
+// ValidateTime validates a time.Time value for business rules
+func (dv DateValidator) ValidateTime(date time.Time) error {
+	if date.IsZero() {
+		return fmt.Errorf("date cannot be empty")
+	}
+
+	// Add business rule validation
+	if date.After(time.Now().AddDate(1, 0, 0)) {
+		return fmt.Errorf("date cannot be more than 1 year in the future")
+	}
+
+	return nil
+}
+
 // ParseDate parses a date string and returns a time.Time
 func (dv DateValidator) ParseDate(dateStr string) (time.Time, error) {
 	if err := dv.Validate(dateStr); err != nil {
@@ -178,7 +192,7 @@ func (tv *TransactionValidator) ValidateTransaction(transaction *types.Transacti
 	}
 
 	// Validate Date
-	if err := tv.Date.Validate(transaction.Date); err != nil {
+	if err := tv.Date.ValidateTime(transaction.Date); err != nil {
 		result.AddError("date", err.Error())
 	}
 
@@ -201,7 +215,7 @@ func (tv *TransactionValidator) ValidateField(transaction *types.Transaction, fi
 	case "amount":
 		return tv.Amount.Validate(transaction.Amount)
 	case "date":
-		return tv.Date.Validate(transaction.Date)
+		return tv.Date.ValidateTime(transaction.Date)
 	case "description":
 		return tv.Description.Validate(transaction.Description)
 	case "categoryid", "category":

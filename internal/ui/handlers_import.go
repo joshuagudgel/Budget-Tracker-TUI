@@ -17,17 +17,8 @@ func (m model) handleBackupView(key string) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.state = menuView
 	case "r":
-		result, err := m.store.Transactions.RestoreFromBackup()
-		if err != nil {
-			m.backupMessage = "Error: " + err.Error()
-		} else if result.Success {
-			m.transactions, _ = m.store.Transactions.GetTransactions()
-			m.sortTransactionsByDate()
-			m.backupMessage = result.Message
-			m.listIndex = 0
-		} else {
-			m.backupMessage = result.Message
-		}
+		// Backup/restore functionality has been removed - SQLite only storage
+		m.backupMessage = "Backup/restore functionality has been removed. All data is stored in SQLite database."
 	}
 	return m, nil
 }

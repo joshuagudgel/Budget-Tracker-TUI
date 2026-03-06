@@ -371,33 +371,6 @@ func (s *Store) UndoImport(statementId int64) (int, error) {
 	return removedCount, nil
 }
 
-// RestoreFromBackup restores transactions from backup with category resolution
-func (s *Store) RestoreFromBackup() (*RestoreResult, error) {
-	result, err := s.Transactions.RestoreFromBackup()
-	if err != nil {
-		return result, err
-	}
-
-	// Update category IDs for restored transactions
-	transactions, _ := s.Transactions.GetTransactions()
-	for i, tx := range transactions {
-		if tx.CategoryId == 0 {
-			// Try to find category by display name from backup, fallback to default
-			transactions[i].CategoryId = s.Categories.GetDefaultCategoryId()
-		}
-	}
-
-	// Save updated transactions
-	for _, tx := range transactions {
-		err = s.Transactions.SaveTransaction(tx)
-		if err != nil {
-			return result, err
-		}
-	}
-
-	return result, nil
-}
-
 // ValidateCategoryForDeletion validates if a category can be safely deleted
 func (s *Store) ValidateCategoryForDeletion(categoryId int64) error {
 	// First check category-specific validations

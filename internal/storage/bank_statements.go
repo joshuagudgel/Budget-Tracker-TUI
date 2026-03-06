@@ -40,23 +40,46 @@ func (bs *BankStatementStore) scanBankStatement(rows *sql.Rows) (types.BankState
 	var periodStart, periodEnd sql.NullString
 	var processingTime sql.NullInt64
 	var errorLog sql.NullString
+	var importDateStr, createdAtStr, updatedAtStr string
 
 	err := rows.Scan(
-		&stmt.Id, &stmt.Filename, &stmt.ImportDate, &periodStart, &periodEnd,
+		&stmt.Id, &stmt.Filename, &importDateStr, &periodStart, &periodEnd,
 		&stmt.TemplateUsed, &stmt.TxCount, &stmt.Status, &processingTime,
-		&errorLog, &stmt.CreatedAt, &stmt.UpdatedAt,
+		&errorLog, &createdAtStr, &updatedAtStr,
 	)
 
 	if err != nil {
 		return stmt, err
 	}
 
+	// Parse time fields from database
+	stmt.ImportDate, err = bs.helper.ParseTimeFromDB(importDateStr)
+	if err != nil {
+		return stmt, fmt.Errorf("failed to parse import_date: %w", err)
+	}
+	stmt.CreatedAt, err = bs.helper.ParseTimeFromDB(createdAtStr)
+	if err != nil {
+		return stmt, fmt.Errorf("failed to parse created_at: %w", err)
+	}
+	stmt.UpdatedAt, err = bs.helper.ParseTimeFromDB(updatedAtStr)
+	if err != nil {
+		return stmt, fmt.Errorf("failed to parse updated_at: %w", err)
+	}
+
 	// Handle nullable fields
 	if periodStart.Valid {
-		stmt.PeriodStart = periodStart.String
+		parsedStart, err := bs.helper.ParseDateFromDB(periodStart.String)
+		if err != nil {
+			return stmt, fmt.Errorf("failed to parse period start: %w", err)
+		}
+		stmt.PeriodStart = parsedStart
 	}
 	if periodEnd.Valid {
-		stmt.PeriodEnd = periodEnd.String
+		parsedEnd, err := bs.helper.ParseDateFromDB(periodEnd.String)
+		if err != nil {
+			return stmt, fmt.Errorf("failed to parse period end: %w", err)
+		}
+		stmt.PeriodEnd = parsedEnd
 	}
 	if processingTime.Valid {
 		stmt.ProcessingTime = processingTime.Int64
@@ -102,23 +125,46 @@ func (bs *BankStatementStore) scanBankStatementRow(row *sql.Row) (types.BankStat
 	var periodStart, periodEnd sql.NullString
 	var processingTime sql.NullInt64
 	var errorLog sql.NullString
+	var importDateStr, createdAtStr, updatedAtStr string
 
 	err := row.Scan(
-		&stmt.Id, &stmt.Filename, &stmt.ImportDate, &periodStart, &periodEnd,
+		&stmt.Id, &stmt.Filename, &importDateStr, &periodStart, &periodEnd,
 		&stmt.TemplateUsed, &stmt.TxCount, &stmt.Status, &processingTime,
-		&errorLog, &stmt.CreatedAt, &stmt.UpdatedAt,
+		&errorLog, &createdAtStr, &updatedAtStr,
 	)
 
 	if err != nil {
 		return stmt, err
 	}
 
+	// Parse time fields from database
+	stmt.ImportDate, err = bs.helper.ParseTimeFromDB(importDateStr)
+	if err != nil {
+		return stmt, fmt.Errorf("failed to parse import_date: %w", err)
+	}
+	stmt.CreatedAt, err = bs.helper.ParseTimeFromDB(createdAtStr)
+	if err != nil {
+		return stmt, fmt.Errorf("failed to parse created_at: %w", err)
+	}
+	stmt.UpdatedAt, err = bs.helper.ParseTimeFromDB(updatedAtStr)
+	if err != nil {
+		return stmt, fmt.Errorf("failed to parse updated_at: %w", err)
+	}
+
 	// Handle nullable fields
 	if periodStart.Valid {
-		stmt.PeriodStart = periodStart.String
+		parsedStart, err := bs.helper.ParseDateFromDB(periodStart.String)
+		if err != nil {
+			return stmt, fmt.Errorf("failed to parse period start: %w", err)
+		}
+		stmt.PeriodStart = parsedStart
 	}
 	if periodEnd.Valid {
-		stmt.PeriodEnd = periodEnd.String
+		parsedEnd, err := bs.helper.ParseDateFromDB(periodEnd.String)
+		if err != nil {
+			return stmt, fmt.Errorf("failed to parse period end: %w", err)
+		}
+		stmt.PeriodEnd = parsedEnd
 	}
 	if processingTime.Valid {
 		stmt.ProcessingTime = processingTime.Int64
@@ -335,22 +381,26 @@ func (bs *BankStatementStore) DeleteStatement(id int64) error {
 }
 
 // ExtractPeriodFromTransactions extracts start and end dates from transactions
-// All dates are now in ISO 8601 format (YYYY-MM-DD), so simple string comparison works
+// Returns ISO 8601 formatted date strings (YYYY-MM-DD) for database storage
 func (bs *BankStatementStore) ExtractPeriodFromTransactions(transactions []types.Transaction) (start, end string) {
 	if len(transactions) == 0 {
 		return "", ""
 	}
 
-	start = transactions[0].Date
-	end = transactions[0].Date
+	startTime := transactions[0].Date
+	endTime := transactions[0].Date
 	for _, tx := range transactions {
-		if tx.Date < start {
-			start = tx.Date
+		if tx.Date.Before(startTime) {
+			startTime = tx.Date
 		}
-		if tx.Date > end {
-			end = tx.Date
+		if tx.Date.After(endTime) {
+			endTime = tx.Date
 		}
 	}
+
+	// Format as ISO 8601 strings for database storage
+	start = bs.helper.FormatDateForDB(startTime)
+	end = bs.helper.FormatDateForDB(endTime)
 
 	return start, end
 }

@@ -99,16 +99,28 @@ func (ts *TransactionStore) scanTransaction(rows *sql.Rows) (types.Transaction, 
 	var rawDescription sql.NullString
 	var autoCategory sql.NullString
 	var confidence sql.NullFloat64
+	var dateStr, createdAtStr, updatedAtStr string
 
 	err := rows.Scan(
 		&tx.Id, &parentID, &tx.Amount, &tx.Description, &rawDescription,
-		&tx.Date, &tx.CategoryId, &autoCategory, &tx.TransactionType,
+		&dateStr, &tx.CategoryId, &autoCategory, &tx.TransactionType,
 		&tx.IsSplit, &tx.IsRecurring, &statementID, &confidence,
-		&tx.UserModified, &tx.CreatedAt, &tx.UpdatedAt,
+		&tx.UserModified, &createdAtStr, &updatedAtStr,
 	)
 
 	if err != nil {
 		return tx, err
+	}
+
+	// Parse date strings into time.Time with multiple format support
+	if tx.Date, err = ts.parseFlexibleDate(dateStr); err != nil {
+		return tx, fmt.Errorf("failed to parse transaction date '%s': %w", dateStr, err)
+	}
+	if tx.CreatedAt, err = ts.helper.ParseTimeFromDB(createdAtStr); err != nil {
+		return tx, fmt.Errorf("failed to parse created_at timestamp '%s': %w", createdAtStr, err)
+	}
+	if tx.UpdatedAt, err = ts.helper.ParseTimeFromDB(updatedAtStr); err != nil {
+		return tx, fmt.Errorf("failed to parse updated_at timestamp '%s': %w", updatedAtStr, err)
 	}
 
 	// Handle nullable fields
@@ -159,16 +171,45 @@ func (ts *TransactionStore) scanTransactionRow(row *sql.Row) (types.Transaction,
 	var rawDescription sql.NullString
 	var autoCategory sql.NullString
 	var confidence sql.NullFloat64
+	var dateStr, createdAtStr, updatedAtStr string
 
 	err := row.Scan(
 		&tx.Id, &parentID, &tx.Amount, &tx.Description, &rawDescription,
-		&tx.Date, &tx.CategoryId, &autoCategory, &tx.TransactionType,
+		&dateStr, &tx.CategoryId, &autoCategory, &tx.TransactionType,
 		&tx.IsSplit, &tx.IsRecurring, &statementID, &confidence,
-		&tx.UserModified, &tx.CreatedAt, &tx.UpdatedAt,
+		&tx.UserModified, &createdAtStr, &updatedAtStr,
 	)
 
 	if err != nil {
 		return tx, err
+	}
+
+	// Parse time fields from database
+	tx.Date, err = ts.parseFlexibleDate(dateStr)
+	if err != nil {
+		return tx, fmt.Errorf("failed to parse date: %w", err)
+	}
+	tx.CreatedAt, err = ts.helper.ParseTimeFromDB(createdAtStr)
+	if err != nil {
+		return tx, fmt.Errorf("failed to parse created_at: %w", err)
+	}
+	tx.UpdatedAt, err = ts.helper.ParseTimeFromDB(updatedAtStr)
+	if err != nil {
+		return tx, fmt.Errorf("failed to parse updated_at: %w", err)
+	}
+
+	// Parse time fields from database
+	tx.Date, err = ts.parseFlexibleDate(dateStr)
+	if err != nil {
+		return tx, fmt.Errorf("failed to parse date: %w", err)
+	}
+	tx.CreatedAt, err = ts.helper.ParseTimeFromDB(createdAtStr)
+	if err != nil {
+		return tx, fmt.Errorf("failed to parse created_at: %w", err)
+	}
+	tx.UpdatedAt, err = ts.helper.ParseTimeFromDB(updatedAtStr)
+	if err != nil {
+		return tx, fmt.Errorf("failed to parse updated_at: %w", err)
 	}
 
 	// Handle nullable fields
@@ -193,7 +234,7 @@ func (ts *TransactionStore) scanTransactionRow(row *sql.Row) (types.Transaction,
 
 // SaveTransaction saves or updates a transaction in the database
 func (ts *TransactionStore) SaveTransaction(transaction types.Transaction) error {
-	now := time.Now().Format(time.RFC3339)
+	now := time.Now()
 
 	if transaction.Id == 0 {
 		// Insert new transaction
@@ -205,7 +246,7 @@ func (ts *TransactionStore) SaveTransaction(transaction types.Transaction) error
 }
 
 // insertTransaction inserts a new transaction into the database
-func (ts *TransactionStore) insertTransaction(transaction types.Transaction, now string) error {
+func (ts *TransactionStore) insertTransaction(transaction types.Transaction, now time.Time) error {
 	query := `
 		INSERT INTO transactions (
 			parent_id, amount, description, raw_description, date, 
@@ -245,15 +286,20 @@ func (ts *TransactionStore) insertTransaction(transaction types.Transaction, now
 
 	// Set creation timestamp if not provided
 	createdAt := transaction.CreatedAt
-	if createdAt == "" {
+	if createdAt.IsZero() {
 		createdAt = now
 	}
 
+	// Format times for database storage
+	dateStr := transaction.Date.Format("2006-01-02")
+	createdAtStr := createdAt.Format(time.RFC3339)
+	updatedAtStr := now.Format(time.RFC3339)
+
 	id, err := ts.helper.ExecReturnID(query,
 		parentID, transaction.Amount, transaction.Description, rawDescription,
-		transaction.Date, transaction.CategoryId, autoCategory, transaction.TransactionType,
+		dateStr, transaction.CategoryId, autoCategory, transaction.TransactionType,
 		transaction.IsSplit, transaction.IsRecurring, statementID, confidence,
-		transaction.UserModified, createdAt, now,
+		transaction.UserModified, createdAtStr, updatedAtStr,
 	)
 
 	if err != nil {
@@ -266,7 +312,7 @@ func (ts *TransactionStore) insertTransaction(transaction types.Transaction, now
 }
 
 // updateTransaction updates an existing transaction in the database
-func (ts *TransactionStore) updateTransaction(transaction types.Transaction, now string) error {
+func (ts *TransactionStore) updateTransaction(transaction types.Transaction, now time.Time) error {
 	query := `
 		UPDATE transactions SET 
 			parent_id = ?, amount = ?, description = ?, raw_description = ?, 
@@ -361,7 +407,7 @@ func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Tran
 			return fmt.Errorf("split amounts (%.2f) don't match parent (%.2f)", totalSplit, parent.Amount)
 		}
 
-		now := time.Now().Format(time.RFC3339)
+		now := time.Now()
 
 		// Update existing transaction to become first split
 		updateQuery := `
@@ -414,7 +460,7 @@ func (ts *TransactionStore) ImportTransactionsFromCSV(transactions []types.Trans
 
 	// Prepare bulk insert data
 	var records [][]interface{}
-	now := time.Now().Format(time.RFC3339)
+	now := time.Now()
 
 	var statementID interface{}
 	if statementId != "" {
@@ -432,9 +478,14 @@ func (ts *TransactionStore) ImportTransactionsFromCSV(transactions []types.Trans
 
 		// Set timestamps for imported transactions
 		createdAt := tx.CreatedAt
-		if createdAt == "" {
+		if createdAt.IsZero() {
 			createdAt = now
 		}
+
+		// Format times for database storage
+		dateStr := tx.Date.Format("2006-01-02")
+		createdAtStr := createdAt.Format(time.RFC3339)
+		updatedAtStr := now.Format(time.RFC3339)
 
 		// Handle nullable fields
 		var parentID interface{}
@@ -458,10 +509,10 @@ func (ts *TransactionStore) ImportTransactionsFromCSV(transactions []types.Trans
 		}
 
 		record := []interface{}{
-			parentID, tx.Amount, tx.Description, rawDescription, tx.Date,
+			parentID, tx.Amount, tx.Description, rawDescription, dateStr,
 			tx.CategoryId, autoCategory, transactionType, tx.IsSplit,
 			tx.IsRecurring, statementID, confidence, tx.UserModified,
-			createdAt, now,
+			createdAtStr, updatedAtStr,
 		}
 		records = append(records, record)
 	}
@@ -507,32 +558,29 @@ func (ts *TransactionStore) FindDuplicateTransactions(date string, amount float6
 	return duplicates, rows.Err()
 }
 
-// CreateBackup creates a backup of current transactions in a simplified format
-func (ts *TransactionStore) CreateBackup() error {
-	// This functionality would need to be coordinated with a CategoryStore
-	// for category display names. For now, return an error suggesting
-	// backup should be handled at the main Store level.
-	return fmt.Errorf("backup functionality moved to main Store level for cross-domain coordination")
+// parseFlexibleDate tries multiple date formats to handle legacy data
+func (ts *TransactionStore) parseFlexibleDate(dateStr string) (time.Time, error) {
+	// Try RFC3339 format first (preferred format)
+	if t, err := time.Parse(time.RFC3339, dateStr); err == nil {
+		return t, nil
+	}
+
+	// Try ISO 8601 date format (YYYY-MM-DD)
+	if t, err := time.Parse("2006-01-02", dateStr); err == nil {
+		return t, nil
+	}
+
+	// Try MM-DD-YYYY format (legacy format)
+	if t, err := time.Parse("01-02-2006", dateStr); err == nil {
+		return t, nil
+	}
+
+	// Try MM/DD/YYYY format
+	if t, err := time.Parse("01/02/2006", dateStr); err == nil {
+		return t, nil
+	}
+
+	return time.Time{}, fmt.Errorf("unable to parse date '%s' with any known format", dateStr)
 }
 
-// RestoreFromBackup restores transactions from a backup file
-func (ts *TransactionStore) RestoreFromBackup() (*RestoreResult, error) {
-	// This functionality would need to be coordinated with a CategoryStore
-	// for category name resolution. For now, return an error suggesting
-	// restore should be handled at the main Store level.
-	return nil, fmt.Errorf("restore functionality moved to main Store level for cross-domain coordination")
-}
-
-// Backup-related types for TransactionStore (kept for interface compatibility)
-type BackupTransaction struct {
-	Amount          float64 `json:"amount"`
-	Description     string  `json:"description"`
-	Date            string  `json:"date"`
-	Category        string  `json:"category"`
-	PaymentMethod   string  `json:"paymentMethod"`
-	TransactionType string  `json:"transactionType"`
-}
-
-type BackupFile struct {
-	Transactions []BackupTransaction `json:"transactions"`
-}
+// End of TransactionStore

@@ -210,26 +210,23 @@ type model struct {
 // sortTransactionsByDate sorts transactions by date in descending order (newest first)
 func (m *model) sortTransactionsByDate() {
 	sort.Slice(m.transactions, func(i, j int) bool {
-		// Parse dates for comparison
-		dateI, errI := time.Parse("01-02-2006", m.transactions[i].Date)
-		if errI != nil {
-			// Try alternative format
-			dateI, errI = time.Parse("01/02/2006", m.transactions[i].Date)
+		// Compare dates directly since they're now time.Time
+		dateI := m.transactions[i].Date
+		dateJ := m.transactions[j].Date
+
+		// Handle zero times (treat as very old dates for sorting)
+		if dateI.IsZero() && dateJ.IsZero() {
+			return false // Equal
+		}
+		if dateI.IsZero() {
+			return false // i is older
+		}
+		if dateJ.IsZero() {
+			return true // j is older
 		}
 
-		dateJ, errJ := time.Parse("01-02-2006", m.transactions[j].Date)
-		if errJ != nil {
-			// Try alternative format
-			dateJ, errJ = time.Parse("01/02/2006", m.transactions[j].Date)
-		}
-
-		// If both dates parsed successfully, compare them
-		if errI == nil && errJ == nil {
-			return dateI.After(dateJ) // Descending order (newest first)
-		}
-
-		// Fallback to string comparison if parsing fails (reverse order)
-		return m.transactions[i].Date > m.transactions[j].Date
+		// Return true if i's date is after j's date (descending order)
+		return dateI.After(dateJ)
 	})
 }
 
@@ -431,8 +428,17 @@ func (m *model) validateBulkEditData() {
 	tempTx := types.Transaction{
 		Amount:      0, // Will be parsed from string
 		Description: m.bulkDescriptionValue,
-		Date:        m.bulkDateValue,
-		CategoryId:  0, // Will be set based on category value
+		Date:        time.Time{}, // Zero time for placeholder
+		CategoryId:  0,           // Will be set based on category value
+	}
+
+	// Parse date if not placeholder
+	if !m.bulkDateIsPlaceholder && m.bulkDateValue != "" {
+		if normalizedDate, err := types.NormalizeDateToISO8601(m.bulkDateValue, ""); err == nil {
+			if parsedDate, parseErr := time.Parse("2006-01-02", normalizedDate); parseErr == nil {
+				tempTx.Date = parsedDate
+			}
+		}
 	}
 
 	// Parse amount if not placeholder

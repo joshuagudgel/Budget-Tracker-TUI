@@ -5,6 +5,9 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
+
+	"budget-tracker-tui/internal/types"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -182,7 +185,12 @@ func (m model) handleSaveBulkEdit() (tea.Model, tea.Cmd) {
 				tempTx.Description = m.bulkDescriptionValue
 			}
 			if !m.bulkDateIsPlaceholder && strings.TrimSpace(m.bulkDateValue) != "" {
-				tempTx.Date = m.bulkDateValue
+				// Parse date string into time.Time
+				if normalizedDate, err := types.NormalizeDateToISO8601(m.bulkDateValue, ""); err == nil {
+					if parsedDate, parseErr := time.Parse("2006-01-02", normalizedDate); parseErr == nil {
+						tempTx.Date = parsedDate
+					}
+				}
 			}
 			if !m.bulkCategoryIsPlaceholder && strings.TrimSpace(m.bulkCategoryValue) != "" {
 				// Find category by display name
@@ -228,7 +236,12 @@ func (m model) handleSaveBulkEdit() (tea.Model, tea.Cmd) {
 
 			// Apply date if modified
 			if !m.bulkDateIsPlaceholder && strings.TrimSpace(m.bulkDateValue) != "" {
-				m.transactions[i].Date = m.bulkDateValue
+				// Parse date string into time.Time
+				if normalizedDate, err := types.NormalizeDateToISO8601(m.bulkDateValue, ""); err == nil {
+					if parsedDate, parseErr := time.Parse("2006-01-02", normalizedDate); parseErr == nil {
+						m.transactions[i].Date = parsedDate
+					}
+				}
 			}
 
 			// Apply category if modified

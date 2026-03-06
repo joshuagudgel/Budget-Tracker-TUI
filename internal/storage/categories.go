@@ -133,14 +133,25 @@ func (cs *CategoryStore) scanCategory(rows *sql.Rows) (types.Category, error) {
 	var category types.Category
 	var parentID sql.NullInt64
 	var color sql.NullString
+	var createdAtStr, updatedAtStr string
 
 	err := rows.Scan(
 		&category.Id, &category.DisplayName, &parentID, &color,
-		&category.IsActive, &category.CreatedAt, &category.UpdatedAt,
+		&category.IsActive, &createdAtStr, &updatedAtStr,
 	)
 
 	if err != nil {
 		return category, err
+	}
+
+	// Parse time fields from database
+	category.CreatedAt, err = cs.helper.ParseTimeFromDB(createdAtStr)
+	if err != nil {
+		return category, fmt.Errorf("failed to parse created_at: %w", err)
+	}
+	category.UpdatedAt, err = cs.helper.ParseTimeFromDB(updatedAtStr)
+	if err != nil {
+		return category, fmt.Errorf("failed to parse updated_at: %w", err)
 	}
 
 	// Handle nullable fields
@@ -176,14 +187,25 @@ func (cs *CategoryStore) scanCategoryRow(row *sql.Row) (types.Category, error) {
 	var category types.Category
 	var parentID sql.NullInt64
 	var color sql.NullString
+	var createdAtStr, updatedAtStr string
 
 	err := row.Scan(
 		&category.Id, &category.DisplayName, &parentID, &color,
-		&category.IsActive, &category.CreatedAt, &category.UpdatedAt,
+		&category.IsActive, &createdAtStr, &updatedAtStr,
 	)
 
 	if err != nil {
 		return category, err
+	}
+
+	// Parse time fields from database
+	category.CreatedAt, err = cs.helper.ParseTimeFromDB(createdAtStr)
+	if err != nil {
+		return category, fmt.Errorf("failed to parse created_at: %w", err)
+	}
+	category.UpdatedAt, err = cs.helper.ParseTimeFromDB(updatedAtStr)
+	if err != nil {
+		return category, fmt.Errorf("failed to parse updated_at: %w", err)
 	}
 
 	// Handle nullable fields
@@ -308,7 +330,7 @@ func (cs *CategoryStore) CreateCategoryFull(category *types.Category) error {
 		return fmt.Errorf("category '%s' already exists", category.DisplayName)
 	}
 
-	now := time.Now().Format(time.RFC3339)
+	now := time.Now()
 
 	query := `
 		INSERT INTO categories (display_name, parent_id, color, is_active, created_at, updated_at)
@@ -328,13 +350,17 @@ func (cs *CategoryStore) CreateCategoryFull(category *types.Category) error {
 
 	// Set creation timestamp if not provided
 	createdAt := category.CreatedAt
-	if createdAt == "" {
+	if createdAt.IsZero() {
 		createdAt = now
 	}
 
+	// Format times for database storage
+	createdAtStr := createdAt.Format(time.RFC3339)
+	updatedAtStr := now.Format(time.RFC3339)
+
 	id, err := cs.helper.ExecReturnID(query,
 		strings.TrimSpace(category.DisplayName), parentID, color,
-		true, createdAt, now,
+		true, createdAtStr, updatedAtStr,
 	)
 
 	if err != nil {
@@ -366,7 +392,7 @@ func (cs *CategoryStore) UpdateCategory(category *types.Category) error {
 		return fmt.Errorf("category '%s' already exists", category.DisplayName)
 	}
 
-	now := time.Now().Format(time.RFC3339)
+	now := time.Now()
 	query := `
 		UPDATE categories SET 
 			display_name = ?, parent_id = ?, color = ?, is_active = ?, updated_at = ?
@@ -410,7 +436,7 @@ func (cs *CategoryStore) DeleteCategory(categoryId int64) error {
 		return err
 	}
 
-	now := time.Now().Format(time.RFC3339)
+	now := time.Now()
 	query := "UPDATE categories SET is_active = 0, updated_at = ? WHERE id = ?"
 
 	rowsAffected, err := cs.helper.ExecReturnRowsAffected(query, now, categoryId)

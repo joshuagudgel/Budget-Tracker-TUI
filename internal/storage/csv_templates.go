@@ -95,15 +95,26 @@ func (cts *CSVTemplateStore) scanCSVTemplate(rows *sql.Rows) (types.CSVTemplate,
 	var template types.CSVTemplate
 	var categoryColumn, merchantColumn sql.NullInt64
 	var dateFormat, delimiter sql.NullString
+	var createdAtStr, updatedAtStr string
 
 	err := rows.Scan(
 		&template.Id, &template.Name, &template.PostDateColumn, &template.AmountColumn,
 		&template.DescColumn, &categoryColumn, &merchantColumn, &template.HasHeader,
-		&dateFormat, &delimiter, &template.CreatedAt, &template.UpdatedAt,
+		&dateFormat, &delimiter, &createdAtStr, &updatedAtStr,
 	)
 
 	if err != nil {
 		return template, err
+	}
+
+	// Parse time fields from database
+	template.CreatedAt, err = cts.helper.ParseTimeFromDB(createdAtStr)
+	if err != nil {
+		return template, fmt.Errorf("failed to parse created_at: %w", err)
+	}
+	template.UpdatedAt, err = cts.helper.ParseTimeFromDB(updatedAtStr)
+	if err != nil {
+		return template, fmt.Errorf("failed to parse updated_at: %w", err)
 	}
 
 	// Handle nullable fields
@@ -170,15 +181,26 @@ func (cts *CSVTemplateStore) scanCSVTemplateRow(row *sql.Row) (types.CSVTemplate
 	var categoryColumn sql.NullInt64
 	var merchantColumn sql.NullInt64
 	var dateFormat, delimiter sql.NullString
+	var createdAtStr, updatedAtStr string
 
 	err := row.Scan(
 		&template.Id, &template.Name, &template.PostDateColumn, &template.AmountColumn,
 		&template.DescColumn, &categoryColumn, &merchantColumn, &template.HasHeader, &dateFormat,
-		&delimiter, &template.CreatedAt, &template.UpdatedAt,
+		&delimiter, &createdAtStr, &updatedAtStr,
 	)
 
 	if err != nil {
 		return template, err
+	}
+
+	// Parse time fields from database
+	template.CreatedAt, err = cts.helper.ParseTimeFromDB(createdAtStr)
+	if err != nil {
+		return template, fmt.Errorf("failed to parse created_at: %w", err)
+	}
+	template.UpdatedAt, err = cts.helper.ParseTimeFromDB(updatedAtStr)
+	if err != nil {
+		return template, fmt.Errorf("failed to parse updated_at: %w", err)
 	}
 
 	// Handle nullable fields
@@ -271,7 +293,7 @@ func (cts *CSVTemplateStore) CreateCSVTemplate(template types.CSVTemplate) *Temp
 
 // SaveCSVTemplate saves or updates a CSV template
 func (cts *CSVTemplateStore) SaveCSVTemplate(template types.CSVTemplate) error {
-	now := time.Now().Format(time.RFC3339)
+	now := time.Now()
 
 	if template.Id == 0 {
 		// Insert new template
@@ -283,7 +305,7 @@ func (cts *CSVTemplateStore) SaveCSVTemplate(template types.CSVTemplate) error {
 }
 
 // insertTemplate inserts a new CSV template
-func (cts *CSVTemplateStore) insertTemplate(template types.CSVTemplate, now string) error {
+func (cts *CSVTemplateStore) insertTemplate(template types.CSVTemplate, now time.Time) error {
 	query := `
 		INSERT INTO csv_templates (
 			name, post_date_column, amount_column, desc_column, category_column, merchant_column,
@@ -315,14 +337,18 @@ func (cts *CSVTemplateStore) insertTemplate(template types.CSVTemplate, now stri
 
 	// Set creation timestamp if not provided
 	createdAt := template.CreatedAt
-	if createdAt == "" {
+	if createdAt.IsZero() {
 		createdAt = now
 	}
+
+	// Format times for database storage
+	createdAtStr := createdAt.Format(time.RFC3339)
+	updatedAtStr := now.Format(time.RFC3339)
 
 	id, err := cts.helper.ExecReturnID(query,
 		template.Name, template.PostDateColumn, template.AmountColumn,
 		template.DescColumn, categoryColumn, merchantColumn, template.HasHeader,
-		dateFormat, delimiter, createdAt, now,
+		dateFormat, delimiter, createdAtStr, updatedAtStr,
 	)
 
 	if err != nil {
@@ -335,7 +361,7 @@ func (cts *CSVTemplateStore) insertTemplate(template types.CSVTemplate, now stri
 }
 
 // updateTemplate updates an existing CSV template
-func (cts *CSVTemplateStore) updateTemplate(template types.CSVTemplate, now string) error {
+func (cts *CSVTemplateStore) updateTemplate(template types.CSVTemplate, now time.Time) error {
 	query := `
 		UPDATE csv_templates SET 
 			name = ?, post_date_column = ?, amount_column = ?, desc_column = ?, category_column = ?, 
@@ -495,7 +521,13 @@ func (cts *CSVTemplateStore) ParseTransactionFromTemplate(fields []string, templ
 	if err != nil {
 		return nil, fmt.Errorf("line %d: invalid date '%s': %v", lineNum, rawDate, err)
 	}
-	transaction.Date = normalizedDate
+
+	// Parse the normalized ISO 8601 date string into time.Time
+	txDate, err := time.Parse("2006-01-02", normalizedDate)
+	if err != nil {
+		return nil, fmt.Errorf("line %d: failed to parse normalized date '%s': %v", lineNum, normalizedDate, err)
+	}
+	transaction.Date = txDate
 
 	// Extract description from specified column
 	desc := strings.Trim(fields[template.DescColumn], "\"")
@@ -610,7 +642,8 @@ func (cts *CSVTemplateStore) ParseCSVTransactionsWithDuplicateFilter(filePath st
 	// Check each transaction for duplicates
 	for _, tx := range allTransactions {
 		// Find existing transactions with same date, amount, and description
-		existingTxs, err := cts.transactionStore.FindDuplicateTransactions(tx.Date, tx.Amount, tx.Description)
+		dateStr := tx.Date.Format("2006-01-02")
+		existingTxs, err := cts.transactionStore.FindDuplicateTransactions(dateStr, tx.Amount, tx.Description)
 		if err != nil {
 			// If error querying, assume it's new to be safe
 			newTransactions = append(newTransactions, tx)

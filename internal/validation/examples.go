@@ -3,6 +3,7 @@ package validation
 import (
 	"budget-tracker-tui/internal/types"
 	"fmt"
+	"time"
 )
 
 // Example demonstrates how to use the validation system
@@ -20,10 +21,11 @@ func Example() {
 	validator := NewTransactionValidator()
 
 	// Example 1: Valid transaction
+	validDate, _ := time.Parse("01-02-2006", "02-22-2024")
 	validTx := &types.Transaction{
 		Amount:      45.99,
 		Description: "Lunch at downtown cafe",
-		Date:        "02-22-2024",
+		Date:        validDate,
 		CategoryId:  1, // Food
 	}
 
@@ -39,11 +41,12 @@ func Example() {
 	}
 
 	// Example 2: Invalid transaction
+	invalidDate, _ := time.Parse("2006-01-02", "2024-02-22")
 	invalidTx := &types.Transaction{
-		Amount:      0,            // Error: zero amount
-		Description: "",           // Error: empty description
-		Date:        "2024-02-22", // Error: wrong date format
-		CategoryId:  99,           // Error: category ID doesn't exist
+		Amount:      0,           // Error: zero amount
+		Description: "",          // Error: empty description
+		Date:        invalidDate, // This date is valid, other fields will cause errors
+		CategoryId:  99,          // Error: category ID doesn't exist
 	}
 
 	fmt.Println("\n=== Validating Invalid Transaction ===")
@@ -58,11 +61,12 @@ func Example() {
 	}
 
 	// Example 3: Field-by-field validation
-	fmt.Println("\n=== Field-by-field Validation ===")
+	// fmt.Println(\"\\n=== Field-by-field Validation ===\")
+	testDate, _ := time.Parse("01-02-2006", "12-31-2024")
 	testTx := &types.Transaction{
 		Amount:      123.456, // Too many decimals
 		Description: "Valid description",
-		Date:        "12-31-2024",
+		Date:        testDate,
 		CategoryId:  1, // Food
 	}
 
@@ -160,7 +164,13 @@ func ValidationUsageInUI() {
 	}
 
 	tx.Description = formData["description"]
-	tx.Date = formData["date"]
+	// Parse date from form data
+	if parsedDate, err := time.Parse("01-02-2006", formData["date"]); err != nil {
+		fmt.Printf("Date parsing error: %s\n", err)
+		return
+	} else {
+		tx.Date = parsedDate
+	}
 	// In real app, would find category by display name
 	tx.CategoryId = 1 // Food category
 
@@ -187,10 +197,14 @@ func BulkValidationExample() {
 	}
 	validator := NewTransactionValidator()
 
+	transaction1Date, _ := time.Parse("01-02-2006", "02-22-2024")
+	transaction2Date := time.Time{} // Zero time for invalid date
+	transaction3Date, _ := time.Parse("01-02-2006", "02-21-2024")
+
 	transactions := []*types.Transaction{
-		{Id: 1, Amount: 25.50, Description: "Lunch", Date: "02-22-2024", CategoryId: 1},    // Food
-		{Id: 2, Amount: 0, Description: "", Date: "invalid", CategoryId: 99},               // Invalid
-		{Id: 3, Amount: 15.99, Description: "Bus fare", Date: "02-21-2024", CategoryId: 2}, // Transportation
+		{Id: 1, Amount: 25.50, Description: "Lunch", Date: transaction1Date, CategoryId: 1},    // Food
+		{Id: 2, Amount: 0, Description: "", Date: transaction2Date, CategoryId: 99},            // Invalid
+		{Id: 3, Amount: 15.99, Description: "Bus fare", Date: transaction3Date, CategoryId: 2}, // Transportation
 	}
 
 	results := validator.ValidateBulkEdit(transactions, categories)
