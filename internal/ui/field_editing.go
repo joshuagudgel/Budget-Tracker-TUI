@@ -1,8 +1,10 @@
 package ui
 
 import (
+	"budget-tracker-tui/internal/types"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -165,16 +167,36 @@ func (m model) handleDescriptionEditing(key string) (tea.Model, tea.Cmd) {
 
 // Date editing functions
 
+// formatDateForEditing converts a stored date to user-friendly editing format (MM/DD/YYYY)
+func formatDateForEditing(dateStr string) string {
+	if dateStr == "" {
+		return ""
+	}
+
+	// Try to parse as RFC3339 timestamp first
+	if t, err := time.Parse(time.RFC3339, dateStr); err == nil {
+		return t.Format("01/02/2006")
+	}
+
+	// Try to parse as ISO 8601 date
+	if t, err := time.Parse("2006-01-02", dateStr); err == nil {
+		return t.Format("01/02/2006")
+	}
+
+	// If parsing fails, return original (might already be in MM/DD/YYYY format)
+	return dateStr
+}
+
 func (m model) enterDateEditing() (tea.Model, tea.Cmd) {
 	m.isEditingDate = true
-	m.editingDateStr = m.currTransaction.Date
+	m.editingDateStr = formatDateForEditing(m.currTransaction.Date)
 	return m, nil
 }
 
 func (m model) enterDateEditingWithBackspace() (tea.Model, tea.Cmd) {
 	m.isEditingDate = true
-	// Start with current value and immediately apply backspace
-	m.editingDateStr = m.currTransaction.Date
+	// Start with formatted value and immediately apply backspace
+	m.editingDateStr = formatDateForEditing(m.currTransaction.Date)
 	if len(m.editingDateStr) > 0 {
 		m.editingDateStr = m.editingDateStr[:len(m.editingDateStr)-1]
 	}
@@ -185,8 +207,14 @@ func (m model) handleDateEditing(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "enter", "esc":
 		m.isEditingDate = false
-		if key == "enter" {
-			m.currTransaction.Date = m.editingDateStr
+		if key == "enter" && m.editingDateStr != "" {
+			// Use the normalization function to convert MM/DD/YYYY input to storage format
+			if normalizedDate, err := types.NormalizeDateToISO8601(m.editingDateStr, ""); err == nil {
+				m.currTransaction.Date = normalizedDate
+			} else {
+				// If normalization fails, store the raw input (validation will catch it)
+				m.currTransaction.Date = m.editingDateStr
+			}
 			// Validate field on enter (field commit)
 			m.validateCurrentTransaction()
 		}

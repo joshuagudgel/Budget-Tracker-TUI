@@ -51,10 +51,15 @@ func (av AmountValidator) ParseAmount(amountStr string) (float64, error) {
 // DateValidator provides validation for date fields
 type DateValidator struct{}
 
-// Validate validates a date string in mm-dd-yyyy or mm/dd/yyyy format
+// Validate validates a date string in mm-dd-yyyy, mm/dd/yyyy, or yyyy-mm-dd format
 func (dv DateValidator) Validate(dateStr string) error {
 	if strings.TrimSpace(dateStr) == "" {
 		return fmt.Errorf("date cannot be empty")
+	}
+
+	// Try parsing ISO 8601 format (storage format)
+	if _, err := time.Parse("2006-01-02", dateStr); err == nil {
+		return nil
 	}
 
 	// Try parsing mm-dd-yyyy format
@@ -67,7 +72,7 @@ func (dv DateValidator) Validate(dateStr string) error {
 		return nil
 	}
 
-	return fmt.Errorf("date must be in mm-dd-yyyy or mm/dd/yyyy format")
+	return fmt.Errorf("date must be in mm-dd-yyyy, mm/dd/yyyy, or yyyy-mm-dd format")
 }
 
 // ParseDate parses a date string and returns a time.Time
@@ -76,7 +81,12 @@ func (dv DateValidator) ParseDate(dateStr string) (time.Time, error) {
 		return time.Time{}, err
 	}
 
-	// Try parsing mm-dd-yyyy format first
+	// Try parsing ISO 8601 format (storage format) first
+	if t, err := time.Parse("2006-01-02", dateStr); err == nil {
+		return t, nil
+	}
+
+	// Try parsing mm-dd-yyyy format
 	if t, err := time.Parse("01-02-2006", dateStr); err == nil {
 		return t, nil
 	}

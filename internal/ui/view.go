@@ -48,6 +48,42 @@ var (
 	statusIconStyle        = lipgloss.NewStyle().Bold(true).MarginRight(1)
 )
 
+// formatDateForDisplay formats a date string to MM/DD/YYYY for display
+// Handles both RFC3339 timestamps (YYYY-MM-DDTHH:MM:SSZ) and ISO 8601 dates (YYYY-MM-DD)
+func formatDateForDisplay(dateStr string) string {
+	if dateStr == "" {
+		return ""
+	}
+
+	// First try to parse as RFC3339 timestamp (YYYY-MM-DDTHH:MM:SSZ)
+	if t, err := time.Parse(time.RFC3339, dateStr); err == nil {
+		return t.Format("01/02/2006")
+	}
+
+	// Then try to parse as ISO 8601 date format (YYYY-MM-DD)
+	if t, err := time.Parse("2006-01-02", dateStr); err == nil {
+		return t.Format("01/02/2006")
+	}
+
+	// If parsing fails, return original string
+	return dateStr
+}
+
+// formatTimestampForDisplay formats an RFC3339 timestamp string to MM/DD/YYYY for display
+func formatTimestampForDisplay(timestampStr string) string {
+	if timestampStr == "" {
+		return ""
+	}
+
+	// Try to parse the RFC3339 timestamp format
+	if t, err := time.Parse(time.RFC3339, timestampStr); err == nil {
+		return t.Format("01/02/2006")
+	}
+
+	// If parsing fails, return original string
+	return timestampStr
+}
+
 func (m model) View() string {
 	s := appNameStyle.Render("Finances Wrapped") + "\n\n"
 
@@ -136,7 +172,7 @@ func (m model) View() string {
 			}
 
 			s += enumeratorStyle.Render(prefix) + fmt.Sprintf("%-12s | %-40s | %12.2f | %-20s | %-15s\n",
-				t.Date,
+				formatDateForDisplay(t.Date),
 				description,
 				t.Amount,
 				categoryName,
@@ -903,7 +939,7 @@ func (m model) renderNormalEditView() string {
 	// Date field
 	dateStyle := m.getFieldStyle("date", m.editField == editDate, m.isEditingDate)
 
-	dateValue := m.currTransaction.Date
+	dateValue := formatDateForDisplay(m.currTransaction.Date)
 	if m.isEditingDate && m.editingDateStr != "" {
 		dateValue = m.editingDateStr
 	}
@@ -1634,14 +1670,11 @@ func (m model) renderBankStatementListView() string {
 			filename = filename[:22] + "..."
 		}
 
-		dateRange := fmt.Sprintf("%s - %s", stmt.PeriodStart, stmt.PeriodEnd)
+		dateRange := fmt.Sprintf("%s - %s", formatDateForDisplay(stmt.PeriodStart), formatDateForDisplay(stmt.PeriodEnd))
 		txCount := fmt.Sprintf("%d txns", stmt.TxCount)
 
 		// Format import date compactly
-		importDate := stmt.ImportDate
-		if t, err := time.Parse(time.RFC3339, stmt.ImportDate); err == nil {
-			importDate = t.Format("01/02/06")
-		}
+		importDate := formatTimestampForDisplay(stmt.ImportDate)
 
 		line := style.Render(prefix +
 			fmt.Sprintf("%-28s", filename) + " | " +
@@ -1685,14 +1718,14 @@ func (m model) renderBankStatementManageView() string {
 
 	// Statement details
 	s += formLabelStyle.Render("File:") + " " + stmt.Filename + "\n"
-	s += formLabelStyle.Render("Period:") + " " + stmt.PeriodStart + " to " + stmt.PeriodEnd + "\n"
+	s += formLabelStyle.Render("Period:") + " " + formatDateForDisplay(stmt.PeriodStart) + " to " + formatDateForDisplay(stmt.PeriodEnd) + "\n"
 	s += formLabelStyle.Render("Transactions:") + " " + fmt.Sprintf("%d", stmt.TxCount) + "\n"
 	templateName := m.store.Templates.GetTemplateNameById(stmt.TemplateUsed)
 	if templateName == "" {
 		templateName = fmt.Sprintf("Template ID: %d", stmt.TemplateUsed)
 	}
 	s += formLabelStyle.Render("Template:") + " " + templateName + "\n"
-	s += formLabelStyle.Render("Import Date:") + " " + stmt.ImportDate + "\n"
+	s += formLabelStyle.Render("Import Date:") + " " + formatTimestampForDisplay(stmt.ImportDate) + "\n"
 
 	// Status with color
 	statusStyle := successStyle
@@ -1813,7 +1846,7 @@ func (m model) renderStatementTransactionListView() string {
 		}
 
 		s += enumeratorStyle.Render(prefix) + fmt.Sprintf("%-12s | %-40s | %12.2f | %-20s | %-15s\n",
-			t.Date,
+			formatDateForDisplay(t.Date),
 			description,
 			t.Amount,
 			categoryName,

@@ -171,8 +171,18 @@ func (t *Transaction) validateDate() error {
 		return fmt.Errorf("date cannot be empty")
 	}
 
+	// Try parsing ISO 8601 format (storage format)
+	if _, err := time.Parse("2006-01-02", t.Date); err == nil {
+		return nil
+	}
+
 	// Try parsing mm-dd-yyyy format
 	if _, err := time.Parse("01-02-2006", t.Date); err == nil {
+		return nil
+	}
+
+	// Try parsing mm/dd/yyyy format
+	if _, err := time.Parse("01/02/2006", t.Date); err == nil {
 		return nil
 	}
 
@@ -181,7 +191,7 @@ func (t *Transaction) validateDate() error {
 		return nil
 	}
 
-	return fmt.Errorf("date must be in mm-dd-yyyy or mm-dd-yy format")
+	return fmt.Errorf("date must be in mm-dd-yyyy, mm/dd/yyyy, or yyyy-mm-dd format")
 }
 
 // validateDescription validates the description field
