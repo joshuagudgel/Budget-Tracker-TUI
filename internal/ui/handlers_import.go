@@ -103,6 +103,8 @@ func (m model) handleFileSelection() (tea.Model, tea.Cmd) {
 		if result.Success {
 			m.transactions, _ = m.store.Transactions.GetTransactions()
 			m.sortTransactionsByDate()
+			// Clear any existing bank statement list message for fresh display
+			m.bankStatementListMessage = ""
 		}
 		m.statementMessage = result.Message
 		m.state = bankStatementView

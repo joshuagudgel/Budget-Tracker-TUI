@@ -66,20 +66,40 @@ func (bs *BankStatementStore) scanBankStatement(rows *sql.Rows) (types.BankState
 		return stmt, fmt.Errorf("failed to parse updated_at: %w", err)
 	}
 
-	// Handle nullable fields
+	// Handle nullable fields with flexible date parsing
 	if periodStart.Valid {
+		// Try parsing as date first (expected format)
 		parsedStart, err := bs.helper.ParseDateFromDB(periodStart.String)
 		if err != nil {
-			return stmt, fmt.Errorf("failed to parse period start: %w", err)
+			// If date parsing fails, try parsing as timestamp (legacy format)
+			parsedStart, err = bs.helper.ParseTimeFromDB(periodStart.String)
+			if err != nil {
+				fmt.Printf("Warning: Failed to parse period start '%s': %v\n", periodStart.String, err)
+				// Set to zero time instead of failing the entire record
+				stmt.PeriodStart = time.Time{}
+			} else {
+				stmt.PeriodStart = parsedStart
+			}
+		} else {
+			stmt.PeriodStart = parsedStart
 		}
-		stmt.PeriodStart = parsedStart
 	}
 	if periodEnd.Valid {
+		// Try parsing as date first (expected format)
 		parsedEnd, err := bs.helper.ParseDateFromDB(periodEnd.String)
 		if err != nil {
-			return stmt, fmt.Errorf("failed to parse period end: %w", err)
+			// If date parsing fails, try parsing as timestamp (legacy format)
+			parsedEnd, err = bs.helper.ParseTimeFromDB(periodEnd.String)
+			if err != nil {
+				fmt.Printf("Warning: Failed to parse period end '%s': %v\n", periodEnd.String, err)
+				// Set to zero time instead of failing the entire record
+				stmt.PeriodEnd = time.Time{}
+			} else {
+				stmt.PeriodEnd = parsedEnd
+			}
+		} else {
+			stmt.PeriodEnd = parsedEnd
 		}
-		stmt.PeriodEnd = parsedEnd
 	}
 	if processingTime.Valid {
 		stmt.ProcessingTime = processingTime.Int64
@@ -111,7 +131,9 @@ func (bs *BankStatementStore) GetStatementHistory() []types.BankStatement {
 	for rows.Next() {
 		stmt, err := bs.scanBankStatement(rows)
 		if err != nil {
-			continue // Skip malformed rows
+			// Log the error but continue scanning other rows
+			fmt.Printf("Warning: Failed to scan bank statement row: %v\n", err)
+			continue
 		}
 		statements = append(statements, stmt)
 	}
@@ -151,20 +173,40 @@ func (bs *BankStatementStore) scanBankStatementRow(row *sql.Row) (types.BankStat
 		return stmt, fmt.Errorf("failed to parse updated_at: %w", err)
 	}
 
-	// Handle nullable fields
+	// Handle nullable fields with flexible date parsing
 	if periodStart.Valid {
+		// Try parsing as date first (expected format)
 		parsedStart, err := bs.helper.ParseDateFromDB(periodStart.String)
 		if err != nil {
-			return stmt, fmt.Errorf("failed to parse period start: %w", err)
+			// If date parsing fails, try parsing as timestamp (legacy format)
+			parsedStart, err = bs.helper.ParseTimeFromDB(periodStart.String)
+			if err != nil {
+				fmt.Printf("Warning: Failed to parse period start '%s': %v\n", periodStart.String, err)
+				// Set to zero time instead of failing the entire record
+				stmt.PeriodStart = time.Time{}
+			} else {
+				stmt.PeriodStart = parsedStart
+			}
+		} else {
+			stmt.PeriodStart = parsedStart
 		}
-		stmt.PeriodStart = parsedStart
 	}
 	if periodEnd.Valid {
+		// Try parsing as date first (expected format)
 		parsedEnd, err := bs.helper.ParseDateFromDB(periodEnd.String)
 		if err != nil {
-			return stmt, fmt.Errorf("failed to parse period end: %w", err)
+			// If date parsing fails, try parsing as timestamp (legacy format)
+			parsedEnd, err = bs.helper.ParseTimeFromDB(periodEnd.String)
+			if err != nil {
+				fmt.Printf("Warning: Failed to parse period end '%s': %v\n", periodEnd.String, err)
+				// Set to zero time instead of failing the entire record
+				stmt.PeriodEnd = time.Time{}
+			} else {
+				stmt.PeriodEnd = parsedEnd
+			}
+		} else {
+			stmt.PeriodEnd = parsedEnd
 		}
-		stmt.PeriodEnd = parsedEnd
 	}
 	if processingTime.Valid {
 		stmt.ProcessingTime = processingTime.Int64
