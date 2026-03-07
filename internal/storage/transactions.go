@@ -517,7 +517,7 @@ func (ts *TransactionStore) DeleteTransaction(id int64) error {
 	return nil
 }
 
-// SplitTransaction splits a parent transaction into two transactions using database transaction
+// SplitTransaction splits a updates current transaction into new values and creates a split transaction linked to itself
 func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Transaction) error {
 	// Get original transaction for audit logging
 	var originalTransaction *types.Transaction
