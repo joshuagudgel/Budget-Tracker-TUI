@@ -345,7 +345,7 @@ func (cts *CSVTemplateStore) insertTemplate(template types.CSVTemplate, now time
 	createdAtStr := createdAt.Format(time.RFC3339)
 	updatedAtStr := now.Format(time.RFC3339)
 
-	id, err := cts.helper.ExecReturnID(query,
+	_, err := cts.helper.ExecReturnID(query,
 		template.Name, template.PostDateColumn, template.AmountColumn,
 		template.DescColumn, categoryColumn, merchantColumn, template.HasHeader,
 		dateFormat, delimiter, createdAtStr, updatedAtStr,
@@ -356,7 +356,6 @@ func (cts *CSVTemplateStore) insertTemplate(template types.CSVTemplate, now time
 	}
 
 	// Update the template ID
-	template.Id = id
 	return nil
 }
 
@@ -653,7 +652,7 @@ func (cts *CSVTemplateStore) ParseCSVTransactionsWithDuplicateFilter(filePath st
 		// Count how many transactions with these details we're trying to import
 		importCount := 0
 		for _, importTx := range allTransactions {
-			if importTx.Date == tx.Date &&
+			if time.Time.Equal(importTx.Date, tx.Date) &&
 				math.Abs(importTx.Amount-tx.Amount) < 0.01 &&
 				importTx.Description == tx.Description {
 				importCount++
@@ -666,7 +665,7 @@ func (cts *CSVTemplateStore) ParseCSVTransactionsWithDuplicateFilter(filePath st
 		// Count how many of this specific transaction we've already processed as "new"
 		previousNewCount := 0
 		for _, newTx := range newTransactions {
-			if newTx.Date == tx.Date &&
+			if time.Time.Equal(newTx.Date, tx.Date) &&
 				math.Abs(newTx.Amount-tx.Amount) < 0.01 &&
 				newTx.Description == tx.Description {
 				previousNewCount++

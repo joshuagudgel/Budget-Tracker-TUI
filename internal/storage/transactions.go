@@ -295,7 +295,7 @@ func (ts *TransactionStore) insertTransaction(transaction types.Transaction, now
 	createdAtStr := createdAt.Format(time.RFC3339)
 	updatedAtStr := now.Format(time.RFC3339)
 
-	id, err := ts.helper.ExecReturnID(query,
+	_, err := ts.helper.ExecReturnID(query,
 		parentID, transaction.Amount, transaction.Description, rawDescription,
 		dateStr, transaction.CategoryId, autoCategory, transaction.TransactionType,
 		transaction.IsSplit, transaction.IsRecurring, statementID, confidence,
@@ -306,8 +306,6 @@ func (ts *TransactionStore) insertTransaction(transaction types.Transaction, now
 		return fmt.Errorf("failed to insert transaction: %w", err)
 	}
 
-	// Update the transaction ID
-	transaction.Id = id
 	return nil
 }
 
