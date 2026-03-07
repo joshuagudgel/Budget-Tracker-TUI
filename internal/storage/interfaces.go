@@ -1,6 +1,10 @@
 package storage
 
-import "budget-tracker-tui/internal/types"
+import (
+	"time"
+
+	"budget-tracker-tui/internal/types"
+)
 
 // TransactionStoreInterface defines the contract for transaction operations
 type TransactionStoreInterface interface {
@@ -94,6 +98,19 @@ type CSVTemplateStoreInterface interface {
 
 	// Utilities
 	ParseAmount(amountStr string) (float64, error)
+}
+
+// AuditStoreInterface defines the contract for audit event operations
+type AuditStoreInterface interface {
+	// Core Operations
+	RecordEvent(event *types.AuditEvent) error
+	RecordFieldChange(entityType string, entityId int64, eventType string, fieldName string, oldValue interface{}, newValue interface{}, source string, context string) error
+	RecordMultipleFieldChanges(changes []FieldChange) error
+
+	// Query Operations
+	GetEventsByEntity(entityType string, entityId int64) ([]types.AuditEvent, error)
+	GetEventsByTimeRange(startTime, endTime time.Time) ([]types.AuditEvent, error)
+	GetEventsByEventType(eventType string) ([]types.AuditEvent, error)
 }
 
 // SharedUtilsInterface defines the contract for shared utilities

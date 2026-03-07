@@ -103,6 +103,41 @@ type CSVTemplate struct {
 	UpdatedAt      time.Time `db:"updated_at"`
 }
 
+// AuditEvent tracks all interactions with entities for ML and audit purposes
+type AuditEvent struct {
+	Id         int64     `db:"id"`
+	Timestamp  time.Time `db:"timestamp"`
+	EntityType string    `db:"entity_type"`
+	EntityId   int64     `db:"entity_id"`
+	EventType  string    `db:"event_type"`
+	FieldName  string    `db:"field_name"`
+	OldValue   string    `db:"old_value"`
+	NewValue   string    `db:"new_value"`
+	Source     string    `db:"source"`
+	Context    string    `db:"context"`
+	CreatedAt  time.Time `db:"created_at"`
+}
+
+// AuditEvent constants
+const (
+	// Entity Types
+	EntityTypeTransaction   = "Transaction"
+	EntityTypeCategory      = "Category"
+	EntityTypeBankStatement = "BankStatement"
+
+	// Event Types
+	EventTypeCreate = "CREATE"
+	EventTypeUpdate = "UPDATE"
+	EventTypeDelete = "DELETE"
+	EventTypeSplit  = "SPLIT"
+	EventTypeImport = "IMPORT"
+
+	// Source Types
+	SourceUser   = "user"
+	SourceAuto   = "auto"
+	SourceImport = "import"
+)
+
 type ImportResult struct {
 	Success             bool
 	ImportedCount       int
@@ -642,5 +677,62 @@ func ValidateDateWithFormat(dateStr string, format string) error {
 		return fmt.Errorf("invalid format. Expected: %s", format)
 	}
 
+	return nil
+}
+
+// AuditEvent validation methods
+func (ae *AuditEvent) Validate() ValidationResult {
+	result := ValidationResult{IsValid: true}
+
+	if err := ae.validateEntityType(); err != nil {
+		result.AddError("entity_type", err.Error())
+	}
+	if err := ae.validateEventType(); err != nil {
+		result.AddError("event_type", err.Error())
+	}
+	if err := ae.validateSource(); err != nil {
+		result.AddError("source", err.Error())
+	}
+	if err := ae.validateEntityId(); err != nil {
+		result.AddError("entity_id", err.Error())
+	}
+
+	return result
+}
+
+func (ae *AuditEvent) validateEntityType() error {
+	validTypes := []string{EntityTypeTransaction, EntityTypeCategory, EntityTypeBankStatement}
+	for _, validType := range validTypes {
+		if ae.EntityType == validType {
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid entity type: %s", ae.EntityType)
+}
+
+func (ae *AuditEvent) validateEventType() error {
+	validTypes := []string{EventTypeCreate, EventTypeUpdate, EventTypeDelete, EventTypeSplit, EventTypeImport}
+	for _, validType := range validTypes {
+		if ae.EventType == validType {
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid event type: %s", ae.EventType)
+}
+
+func (ae *AuditEvent) validateSource() error {
+	validSources := []string{SourceUser, SourceAuto, SourceImport}
+	for _, validSource := range validSources {
+		if ae.Source == validSource {
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid source: %s", ae.Source)
+}
+
+func (ae *AuditEvent) validateEntityId() error {
+	if ae.EntityId <= 0 {
+		return fmt.Errorf("entity ID must be positive")
+	}
 	return nil
 }

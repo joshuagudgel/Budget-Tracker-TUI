@@ -1,7 +1,29 @@
 -- Finance Tracker SQLite Schema
--- Full refactor from JSON to SQLite with proper relationships and constraints
 
 PRAGMA foreign_keys = ON;
+
+-- Audit Events for tracking all interactions with entities
+CREATE TABLE audit_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    entity_type TEXT NOT NULL,
+    entity_id INTEGER NOT NULL, 
+    event_type TEXT NOT NULL,
+    field_name TEXT,
+    old_value TEXT,
+    new_value TEXT,
+    source TEXT NOT NULL,
+    context TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (entity_type IN ('Transaction', 'Category', 'BankStatement')),
+    CHECK (event_type IN ('CREATE', 'UPDATE', 'DELETE', 'SPLIT', 'IMPORT')),
+    CHECK (source IN ('user', 'auto', 'import')),
+    CHECK (length(entity_type) > 0),
+    CHECK (length(event_type) > 0),
+    CHECK (length(source) > 0)
+);
+
+-- Audit Events for future ML integration 
 
 -- Categories table with hierarchical support
 CREATE TABLE categories (
@@ -105,6 +127,12 @@ CREATE INDEX idx_transactions_parent ON transactions(parent_id);
 CREATE INDEX idx_categories_parent ON categories(parent_id);
 -- Active category filtering
 CREATE INDEX idx_categories_active ON categories(is_active);
+-- Audit event lookups by entity
+CREATE INDEX idx_audit_events_entity ON audit_events(entity_type, entity_id);
+-- Audit event chronological queries
+CREATE INDEX idx_audit_events_timestamp ON audit_events(timestamp);
+-- Audit event filtering by type
+CREATE INDEX idx_audit_events_type ON audit_events(event_type);
 
 -- Triggers for automatic updated_at maintenance
 CREATE TRIGGER update_categories_updated_at
@@ -137,6 +165,14 @@ CREATE TRIGGER update_bank_statements_updated_at
     WHEN NEW.updated_at = OLD.updated_at
 BEGIN
     UPDATE bank_statements SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER update_audit_events_updated_at
+    AFTER UPDATE ON audit_events
+    FOR EACH ROW
+    WHEN NEW.created_at = OLD.created_at
+BEGIN
+    UPDATE audit_events SET created_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
 
 -- Insert default "Uncategorized" category

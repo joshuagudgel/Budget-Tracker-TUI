@@ -16,6 +16,7 @@ type Store struct {
 	Categories   *CategoryStore
 	Statements   *BankStatementStore
 	Templates    *CSVTemplateStore
+	Audits       *AuditStore
 
 	// Private database connection
 	db *database.Connection
@@ -41,10 +42,13 @@ func (s *Store) Init() error {
 	s.Templates = NewCSVTemplateStore(db)
 	s.Statements = NewBankStatementStore(db)
 	s.Transactions = NewTransactionStore(db)
+	s.Audits = NewAuditStore(db)
 
 	// Set cross-references between stores
 	s.Templates.SetTransactionStore(s.Transactions)
 	s.Templates.SetCategoryStore(s.Categories)
+	s.Transactions.SetAuditStore(s.Audits)
+	s.Categories.SetAuditStore(s.Audits)
 
 	// No need to load stores explicitly with SQLite - data is always persisted
 	// Database health check to ensure everything is working

@@ -13,6 +13,7 @@ import (
 type TransactionStore struct {
 	db     *database.Connection
 	helper *database.SQLHelper
+	audits *AuditStore
 }
 
 // NewTransactionStore creates a new TransactionStore instance
@@ -21,6 +22,11 @@ func NewTransactionStore(db *database.Connection) *TransactionStore {
 		db:     db,
 		helper: database.NewSQLHelper(db),
 	}
+}
+
+// SetAuditStore sets the audit store reference (called after all stores are initialized)
+func (ts *TransactionStore) SetAuditStore(as *AuditStore) {
+	ts.audits = as
 }
 
 // CalculateNextId calculates the next available ID using SQLite's auto-increment
@@ -295,7 +301,7 @@ func (ts *TransactionStore) insertTransaction(transaction types.Transaction, now
 	createdAtStr := createdAt.Format(time.RFC3339)
 	updatedAtStr := now.Format(time.RFC3339)
 
-	_, err := ts.helper.ExecReturnID(query,
+	id, err := ts.helper.ExecReturnID(query,
 		parentID, transaction.Amount, transaction.Description, rawDescription,
 		dateStr, transaction.CategoryId, autoCategory, transaction.TransactionType,
 		transaction.IsSplit, transaction.IsRecurring, statementID, confidence,
@@ -306,11 +312,43 @@ func (ts *TransactionStore) insertTransaction(transaction types.Transaction, now
 		return fmt.Errorf("failed to insert transaction: %w", err)
 	}
 
+	// Update the transaction with the generated ID
+	transaction.Id = id
+
+	// Log audit event for transaction creation
+	if ts.audits != nil {
+		source := types.SourceUser
+		if transaction.StatementId != "" {
+			source = types.SourceImport
+		}
+
+		err = ts.audits.RecordFieldChange(
+			types.EntityTypeTransaction,
+			transaction.Id,
+			types.EventTypeCreate,
+			"",  // No specific field for CREATE events
+			nil, // No old value for CREATE
+			"created",
+			source,
+			"", // Empty context for now
+		)
+		if err != nil {
+			// Log error but don't fail the transaction
+			fmt.Printf("Warning: Failed to record audit event for transaction creation: %v\n", err)
+		}
+	}
+
 	return nil
 }
 
 // updateTransaction updates an existing transaction in the database
 func (ts *TransactionStore) updateTransaction(transaction types.Transaction, now time.Time) error {
+	// Get the old transaction for audit logging
+	var oldTransaction *types.Transaction
+	if ts.audits != nil {
+		oldTransaction = ts.GetTransactionByID(transaction.Id)
+	}
+
 	query := `
 		UPDATE transactions SET 
 			parent_id = ?, amount = ?, description = ?, raw_description = ?, 
@@ -362,11 +400,100 @@ func (ts *TransactionStore) updateTransaction(transaction types.Transaction, now
 		return fmt.Errorf("failed to update transaction: %w", err)
 	}
 
+	// Log audit events for field changes
+	if ts.audits != nil && oldTransaction != nil {
+		ts.logTransactionFieldChanges(oldTransaction, &transaction)
+	}
+
 	return nil
+}
+
+// logTransactionFieldChanges compares old and new transaction and logs field-level changes
+func (ts *TransactionStore) logTransactionFieldChanges(oldTx, newTx *types.Transaction) {
+	var changes []FieldChange
+
+	// Check amount changes
+	if oldTx.Amount != newTx.Amount {
+		changes = append(changes, FieldChange{
+			EntityType: types.EntityTypeTransaction,
+			EntityId:   newTx.Id,
+			EventType:  types.EventTypeUpdate,
+			FieldName:  "amount",
+			OldValue:   fmt.Sprintf("%.2f", oldTx.Amount),
+			NewValue:   fmt.Sprintf("%.2f", newTx.Amount),
+			Source:     types.SourceUser,
+		})
+	}
+
+	// Check description changes
+	if oldTx.Description != newTx.Description {
+		changes = append(changes, FieldChange{
+			EntityType: types.EntityTypeTransaction,
+			EntityId:   newTx.Id,
+			EventType:  types.EventTypeUpdate,
+			FieldName:  "description",
+			OldValue:   oldTx.Description,
+			NewValue:   newTx.Description,
+			Source:     types.SourceUser,
+		})
+	}
+
+	// Check date changes
+	if !oldTx.Date.Equal(newTx.Date) {
+		changes = append(changes, FieldChange{
+			EntityType: types.EntityTypeTransaction,
+			EntityId:   newTx.Id,
+			EventType:  types.EventTypeUpdate,
+			FieldName:  "date",
+			OldValue:   oldTx.Date.Format("2006-01-02"),
+			NewValue:   newTx.Date.Format("2006-01-02"),
+			Source:     types.SourceUser,
+		})
+	}
+
+	// Check category changes
+	if oldTx.CategoryId != newTx.CategoryId {
+		changes = append(changes, FieldChange{
+			EntityType: types.EntityTypeTransaction,
+			EntityId:   newTx.Id,
+			EventType:  types.EventTypeUpdate,
+			FieldName:  "category_id",
+			OldValue:   fmt.Sprintf("%d", oldTx.CategoryId),
+			NewValue:   fmt.Sprintf("%d", newTx.CategoryId),
+			Source:     types.SourceUser,
+		})
+	}
+
+	// Check transaction type changes
+	if oldTx.TransactionType != newTx.TransactionType {
+		changes = append(changes, FieldChange{
+			EntityType: types.EntityTypeTransaction,
+			EntityId:   newTx.Id,
+			EventType:  types.EventTypeUpdate,
+			FieldName:  "transaction_type",
+			OldValue:   oldTx.TransactionType,
+			NewValue:   newTx.TransactionType,
+			Source:     types.SourceUser,
+		})
+	}
+
+	// Record all changes if any exist
+	if len(changes) > 0 {
+		err := ts.audits.RecordMultipleFieldChanges(changes)
+		if err != nil {
+			fmt.Printf("Warning: Failed to record audit events for transaction update: %v\n", err)
+		}
+	}
 }
 
 // DeleteTransaction removes a transaction by ID
 func (ts *TransactionStore) DeleteTransaction(id int64) error {
+	// Get transaction details for audit logging before deletion
+	var deletedTransaction *types.Transaction
+	if ts.audits != nil {
+		deletedTransaction = ts.GetTransactionByID(id)
+	}
+
 	query := "DELETE FROM transactions WHERE id = ?"
 
 	rowsAffected, err := ts.helper.ExecReturnRowsAffected(query, id)
@@ -378,12 +505,36 @@ func (ts *TransactionStore) DeleteTransaction(id int64) error {
 		return fmt.Errorf("transaction with ID %d not found", id)
 	}
 
+	// Log audit event for transaction deletion
+	if ts.audits != nil && deletedTransaction != nil {
+		err = ts.audits.RecordFieldChange(
+			types.EntityTypeTransaction,
+			id,
+			types.EventTypeDelete,
+			"", // No specific field for DELETE events
+			"deleted",
+			nil, // No new value for DELETE
+			types.SourceUser,
+			"", // Empty context for now
+		)
+		if err != nil {
+			// Log error but don't fail the transaction
+			fmt.Printf("Warning: Failed to record audit event for transaction deletion: %v\n", err)
+		}
+	}
+
 	return nil
 }
 
 // SplitTransaction splits a parent transaction into two transactions using database transaction
 func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Transaction) error {
-	return ts.db.ExecuteInTransaction(func(tx *sql.Tx) error {
+	// Get original transaction for audit logging
+	var originalTransaction *types.Transaction
+	if ts.audits != nil {
+		originalTransaction = ts.GetTransactionByID(parentId)
+	}
+
+	err := ts.db.ExecuteInTransaction(func(tx *sql.Tx) error {
 		// Validate splits add up to parent amount
 		parent := ts.GetTransactionByID(parentId)
 		if parent == nil {
@@ -427,8 +578,7 @@ func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Tran
 			INSERT INTO transactions (
 				amount, description, date, category_id, transaction_type, 
 				statement_id, is_split, user_modified, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 		var statementID interface{}
 		if parent.StatementId != "" {
@@ -448,6 +598,34 @@ func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Tran
 
 		return nil
 	})
+
+	if err != nil {
+		return err
+	}
+
+	// Log audit events for split transaction after successful database transaction
+	if ts.audits != nil && originalTransaction != nil {
+		// Log SPLIT event for the original transaction (now modified)
+		splitErr := ts.audits.RecordFieldChange(
+			types.EntityTypeTransaction,
+			parentId,
+			types.EventTypeSplit,
+			"amount",
+			fmt.Sprintf("%.2f", originalTransaction.Amount),
+			fmt.Sprintf("%.2f", splits[0].Amount),
+			types.SourceUser,
+			fmt.Sprintf("split_into_2_parts"),
+		)
+		if splitErr != nil {
+			fmt.Printf("Warning: Failed to record audit event for transaction split: %v\n", splitErr)
+		}
+
+		// Note: The second split transaction audit will be logged by the next INSERT
+		// when we get the new transaction ID, but since we're already outside the transaction,
+		// we'd need to query for it. For now, we'll log the split event only.
+	}
+
+	return nil
 }
 
 // ImportTransactionsFromCSV imports a batch of transactions from CSV parsing
@@ -523,7 +701,32 @@ func (ts *TransactionStore) ImportTransactionsFromCSV(transactions []types.Trans
 		"created_at", "updated_at",
 	}
 
-	return ts.helper.BulkInsert("transactions", fields, records)
+	err := ts.helper.BulkInsert("transactions", fields, records)
+	if err != nil {
+		return err
+	}
+
+	// Log audit events for CSV import
+	if ts.audits != nil && len(transactions) > 0 {
+		// For bulk imports, we create a summary audit event since we can't easily get individual IDs from BulkInsert
+		// Individual transaction audits would require querying back the inserted records
+		context := fmt.Sprintf("csv_import_count_%d_statement_%s", len(transactions), statementId)
+		auditErr := ts.audits.RecordFieldChange(
+			types.EntityTypeTransaction,
+			0, // Use 0 for bulk operations since we don't have individual IDs
+			types.EventTypeImport,
+			"bulk_import",
+			"",
+			fmt.Sprintf("%d_transactions_imported", len(transactions)),
+			types.SourceImport,
+			context,
+		)
+		if auditErr != nil {
+			fmt.Printf("Warning: Failed to record audit event for CSV import: %v\n", auditErr)
+		}
+	}
+
+	return nil
 }
 
 // FindDuplicateTransactions finds existing transactions that match date, amount, and description

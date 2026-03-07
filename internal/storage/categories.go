@@ -14,6 +14,7 @@ type CategoryStore struct {
 	db        *database.Connection
 	helper    *database.SQLHelper
 	defaultId int64
+	audits    *AuditStore
 }
 
 // NewCategoryStore creates a new CategoryStore instance
@@ -28,6 +29,11 @@ func NewCategoryStore(db *database.Connection) *CategoryStore {
 	store.ensureDefaultCategories()
 
 	return store
+}
+
+// SetAuditStore sets the audit store reference (called after all stores are initialized)
+func (cs *CategoryStore) SetAuditStore(as *AuditStore) {
+	cs.audits = as
 }
 
 // ensureDefaultCategories creates default categories if they don't exist
@@ -373,11 +379,35 @@ func (cs *CategoryStore) CreateCategoryFull(category *types.Category) error {
 	category.CreatedAt = createdAt
 	category.UpdatedAt = now
 
+	// Log audit event for category creation
+	if cs.audits != nil {
+		err = cs.audits.RecordFieldChange(
+			types.EntityTypeCategory,
+			category.Id,
+			types.EventTypeCreate,
+			"",  // No specific field for CREATE events
+			nil, // No old value for CREATE
+			"created",
+			types.SourceUser,
+			"", // Empty context for now
+		)
+		if err != nil {
+			// Log error but don't fail the transaction
+			fmt.Printf("Warning: Failed to record audit event for category creation: %v\n", err)
+		}
+	}
+
 	return nil
 }
 
 // UpdateCategory updates an existing category
 func (cs *CategoryStore) UpdateCategory(category *types.Category) error {
+	// Get the old category for audit logging
+	var oldCategory *types.Category
+	if cs.audits != nil {
+		oldCategory = cs.GetCategoryById(category.Id)
+	}
+
 	// Validate the category using built-in validation
 	existingCategories, _ := cs.GetCategories()
 	result := category.Validate(existingCategories)
@@ -425,11 +455,96 @@ func (cs *CategoryStore) UpdateCategory(category *types.Category) error {
 
 	// Update the category timestamps
 	category.UpdatedAt = now
+
+	// Log audit events for field changes
+	if cs.audits != nil && oldCategory != nil {
+		cs.logCategoryFieldChanges(oldCategory, category)
+	}
+
 	return nil
+}
+
+// logCategoryFieldChanges compares old and new category and logs field-level changes
+func (cs *CategoryStore) logCategoryFieldChanges(oldCat, newCat *types.Category) {
+	var changes []FieldChange
+
+	// Check display name changes
+	if oldCat.DisplayName != newCat.DisplayName {
+		changes = append(changes, FieldChange{
+			EntityType: types.EntityTypeCategory,
+			EntityId:   newCat.Id,
+			EventType:  types.EventTypeUpdate,
+			FieldName:  "display_name",
+			OldValue:   oldCat.DisplayName,
+			NewValue:   newCat.DisplayName,
+			Source:     types.SourceUser,
+		})
+	}
+
+	// Check color changes
+	if oldCat.Color != newCat.Color {
+		changes = append(changes, FieldChange{
+			EntityType: types.EntityTypeCategory,
+			EntityId:   newCat.Id,
+			EventType:  types.EventTypeUpdate,
+			FieldName:  "color",
+			OldValue:   oldCat.Color,
+			NewValue:   newCat.Color,
+			Source:     types.SourceUser,
+		})
+	}
+
+	// Check is_active changes (soft delete)
+	if oldCat.IsActive != newCat.IsActive {
+		changes = append(changes, FieldChange{
+			EntityType: types.EntityTypeCategory,
+			EntityId:   newCat.Id,
+			EventType:  types.EventTypeUpdate,
+			FieldName:  "is_active",
+			OldValue:   fmt.Sprintf("%t", oldCat.IsActive),
+			NewValue:   fmt.Sprintf("%t", newCat.IsActive),
+			Source:     types.SourceUser,
+		})
+	}
+
+	// Check parent_id changes
+	oldParentId := int64(0)
+	if oldCat.ParentId != nil {
+		oldParentId = *oldCat.ParentId
+	}
+	newParentId := int64(0)
+	if newCat.ParentId != nil {
+		newParentId = *newCat.ParentId
+	}
+	if oldParentId != newParentId {
+		changes = append(changes, FieldChange{
+			EntityType: types.EntityTypeCategory,
+			EntityId:   newCat.Id,
+			EventType:  types.EventTypeUpdate,
+			FieldName:  "parent_id",
+			OldValue:   fmt.Sprintf("%d", oldParentId),
+			NewValue:   fmt.Sprintf("%d", newParentId),
+			Source:     types.SourceUser,
+		})
+	}
+
+	// Record all changes if any exist
+	if len(changes) > 0 {
+		err := cs.audits.RecordMultipleFieldChanges(changes)
+		if err != nil {
+			fmt.Printf("Warning: Failed to record audit events for category update: %v\n", err)
+		}
+	}
 }
 
 // DeleteCategory safely deletes a category (sets as inactive)
 func (cs *CategoryStore) DeleteCategory(categoryId int64) error {
+	// Get category details for audit logging before deletion
+	var deletedCategory *types.Category
+	if cs.audits != nil {
+		deletedCategory = cs.GetCategoryById(categoryId)
+	}
+
 	// First validate that deletion is safe
 	err := cs.ValidateCategoryForDeletion(categoryId)
 	if err != nil {
@@ -456,6 +571,24 @@ func (cs *CategoryStore) DeleteCategory(categoryId int64) error {
 			cs.defaultId = categories[0].Id
 		} else {
 			cs.defaultId = 1 // Fallback to "Uncategorized"
+		}
+	}
+
+	// Log audit event for category deletion (soft delete)
+	if cs.audits != nil && deletedCategory != nil {
+		err = cs.audits.RecordFieldChange(
+			types.EntityTypeCategory,
+			categoryId,
+			types.EventTypeDelete,
+			"is_active",
+			"true",  // was active
+			"false", // now inactive
+			types.SourceUser,
+			"soft_delete",
+		)
+		if err != nil {
+			// Log error but don't fail the transaction
+			fmt.Printf("Warning: Failed to record audit event for category deletion: %v\n", err)
 		}
 	}
 
