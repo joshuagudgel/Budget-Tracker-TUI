@@ -42,7 +42,7 @@ func (as *AuditStore) RecordEvent(event *types.AuditEvent) error {
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	args := []interface{}{
-		event.Timestamp,
+		event.Timestamp.Format(time.RFC3339),
 		event.EntityType,
 		event.EntityId,
 		event.EventType,
@@ -51,7 +51,7 @@ func (as *AuditStore) RecordEvent(event *types.AuditEvent) error {
 		event.NewValue,
 		event.Source,
 		event.Context,
-		time.Now(),
+		time.Now().Format(time.RFC3339),
 	}
 
 	id, err := as.helper.ExecReturnID(query, args...)
@@ -93,7 +93,7 @@ func (as *AuditStore) RecordMultipleFieldChanges(changes []FieldChange) error {
 				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 			args := []interface{}{
-				time.Now(),
+				time.Now().Format(time.RFC3339),
 				change.EntityType,
 				change.EntityId,
 				change.EventType,
@@ -102,7 +102,7 @@ func (as *AuditStore) RecordMultipleFieldChanges(changes []FieldChange) error {
 				change.NewValue,
 				change.Source,
 				change.Context,
-				time.Now(),
+				time.Now().Format(time.RFC3339),
 			}
 
 			_, err := tx.Exec(query, args...)
@@ -301,4 +301,99 @@ type FieldChange struct {
 	NewValue   string
 	Source     string
 	Context    string
+}
+
+// GetRecentEvents retrieves the most recent audit events (for testing/debugging)
+func (as *AuditStore) GetRecentEvents(limit int) ([]types.AuditEvent, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	query := `
+		SELECT id, timestamp, entity_type, entity_id, event_type, 
+			   field_name, old_value, new_value, source, context, created_at
+		FROM audit_events 
+		ORDER BY timestamp DESC 
+		LIMIT ?`
+
+	rows, err := as.helper.QueryRows(query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query recent audit events: %v", err)
+	}
+	defer rows.Close()
+
+	var events []types.AuditEvent
+	for rows.Next() {
+		var event types.AuditEvent
+		var timestampStr, createdAtStr string
+		var fieldName, oldValue, newValue, context sql.NullString
+
+		err := rows.Scan(
+			&event.Id,
+			&timestampStr,
+			&event.EntityType,
+			&event.EntityId,
+			&event.EventType,
+			&fieldName,
+			&oldValue,
+			&newValue,
+			&event.Source,
+			&context,
+			&createdAtStr,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan audit event: %v", err)
+		}
+
+		// Parse timestamps
+		if event.Timestamp, err = as.helper.ParseTimeFromDB(timestampStr); err != nil {
+			return nil, fmt.Errorf("failed to parse timestamp: %v", err)
+		}
+		if event.CreatedAt, err = as.helper.ParseTimeFromDB(createdAtStr); err != nil {
+			return nil, fmt.Errorf("failed to parse created_at: %v", err)
+		}
+
+		// Handle nullable fields
+		event.FieldName = fieldName.String
+		event.OldValue = oldValue.String
+		event.NewValue = newValue.String
+		event.Context = context.String
+
+		events = append(events, event)
+	}
+
+	return events, nil
+}
+
+// GetEventCount returns total number of audit events (for testing)
+func (as *AuditStore) GetEventCount() (int, error) {
+	var count int
+	err := as.db.DB.QueryRow("SELECT COUNT(*) FROM audit_events").Scan(&count)
+	return count, err
+}
+
+// PrintRecentEvents prints recent audit events to console (for debugging)
+func (as *AuditStore) PrintRecentEvents(limit int) error {
+	events, err := as.GetRecentEvents(limit)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("\n=== Recent Audit Events (Last %d) ===\n", len(events))
+	for _, event := range events {
+		fmt.Printf("[%s] %s:%d %s",
+			event.Timestamp.Format("15:04:05"),
+			event.EntityType,
+			event.EntityId,
+			event.EventType)
+
+		if event.FieldName != "" {
+			fmt.Printf(" %s: %s->%s", event.FieldName, event.OldValue, event.NewValue)
+		}
+
+		fmt.Printf(" [%s]\n", event.Source)
+	}
+	fmt.Printf("=== Total Events: %d ===\n\n", len(events))
+
+	return nil
 }

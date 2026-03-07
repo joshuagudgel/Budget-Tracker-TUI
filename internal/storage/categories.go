@@ -391,10 +391,7 @@ func (cs *CategoryStore) CreateCategoryFull(category *types.Category) error {
 			types.SourceUser,
 			"", // Empty context for now
 		)
-		if err != nil {
-			// Log error but don't fail the transaction
-			fmt.Printf("Warning: Failed to record audit event for category creation: %v\n", err)
-		}
+
 	}
 
 	return nil
@@ -530,10 +527,7 @@ func (cs *CategoryStore) logCategoryFieldChanges(oldCat, newCat *types.Category)
 
 	// Record all changes if any exist
 	if len(changes) > 0 {
-		err := cs.audits.RecordMultipleFieldChanges(changes)
-		if err != nil {
-			fmt.Printf("Warning: Failed to record audit events for category update: %v\n", err)
-		}
+		cs.audits.RecordMultipleFieldChanges(changes)
 	}
 }
 
@@ -586,10 +580,6 @@ func (cs *CategoryStore) DeleteCategory(categoryId int64) error {
 			types.SourceUser,
 			"soft_delete",
 		)
-		if err != nil {
-			// Log error but don't fail the transaction
-			fmt.Printf("Warning: Failed to record audit event for category deletion: %v\n", err)
-		}
 	}
 
 	return nil

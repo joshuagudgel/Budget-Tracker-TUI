@@ -332,10 +332,7 @@ func (ts *TransactionStore) insertTransaction(transaction types.Transaction, now
 			source,
 			"", // Empty context for now
 		)
-		if err != nil {
-			// Log error but don't fail the transaction
-			fmt.Printf("Warning: Failed to record audit event for transaction creation: %v\n", err)
-		}
+
 	}
 
 	return nil
@@ -479,10 +476,7 @@ func (ts *TransactionStore) logTransactionFieldChanges(oldTx, newTx *types.Trans
 
 	// Record all changes if any exist
 	if len(changes) > 0 {
-		err := ts.audits.RecordMultipleFieldChanges(changes)
-		if err != nil {
-			fmt.Printf("Warning: Failed to record audit events for transaction update: %v\n", err)
-		}
+		ts.audits.RecordMultipleFieldChanges(changes)
 	}
 }
 
@@ -517,10 +511,7 @@ func (ts *TransactionStore) DeleteTransaction(id int64) error {
 			types.SourceUser,
 			"", // Empty context for now
 		)
-		if err != nil {
-			// Log error but don't fail the transaction
-			fmt.Printf("Warning: Failed to record audit event for transaction deletion: %v\n", err)
-		}
+
 	}
 
 	return nil
@@ -606,7 +597,7 @@ func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Tran
 	// Log audit events for split transaction after successful database transaction
 	if ts.audits != nil && originalTransaction != nil {
 		// Log SPLIT event for the original transaction (now modified)
-		splitErr := ts.audits.RecordFieldChange(
+		ts.audits.RecordFieldChange(
 			types.EntityTypeTransaction,
 			parentId,
 			types.EventTypeSplit,
@@ -614,11 +605,8 @@ func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Tran
 			fmt.Sprintf("%.2f", originalTransaction.Amount),
 			fmt.Sprintf("%.2f", splits[0].Amount),
 			types.SourceUser,
-			fmt.Sprintf("split_into_2_parts"),
+			"split_into_2_parts",
 		)
-		if splitErr != nil {
-			fmt.Printf("Warning: Failed to record audit event for transaction split: %v\n", splitErr)
-		}
 
 		// Note: The second split transaction audit will be logged by the next INSERT
 		// when we get the new transaction ID, but since we're already outside the transaction,
@@ -711,7 +699,7 @@ func (ts *TransactionStore) ImportTransactionsFromCSV(transactions []types.Trans
 		// For bulk imports, we create a summary audit event since we can't easily get individual IDs from BulkInsert
 		// Individual transaction audits would require querying back the inserted records
 		context := fmt.Sprintf("csv_import_count_%d_statement_%s", len(transactions), statementId)
-		auditErr := ts.audits.RecordFieldChange(
+		ts.audits.RecordFieldChange(
 			types.EntityTypeTransaction,
 			0, // Use 0 for bulk operations since we don't have individual IDs
 			types.EventTypeImport,
@@ -721,9 +709,6 @@ func (ts *TransactionStore) ImportTransactionsFromCSV(transactions []types.Trans
 			types.SourceImport,
 			context,
 		)
-		if auditErr != nil {
-			fmt.Printf("Warning: Failed to record audit event for CSV import: %v\n", auditErr)
-		}
 	}
 
 	return nil

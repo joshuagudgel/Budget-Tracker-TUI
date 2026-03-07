@@ -73,3 +73,18 @@ go run .
 # Build Dist
 
 ./build.bat
+
+# Review Audit Events
+
+```bash
+# Navigate to your data directory
+
+# Query recent events
+sqlite3 finance.db "SELECT datetime(timestamp), entity_type, entity_id, event_type, field_name, old_value, new_value, source FROM audit_events ORDER BY timestamp DESC LIMIT 10;"
+
+# Count events by type
+sqlite3 finance.db "SELECT event_type, COUNT(*) FROM audit_events GROUP BY event_type;"
+
+# Get all transaction audit events
+sqlite3 finance.db "SELECT * FROM audit_events WHERE entity_type='Transaction' ORDER BY timestamp DESC;"
+```
