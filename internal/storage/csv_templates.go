@@ -551,31 +551,24 @@ func (cts *CSVTemplateStore) ParseTransactionFromTemplate(fields []string, templ
 
 	// Handle category assignment - use CSV category if available, otherwise default
 	var categoryId int64
-	var confidence float64
-	var autoCategory string
 
 	if template.CategoryColumn != nil {
 		// Extract category from CSV
 		categoryText := strings.Trim(fields[*template.CategoryColumn], "\"")
-		autoCategory = categoryText // Store original bank category text for ML
 
 		if cts.categoryStore != nil {
 			// Use category store to resolve or create category
-			categoryId, confidence = cts.categoryStore.ResolveOrCreateCategory(categoryText)
+			categoryId = cts.categoryStore.ResolveOrCreateCategory(categoryText)
 		} else {
 			// Fallback to default if category store not available
 			categoryId = defaultCategoryId
-			confidence = 0.5 // Medium confidence - we have bank category but using default
 		}
 	} else {
 		// No category column, use default
 		categoryId = defaultCategoryId
-		confidence = 0.0 // Low confidence - pure default assignment
 	}
 
 	transaction.CategoryId = categoryId
-	transaction.AutoCategory = autoCategory
-	transaction.Confidence = confidence
 
 	return &transaction, nil
 }

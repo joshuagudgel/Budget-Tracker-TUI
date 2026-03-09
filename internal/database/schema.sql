@@ -2,28 +2,36 @@
 
 PRAGMA foreign_keys = ON;
 
--- Audit Events for tracking all interactions with entities
-CREATE TABLE audit_events (
+-- Transaction Audit Events for tracking all interactions with transactions
+CREATE TABLE transaction_audit_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    transaction_id INTEGER NOT NULL,
+    bank_statement_id INTEGER NOT NULL,
     timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    entity_type TEXT NOT NULL,
-    entity_id INTEGER NOT NULL, 
-    event_type TEXT NOT NULL,
-    field_name TEXT,
-    old_value TEXT,
-    new_value TEXT,
+    action_type TEXT NOT NULL,
     source TEXT NOT NULL,
-    context TEXT,
+    description_fingerprint TEXT NOT NULL,
+    merchant_extracted TEXT, -- wait to implement  
+    amount_range TEXT, -- wait to implement
+    category_assigned INTEGER NOT NULL,
+    category_confidence DECIMAL(3,2), -- wait to implement
+    alternative_categories TEXT,
+    modification_reason TEXT, -- "description", "transaction type", "category"
+    pre_edit_snapshot TEXT, -- json transaction state
+    post_edit_snapshot TEXT, -- json transaction state
+    edit_latency INTEGER, -- wait to implement
+    processing_time_ms INTEGER, -- wait to implement
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CHECK (entity_type IN ('Transaction', 'Category', 'BankStatement')),
-    CHECK (event_type IN ('CREATE', 'UPDATE', 'DELETE', 'SPLIT', 'IMPORT')),
-    CHECK (source IN ('user', 'auto', 'import')),
-    CHECK (length(entity_type) > 0),
-    CHECK (length(event_type) > 0),
+    FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE,
+    FOREIGN KEY (bank_statement_id) REFERENCES bank_statements(id) ON DELETE CASCADE,
+    FOREIGN KEY (category_assigned) REFERENCES categories(id) ON DELETE RESTRICT,
+    CHECK (action_type IN ('create', 'categorize', 'edit', 'import', 'split')),
+    CHECK (source IN ('user', 'import', 'auto')),
+    CHECK (modification_reason IS NULL OR modification_reason IN ('description', 'transaction type', 'category')),
+    CHECK (category_confidence IS NULL OR (category_confidence >= 0.0 AND category_confidence <= 1.0)),
+    CHECK (length(action_type) > 0),
     CHECK (length(source) > 0)
-);
-
--- Audit Events for future ML integration 
+); 
 
 -- Categories table with hierarchical support
 CREATE TABLE categories (
@@ -93,13 +101,9 @@ CREATE TABLE transactions (
     raw_description TEXT,
     date DATE NOT NULL,
     category_id INTEGER NOT NULL,
-    auto_category TEXT,
     transaction_type TEXT DEFAULT 'expense',
     is_split BOOLEAN NOT NULL DEFAULT 0,
-    is_recurring BOOLEAN NOT NULL DEFAULT 0,
     statement_id INTEGER,
-    confidence DECIMAL(3,2), -- ML prediction confidence 0.00-1.00
-    user_modified BOOLEAN NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (parent_id) REFERENCES transactions(id) ON DELETE CASCADE,
@@ -108,10 +112,7 @@ CREATE TABLE transactions (
     CHECK (amount != 0),
     CHECK (length(description) > 0),
     CHECK (transaction_type IN ('expense', 'income', 'transfer')),
-    CHECK (is_split IN (0, 1)),
-    CHECK (is_recurring IN (0, 1)),
-    CHECK (confidence IS NULL OR (confidence >= 0.0 AND confidence <= 1.0)),
-    CHECK (user_modified IN (0, 1))
+    CHECK (is_split IN (0, 1))
 );
 
 -- Indexes for performance optimization
@@ -127,12 +128,14 @@ CREATE INDEX idx_transactions_parent ON transactions(parent_id);
 CREATE INDEX idx_categories_parent ON categories(parent_id);
 -- Active category filtering
 CREATE INDEX idx_categories_active ON categories(is_active);
--- Audit event lookups by entity
-CREATE INDEX idx_audit_events_entity ON audit_events(entity_type, entity_id);
--- Audit event chronological queries
-CREATE INDEX idx_audit_events_timestamp ON audit_events(timestamp);
--- Audit event filtering by type
-CREATE INDEX idx_audit_events_type ON audit_events(event_type);
+-- Transaction audit event lookups by transaction
+CREATE INDEX idx_transaction_audit_events_transaction ON transaction_audit_events(transaction_id);
+-- Transaction audit event lookups by bank statement
+CREATE INDEX idx_transaction_audit_events_statement ON transaction_audit_events(bank_statement_id);
+-- Transaction audit event chronological queries
+CREATE INDEX idx_transaction_audit_events_timestamp ON transaction_audit_events(timestamp);
+-- Transaction audit event filtering by action type
+CREATE INDEX idx_transaction_audit_events_action ON transaction_audit_events(action_type);
 
 -- Triggers for automatic updated_at maintenance
 CREATE TRIGGER update_categories_updated_at
@@ -165,14 +168,6 @@ CREATE TRIGGER update_bank_statements_updated_at
     WHEN NEW.updated_at = OLD.updated_at
 BEGIN
     UPDATE bank_statements SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
-END;
-
-CREATE TRIGGER update_audit_events_updated_at
-    AFTER UPDATE ON audit_events
-    FOR EACH ROW
-    WHEN NEW.created_at = OLD.created_at
-BEGIN
-    UPDATE audit_events SET created_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
 
 -- Insert default "Uncategorized" category

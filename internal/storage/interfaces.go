@@ -100,17 +100,17 @@ type CSVTemplateStoreInterface interface {
 	ParseAmount(amountStr string) (float64, error)
 }
 
-// AuditStoreInterface defines the contract for audit event operations
-type AuditStoreInterface interface {
+// TransactionAuditStoreInterface defines the contract for transaction audit event operations
+type TransactionAuditStoreInterface interface {
 	// Core Operations
-	RecordEvent(event *types.AuditEvent) error
-	RecordFieldChange(entityType string, entityId int64, eventType string, fieldName string, oldValue interface{}, newValue interface{}, source string, context string) error
-	RecordMultipleFieldChanges(changes []FieldChange) error
+	RecordEvent(event *types.TransactionAuditEvent) error
 
 	// Query Operations
-	GetEventsByEntity(entityType string, entityId int64) ([]types.AuditEvent, error)
-	GetEventsByTimeRange(startTime, endTime time.Time) ([]types.AuditEvent, error)
-	GetEventsByEventType(eventType string) ([]types.AuditEvent, error)
+	GetEventsByTransaction(transactionId int64) ([]types.TransactionAuditEvent, error)
+	GetEventsByStatement(bankStatementId int64) ([]types.TransactionAuditEvent, error)
+	GetEventsByTimeRange(startTime, endTime time.Time) ([]types.TransactionAuditEvent, error)
+	GetEventsByActionType(actionType string) ([]types.TransactionAuditEvent, error)
+	GetRecentEvents(limit int) ([]types.TransactionAuditEvent, error)
 }
 
 // SharedUtilsInterface defines the contract for shared utilities

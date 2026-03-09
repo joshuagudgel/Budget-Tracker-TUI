@@ -12,11 +12,11 @@ import (
 // Store is the main store that integrates all domain stores using SQLite
 type Store struct {
 	// Public domain stores - directly accessible by UI layer
-	Transactions *TransactionStore
-	Categories   *CategoryStore
-	Statements   *BankStatementStore
-	Templates    *CSVTemplateStore
-	Audits       *AuditStore
+	Transactions         *TransactionStore
+	Categories           *CategoryStore
+	Statements           *BankStatementStore
+	Templates            *CSVTemplateStore
+	TransactionAudits    *TransactionAuditStore
 
 	// Private database connection
 	db *database.Connection
@@ -42,13 +42,12 @@ func (s *Store) Init() error {
 	s.Templates = NewCSVTemplateStore(db)
 	s.Statements = NewBankStatementStore(db)
 	s.Transactions = NewTransactionStore(db)
-	s.Audits = NewAuditStore(db)
+	s.TransactionAudits = NewTransactionAuditStore(db)
 
 	// Set cross-references between stores
 	s.Templates.SetTransactionStore(s.Transactions)
 	s.Templates.SetCategoryStore(s.Categories)
-	s.Transactions.SetAuditStore(s.Audits)
-	s.Categories.SetAuditStore(s.Audits)
+	s.Transactions.SetTransactionAuditStore(s.TransactionAudits)
 
 	// No need to load stores explicitly with SQLite - data is always persisted
 	// Database health check to ensure everything is working

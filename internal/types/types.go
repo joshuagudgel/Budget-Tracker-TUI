@@ -17,13 +17,9 @@ type Transaction struct {
 	RawDescription  string    `db:"raw_description"`
 	Date            time.Time `db:"date"`
 	CategoryId      int64     `db:"category_id"`
-	AutoCategory    string    `db:"auto_category"`
 	TransactionType string    `db:"transaction_type"`
 	IsSplit         bool      `db:"is_split"`
-	IsRecurring     bool      `db:"is_recurring"`
 	StatementId     string    `db:"statement_id"`
-	Confidence      float64   `db:"confidence"`
-	UserModified    bool      `db:"user_modified"`
 	CreatedAt       time.Time `db:"created_at"`
 	UpdatedAt       time.Time `db:"updated_at"`
 }
@@ -103,39 +99,46 @@ type CSVTemplate struct {
 	UpdatedAt      time.Time `db:"updated_at"`
 }
 
-// AuditEvent tracks all interactions with entities for ML and audit purposes
-type AuditEvent struct {
-	Id         int64     `db:"id"`
-	Timestamp  time.Time `db:"timestamp"`
-	EntityType string    `db:"entity_type"`
-	EntityId   int64     `db:"entity_id"`
-	EventType  string    `db:"event_type"`
-	FieldName  string    `db:"field_name"`
-	OldValue   string    `db:"old_value"`
-	NewValue   string    `db:"new_value"`
-	Source     string    `db:"source"`
-	Context    string    `db:"context"`
-	CreatedAt  time.Time `db:"created_at"`
+// TransactionAuditEvent tracks all interactions with transactions for ML and audit purposes
+type TransactionAuditEvent struct {
+	Id                     int64     `db:"id"`
+	TransactionId          int64     `db:"transaction_id"`
+	BankStatementId        int64     `db:"bank_statement_id"`
+	Timestamp              time.Time `db:"timestamp"`
+	ActionType             string    `db:"action_type"` // "create", "categorize", "edit", "import", "split"
+	Source                 string    `db:"source"` // "user", "import", "auto"
+	DescriptionFingerprint string    `db:"description_fingerprint"`
+	MerchantExtracted      string    `db:"merchant_extracted"` // wait to implement
+	AmountRange            string    `db:"amount_range"` // wait to implement
+	CategoryAssigned       int64     `db:"category_assigned"`
+	CategoryConfidence     float64   `db:"category_confidence"` // wait to implement
+	AlternativeCategories  string    `db:"alternative_categories"`
+	ModificationReason     *string   `db:"modification_reason"` // "description", "transaction type", "category"
+	PreEditSnapshot        *string   `db:"pre_edit_snapshot"` // json transaction state
+	PostEditSnapshot       *string   `db:"post_edit_snapshot"` // json transaction state
+	EditLatency            int       `db:"edit_latency"` // wait to implement
+	ProcessingTimeMs       int       `db:"processing_time_ms"` // wait to implement
+	CreatedAt              time.Time `db:"created_at"`
 }
 
-// AuditEvent constants
+// TransactionAuditEvent constants
 const (
-	// Entity Types
-	EntityTypeTransaction   = "Transaction"
-	EntityTypeCategory      = "Category"
-	EntityTypeBankStatement = "BankStatement"
-
-	// Event Types
-	EventTypeCreate = "CREATE"
-	EventTypeUpdate = "UPDATE"
-	EventTypeDelete = "DELETE"
-	EventTypeSplit  = "SPLIT"
-	EventTypeImport = "IMPORT"
+	// Action Types
+	ActionTypeCreate     = "create"
+	ActionTypeCategorize = "categorize"
+	ActionTypeEdit       = "edit"
+	ActionTypeImport     = "import"
+	ActionTypeSplit      = "split"
 
 	// Source Types
 	SourceUser   = "user"
 	SourceAuto   = "auto"
 	SourceImport = "import"
+
+	// Modification Reasons
+	ModReasonDescription    = "description"
+	ModReasonTransactionType = "transaction type"
+	ModReasonCategory       = "category"
 )
 
 type ImportResult struct {
@@ -680,59 +683,73 @@ func ValidateDateWithFormat(dateStr string, format string) error {
 	return nil
 }
 
-// AuditEvent validation methods
-func (ae *AuditEvent) Validate() ValidationResult {
+// TransactionAuditEvent validation methods
+func (tae *TransactionAuditEvent) Validate() ValidationResult {
 	result := ValidationResult{IsValid: true}
 
-	if err := ae.validateEntityType(); err != nil {
-		result.AddError("entity_type", err.Error())
+	if err := tae.validateActionType(); err != nil {
+		result.AddError("action_type", err.Error())
 	}
-	if err := ae.validateEventType(); err != nil {
-		result.AddError("event_type", err.Error())
-	}
-	if err := ae.validateSource(); err != nil {
+	if err := tae.validateSource(); err != nil {
 		result.AddError("source", err.Error())
 	}
-	if err := ae.validateEntityId(); err != nil {
-		result.AddError("entity_id", err.Error())
+	if err := tae.validateTransactionId(); err != nil {
+		result.AddError("transaction_id", err.Error())
+	}
+	if err := tae.validateCategoryAssigned(); err != nil {
+		result.AddError("category_assigned", err.Error())
+	}
+	if err := tae.validateModificationReason(); err != nil {
+		result.AddError("modification_reason", err.Error())
 	}
 
 	return result
 }
 
-func (ae *AuditEvent) validateEntityType() error {
-	validTypes := []string{EntityTypeTransaction, EntityTypeCategory, EntityTypeBankStatement}
+func (tae *TransactionAuditEvent) validateActionType() error {
+	validTypes := []string{ActionTypeCreate, ActionTypeCategorize, ActionTypeEdit, ActionTypeImport, ActionTypeSplit}
 	for _, validType := range validTypes {
-		if ae.EntityType == validType {
+		if tae.ActionType == validType {
 			return nil
 		}
 	}
-	return fmt.Errorf("invalid entity type: %s", ae.EntityType)
+	return fmt.Errorf("invalid action type: %s", tae.ActionType)
 }
 
-func (ae *AuditEvent) validateEventType() error {
-	validTypes := []string{EventTypeCreate, EventTypeUpdate, EventTypeDelete, EventTypeSplit, EventTypeImport}
-	for _, validType := range validTypes {
-		if ae.EventType == validType {
-			return nil
-		}
-	}
-	return fmt.Errorf("invalid event type: %s", ae.EventType)
-}
-
-func (ae *AuditEvent) validateSource() error {
+func (tae *TransactionAuditEvent) validateSource() error {
 	validSources := []string{SourceUser, SourceAuto, SourceImport}
 	for _, validSource := range validSources {
-		if ae.Source == validSource {
+		if tae.Source == validSource {
 			return nil
 		}
 	}
-	return fmt.Errorf("invalid source: %s", ae.Source)
+	return fmt.Errorf("invalid source: %s", tae.Source)
 }
 
-func (ae *AuditEvent) validateEntityId() error {
-	if ae.EntityId <= 0 {
-		return fmt.Errorf("entity ID must be positive")
+func (tae *TransactionAuditEvent) validateTransactionId() error {
+	if tae.TransactionId <= 0 {
+		return fmt.Errorf("transaction ID must be positive")
 	}
 	return nil
+}
+
+func (tae *TransactionAuditEvent) validateCategoryAssigned() error {
+	if tae.CategoryAssigned <= 0 {
+		return fmt.Errorf("category assigned must be positive")
+	}
+	return nil
+}
+
+func (tae *TransactionAuditEvent) validateModificationReason() error {
+	if tae.ModificationReason == nil {
+		return nil // Optional field
+	}
+
+	validReasons := []string{ModReasonDescription, ModReasonTransactionType, ModReasonCategory}
+	for _, validReason := range validReasons {
+		if *tae.ModificationReason == validReason {
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid modification reason: %s", *tae.ModificationReason)
 }

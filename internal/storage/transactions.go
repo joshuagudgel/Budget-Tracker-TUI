@@ -11,9 +11,9 @@ import (
 
 // TransactionStore handles all transaction-related operations using SQLite
 type TransactionStore struct {
-	db     *database.Connection
-	helper *database.SQLHelper
-	audits *AuditStore
+	db                *database.Connection
+	helper            *database.SQLHelper
+	transactionAudits *TransactionAuditStore
 }
 
 // NewTransactionStore creates a new TransactionStore instance
@@ -24,9 +24,9 @@ func NewTransactionStore(db *database.Connection) *TransactionStore {
 	}
 }
 
-// SetAuditStore sets the audit store reference (called after all stores are initialized)
-func (ts *TransactionStore) SetAuditStore(as *AuditStore) {
-	ts.audits = as
+// SetTransactionAuditStore sets the transaction audit store reference (called after all stores are initialized)
+func (ts *TransactionStore) SetTransactionAuditStore(tas *TransactionAuditStore) {
+	ts.transactionAudits = tas
 }
 
 // CalculateNextId calculates the next available ID using SQLite's auto-increment
@@ -42,9 +42,8 @@ func (ts *TransactionStore) CalculateNextId() int64 {
 func (ts *TransactionStore) GetTransactions() ([]types.Transaction, error) {
 	query := `
 		SELECT id, parent_id, amount, description, raw_description, date, 
-		       category_id, auto_category, transaction_type, is_split, 
-		       is_recurring, statement_id, confidence, user_modified, 
-		       created_at, updated_at 
+		       category_id, transaction_type, is_split, 
+		       statement_id, created_at, updated_at 
 		FROM transactions 
 		ORDER BY date DESC, id DESC
 	`
@@ -71,9 +70,8 @@ func (ts *TransactionStore) GetTransactions() ([]types.Transaction, error) {
 func (ts *TransactionStore) GetTransactionsByStatement(statementId int64) ([]types.Transaction, error) {
 	query := `
 		SELECT id, parent_id, amount, description, raw_description, date, 
-		       category_id, auto_category, transaction_type, is_split, 
-		       is_recurring, statement_id, confidence, user_modified, 
-		       created_at, updated_at 
+		       category_id, transaction_type, is_split, 
+		       statement_id, created_at, updated_at 
 		FROM transactions 
 		WHERE statement_id = ? 
 		ORDER BY date DESC, id DESC
@@ -103,15 +101,12 @@ func (ts *TransactionStore) scanTransaction(rows *sql.Rows) (types.Transaction, 
 	var parentID sql.NullInt64
 	var statementID sql.NullInt64
 	var rawDescription sql.NullString
-	var autoCategory sql.NullString
-	var confidence sql.NullFloat64
 	var dateStr, createdAtStr, updatedAtStr string
 
 	err := rows.Scan(
 		&tx.Id, &parentID, &tx.Amount, &tx.Description, &rawDescription,
-		&dateStr, &tx.CategoryId, &autoCategory, &tx.TransactionType,
-		&tx.IsSplit, &tx.IsRecurring, &statementID, &confidence,
-		&tx.UserModified, &createdAtStr, &updatedAtStr,
+		&dateStr, &tx.CategoryId, &tx.TransactionType,
+		&tx.IsSplit, &statementID, &createdAtStr, &updatedAtStr,
 	)
 
 	if err != nil {
@@ -139,12 +134,6 @@ func (ts *TransactionStore) scanTransaction(rows *sql.Rows) (types.Transaction, 
 	if rawDescription.Valid {
 		tx.RawDescription = rawDescription.String
 	}
-	if autoCategory.Valid {
-		tx.AutoCategory = autoCategory.String
-	}
-	if confidence.Valid {
-		tx.Confidence = confidence.Float64
-	}
 
 	return tx, nil
 }
@@ -153,9 +142,8 @@ func (ts *TransactionStore) scanTransaction(rows *sql.Rows) (types.Transaction, 
 func (ts *TransactionStore) GetTransactionByID(id int64) *types.Transaction {
 	query := `
 		SELECT id, parent_id, amount, description, raw_description, date, 
-		       category_id, auto_category, transaction_type, is_split, 
-		       is_recurring, statement_id, confidence, user_modified, 
-		       created_at, updated_at 
+		       category_id, transaction_type, is_split, 
+		       statement_id, created_at, updated_at 
 		FROM transactions 
 		WHERE id = ?
 	`
@@ -175,33 +163,16 @@ func (ts *TransactionStore) scanTransactionRow(row *sql.Row) (types.Transaction,
 	var parentID sql.NullInt64
 	var statementID sql.NullInt64
 	var rawDescription sql.NullString
-	var autoCategory sql.NullString
-	var confidence sql.NullFloat64
 	var dateStr, createdAtStr, updatedAtStr string
 
 	err := row.Scan(
 		&tx.Id, &parentID, &tx.Amount, &tx.Description, &rawDescription,
-		&dateStr, &tx.CategoryId, &autoCategory, &tx.TransactionType,
-		&tx.IsSplit, &tx.IsRecurring, &statementID, &confidence,
-		&tx.UserModified, &createdAtStr, &updatedAtStr,
+		&dateStr, &tx.CategoryId, &tx.TransactionType,
+		&tx.IsSplit, &statementID, &createdAtStr, &updatedAtStr,
 	)
 
 	if err != nil {
 		return tx, err
-	}
-
-	// Parse time fields from database
-	tx.Date, err = ts.parseFlexibleDate(dateStr)
-	if err != nil {
-		return tx, fmt.Errorf("failed to parse date: %w", err)
-	}
-	tx.CreatedAt, err = ts.helper.ParseTimeFromDB(createdAtStr)
-	if err != nil {
-		return tx, fmt.Errorf("failed to parse created_at: %w", err)
-	}
-	tx.UpdatedAt, err = ts.helper.ParseTimeFromDB(updatedAtStr)
-	if err != nil {
-		return tx, fmt.Errorf("failed to parse updated_at: %w", err)
 	}
 
 	// Parse time fields from database
@@ -228,12 +199,6 @@ func (ts *TransactionStore) scanTransactionRow(row *sql.Row) (types.Transaction,
 	if rawDescription.Valid {
 		tx.RawDescription = rawDescription.String
 	}
-	if autoCategory.Valid {
-		tx.AutoCategory = autoCategory.String
-	}
-	if confidence.Valid {
-		tx.Confidence = confidence.Float64
-	}
 
 	return tx, nil
 }
@@ -256,10 +221,9 @@ func (ts *TransactionStore) insertTransaction(transaction types.Transaction, now
 	query := `
 		INSERT INTO transactions (
 			parent_id, amount, description, raw_description, date, 
-			category_id, auto_category, transaction_type, is_split, 
-			is_recurring, statement_id, confidence, user_modified, 
-			created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			category_id, transaction_type, is_split, 
+			statement_id, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	// Convert nullable fields
@@ -280,16 +244,6 @@ func (ts *TransactionStore) insertTransaction(transaction types.Transaction, now
 		rawDescription = transaction.RawDescription
 	}
 
-	var autoCategory interface{}
-	if transaction.AutoCategory != "" {
-		autoCategory = transaction.AutoCategory
-	}
-
-	var confidence interface{}
-	if transaction.Confidence > 0 {
-		confidence = transaction.Confidence
-	}
-
 	// Set creation timestamp if not provided
 	createdAt := transaction.CreatedAt
 	if createdAt.IsZero() {
@@ -303,9 +257,8 @@ func (ts *TransactionStore) insertTransaction(transaction types.Transaction, now
 
 	id, err := ts.helper.ExecReturnID(query,
 		parentID, transaction.Amount, transaction.Description, rawDescription,
-		dateStr, transaction.CategoryId, autoCategory, transaction.TransactionType,
-		transaction.IsSplit, transaction.IsRecurring, statementID, confidence,
-		transaction.UserModified, createdAtStr, updatedAtStr,
+		dateStr, transaction.CategoryId, transaction.TransactionType,
+		transaction.IsSplit, statementID, createdAtStr, updatedAtStr,
 	)
 
 	if err != nil {
@@ -316,22 +269,33 @@ func (ts *TransactionStore) insertTransaction(transaction types.Transaction, now
 	transaction.Id = id
 
 	// Log audit event for transaction creation
-	if ts.audits != nil {
+	if ts.transactionAudits != nil {
 		source := types.SourceUser
 		if transaction.StatementId != "" {
 			source = types.SourceImport
 		}
 
-		err = ts.audits.RecordFieldChange(
-			types.EntityTypeTransaction,
-			transaction.Id,
-			types.EventTypeCreate,
-			"",  // No specific field for CREATE events
-			nil, // No old value for CREATE
-			"created",
-			source,
-			"", // Empty context for now
-		)
+		// Get bank statement ID (default to 0 if not available)
+		bankStatementId := int64(0)
+		if transaction.StatementId != "" {
+			if id, err := strconv.ParseInt(transaction.StatementId, 10, 64); err == nil {
+				bankStatementId = id
+			}
+		}
+
+		auditEvent := &types.TransactionAuditEvent{
+			TransactionId:          transaction.Id,
+			BankStatementId:        bankStatementId,
+			Timestamp:              time.Now(),
+			ActionType:             types.ActionTypeCreate,
+			Source:                 source,
+			DescriptionFingerprint: transaction.Description, // Simple fingerprint for now
+			CategoryAssigned:       transaction.CategoryId,
+			AlternativeCategories:  "",
+			// Other fields left as defaults/nil for now
+		}
+
+		err = ts.transactionAudits.RecordEvent(auditEvent)
 
 	}
 
@@ -340,18 +304,17 @@ func (ts *TransactionStore) insertTransaction(transaction types.Transaction, now
 
 // updateTransaction updates an existing transaction in the database
 func (ts *TransactionStore) updateTransaction(transaction types.Transaction, now time.Time) error {
-	// Get the old transaction for audit logging
-	var oldTransaction *types.Transaction
-	if ts.audits != nil {
-		oldTransaction = ts.GetTransactionByID(transaction.Id)
+	// Get old transaction for logging if needed
+	oldTransaction := ts.GetTransactionByID(transaction.Id)
+	if oldTransaction == nil {
+		return fmt.Errorf("transaction not found")
 	}
 
 	query := `
 		UPDATE transactions SET 
 			parent_id = ?, amount = ?, description = ?, raw_description = ?, 
-			date = ?, category_id = ?, auto_category = ?, transaction_type = ?, 
-			is_split = ?, is_recurring = ?, statement_id = ?, confidence = ?, 
-			user_modified = ?, updated_at = ?
+			date = ?, category_id = ?, transaction_type = ?, 
+			is_split = ?, statement_id = ?, updated_at = ?
 		WHERE id = ?
 	`
 
@@ -373,24 +336,10 @@ func (ts *TransactionStore) updateTransaction(transaction types.Transaction, now
 		rawDescription = transaction.RawDescription
 	}
 
-	var autoCategory interface{}
-	if transaction.AutoCategory != "" {
-		autoCategory = transaction.AutoCategory
-	}
-
-	var confidence interface{}
-	if transaction.Confidence > 0 {
-		confidence = transaction.Confidence
-	}
-
-	// Mark as user modified when updating
-	transaction.UserModified = true
-
 	_, err := ts.helper.ExecReturnRowsAffected(query,
 		parentID, transaction.Amount, transaction.Description, rawDescription,
-		transaction.Date, transaction.CategoryId, autoCategory, transaction.TransactionType,
-		transaction.IsSplit, transaction.IsRecurring, statementID, confidence,
-		transaction.UserModified, now, transaction.Id,
+		transaction.Date, transaction.CategoryId, transaction.TransactionType,
+		transaction.IsSplit, statementID, now, transaction.Id,
 	)
 
 	if err != nil {
@@ -398,96 +347,62 @@ func (ts *TransactionStore) updateTransaction(transaction types.Transaction, now
 	}
 
 	// Log audit events for field changes
-	if ts.audits != nil && oldTransaction != nil {
+	if ts.transactionAudits != nil && oldTransaction != nil {
 		ts.logTransactionFieldChanges(oldTransaction, &transaction)
 	}
 
 	return nil
 }
 
-// logTransactionFieldChanges compares old and new transaction and logs field-level changes
+// logTransactionFieldChanges creates a transaction audit event for edits
 func (ts *TransactionStore) logTransactionFieldChanges(oldTx, newTx *types.Transaction) {
-	var changes []FieldChange
-
-	// Check amount changes
-	if oldTx.Amount != newTx.Amount {
-		changes = append(changes, FieldChange{
-			EntityType: types.EntityTypeTransaction,
-			EntityId:   newTx.Id,
-			EventType:  types.EventTypeUpdate,
-			FieldName:  "amount",
-			OldValue:   fmt.Sprintf("%.2f", oldTx.Amount),
-			NewValue:   fmt.Sprintf("%.2f", newTx.Amount),
-			Source:     types.SourceUser,
-		})
-	}
-
-	// Check description changes
+	// Determine what was modified
+	var modificationReason *string
+	
 	if oldTx.Description != newTx.Description {
-		changes = append(changes, FieldChange{
-			EntityType: types.EntityTypeTransaction,
-			EntityId:   newTx.Id,
-			EventType:  types.EventTypeUpdate,
-			FieldName:  "description",
-			OldValue:   oldTx.Description,
-			NewValue:   newTx.Description,
-			Source:     types.SourceUser,
-		})
+		reason := types.ModReasonDescription
+		modificationReason = &reason
+	} else if oldTx.TransactionType != newTx.TransactionType {
+		reason := types.ModReasonTransactionType
+		modificationReason = &reason
+	} else if oldTx.CategoryId != newTx.CategoryId {
+		reason := types.ModReasonCategory
+		modificationReason = &reason
 	}
 
-	// Check date changes
-	if !oldTx.Date.Equal(newTx.Date) {
-		changes = append(changes, FieldChange{
-			EntityType: types.EntityTypeTransaction,
-			EntityId:   newTx.Id,
-			EventType:  types.EventTypeUpdate,
-			FieldName:  "date",
-			OldValue:   oldTx.Date.Format("2006-01-02"),
-			NewValue:   newTx.Date.Format("2006-01-02"),
-			Source:     types.SourceUser,
-		})
+	// Get bank statement ID
+	bankStatementId := int64(0)
+	if newTx.StatementId != "" {
+		if id, err := strconv.ParseInt(newTx.StatementId, 10, 64); err == nil {
+			bankStatementId = id
+		}
 	}
 
-	// Check category changes
-	if oldTx.CategoryId != newTx.CategoryId {
-		changes = append(changes, FieldChange{
-			EntityType: types.EntityTypeTransaction,
-			EntityId:   newTx.Id,
-			EventType:  types.EventTypeUpdate,
-			FieldName:  "category_id",
-			OldValue:   fmt.Sprintf("%d", oldTx.CategoryId),
-			NewValue:   fmt.Sprintf("%d", newTx.CategoryId),
-			Source:     types.SourceUser,
-		})
+	// Create pre and post snapshots (simplified JSON-like format for now)
+	preSnapshot := fmt.Sprintf("{\"amount\":%.2f,\"description\":\"%s\",\"category\":%d,\"type\":\"%s\"}", 
+		oldTx.Amount, oldTx.Description, oldTx.CategoryId, oldTx.TransactionType)
+	postSnapshot := fmt.Sprintf("{\"amount\":%.2f,\"description\":\"%s\",\"category\":%d,\"type\":\"%s\"}", 
+		newTx.Amount, newTx.Description, newTx.CategoryId, newTx.TransactionType)
+
+	auditEvent := &types.TransactionAuditEvent{
+		TransactionId:          newTx.Id,
+		BankStatementId:        bankStatementId,
+		Timestamp:              time.Now(),
+		ActionType:             types.ActionTypeEdit,
+		Source:                 types.SourceUser,
+		DescriptionFingerprint: newTx.Description,
+		CategoryAssigned:       newTx.CategoryId,
+		ModificationReason:     modificationReason,
+		PreEditSnapshot:        &preSnapshot,
+		PostEditSnapshot:       &postSnapshot,
+		AlternativeCategories:  "",
 	}
 
-	// Check transaction type changes
-	if oldTx.TransactionType != newTx.TransactionType {
-		changes = append(changes, FieldChange{
-			EntityType: types.EntityTypeTransaction,
-			EntityId:   newTx.Id,
-			EventType:  types.EventTypeUpdate,
-			FieldName:  "transaction_type",
-			OldValue:   oldTx.TransactionType,
-			NewValue:   newTx.TransactionType,
-			Source:     types.SourceUser,
-		})
-	}
-
-	// Record all changes if any exist
-	if len(changes) > 0 {
-		ts.audits.RecordMultipleFieldChanges(changes)
-	}
+	ts.transactionAudits.RecordEvent(auditEvent)
 }
 
 // DeleteTransaction removes a transaction by ID
 func (ts *TransactionStore) DeleteTransaction(id int64) error {
-	// Get transaction details for audit logging before deletion
-	var deletedTransaction *types.Transaction
-	if ts.audits != nil {
-		deletedTransaction = ts.GetTransactionByID(id)
-	}
-
 	query := "DELETE FROM transactions WHERE id = ?"
 
 	rowsAffected, err := ts.helper.ExecReturnRowsAffected(query, id)
@@ -499,20 +414,9 @@ func (ts *TransactionStore) DeleteTransaction(id int64) error {
 		return fmt.Errorf("transaction with ID %d not found", id)
 	}
 
-	// Log audit event for transaction deletion
-	if ts.audits != nil && deletedTransaction != nil {
-		err = ts.audits.RecordFieldChange(
-			types.EntityTypeTransaction,
-			id,
-			types.EventTypeDelete,
-			"", // No specific field for DELETE events
-			"deleted",
-			nil, // No new value for DELETE
-			types.SourceUser,
-			"", // Empty context for now
-		)
-
-	}
+	// Note: For now we're not recording delete events in TransactionAuditEvent
+	// since deleted transactions won't have valid references
+	// This could be enhanced in the future if needed
 
 	return nil
 }
@@ -521,7 +425,7 @@ func (ts *TransactionStore) DeleteTransaction(id int64) error {
 func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Transaction) error {
 	// Get original transaction for audit logging
 	var originalTransaction *types.Transaction
-	if ts.audits != nil {
+	if ts.transactionAudits != nil {
 		originalTransaction = ts.GetTransactionByID(parentId)
 	}
 
@@ -594,23 +498,29 @@ func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Tran
 		return err
 	}
 
-	// Log audit events for split transaction after successful database transaction
-	if ts.audits != nil && originalTransaction != nil {
-		// Log SPLIT event for the original transaction (now modified)
-		ts.audits.RecordFieldChange(
-			types.EntityTypeTransaction,
-			parentId,
-			types.EventTypeSplit,
-			"amount",
-			fmt.Sprintf("%.2f", originalTransaction.Amount),
-			fmt.Sprintf("%.2f", splits[0].Amount),
-			types.SourceUser,
-			"split_into_2_parts",
-		)
+	// Log audit event for split transaction after successful database transaction
+	if ts.transactionAudits != nil && originalTransaction != nil {
+		// Get bank statement ID
+		bankStatementId := int64(0)
+		if originalTransaction.StatementId != "" {
+			if id, err := strconv.ParseInt(originalTransaction.StatementId, 10, 64); err == nil {
+				bankStatementId = id
+			}
+		}
 
-		// Note: The second split transaction audit will be logged by the next INSERT
-		// when we get the new transaction ID, but since we're already outside the transaction,
-		// we'd need to query for it. For now, we'll log the split event only.
+		// Create split audit event
+		auditEvent := &types.TransactionAuditEvent{
+			TransactionId:          parentId,
+			BankStatementId:        bankStatementId,
+			Timestamp:              time.Now(),
+			ActionType:             types.ActionTypeSplit,
+			Source:                 types.SourceUser,
+			DescriptionFingerprint: originalTransaction.Description,
+			CategoryAssigned:       originalTransaction.CategoryId,
+			AlternativeCategories:  "",
+		}
+
+		ts.transactionAudits.RecordEvent(auditEvent)
 	}
 
 	return nil
@@ -662,21 +572,10 @@ func (ts *TransactionStore) ImportTransactionsFromCSV(transactions []types.Trans
 			rawDescription = tx.RawDescription
 		}
 
-		var autoCategory interface{}
-		if tx.AutoCategory != "" {
-			autoCategory = tx.AutoCategory
-		}
-
-		var confidence interface{}
-		if tx.Confidence > 0 {
-			confidence = tx.Confidence
-		}
-
 		record := []interface{}{
 			parentID, tx.Amount, tx.Description, rawDescription, dateStr,
-			tx.CategoryId, autoCategory, transactionType, tx.IsSplit,
-			tx.IsRecurring, statementID, confidence, tx.UserModified,
-			createdAtStr, updatedAtStr,
+			tx.CategoryId, transactionType, tx.IsSplit,
+			statementID, createdAtStr, updatedAtStr,
 		}
 		records = append(records, record)
 	}
@@ -684,9 +583,8 @@ func (ts *TransactionStore) ImportTransactionsFromCSV(transactions []types.Trans
 	// Bulk insert using transaction
 	fields := []string{
 		"parent_id", "amount", "description", "raw_description", "date",
-		"category_id", "auto_category", "transaction_type", "is_split",
-		"is_recurring", "statement_id", "confidence", "user_modified",
-		"created_at", "updated_at",
+		"category_id", "transaction_type", "is_split",
+		"statement_id", "created_at", "updated_at",
 	}
 
 	err := ts.helper.BulkInsert("transactions", fields, records)
@@ -694,22 +592,7 @@ func (ts *TransactionStore) ImportTransactionsFromCSV(transactions []types.Trans
 		return err
 	}
 
-	// Log audit events for CSV import
-	if ts.audits != nil && len(transactions) > 0 {
-		// For bulk imports, we create a summary audit event since we can't easily get individual IDs from BulkInsert
-		// Individual transaction audits would require querying back the inserted records
-		context := fmt.Sprintf("csv_import_count_%d_statement_%s", len(transactions), statementId)
-		ts.audits.RecordFieldChange(
-			types.EntityTypeTransaction,
-			0, // Use 0 for bulk operations since we don't have individual IDs
-			types.EventTypeImport,
-			"bulk_import",
-			"",
-			fmt.Sprintf("%d_transactions_imported", len(transactions)),
-			types.SourceImport,
-			context,
-		)
-	}
+	// Audit: CSV import events are no longer recorded in the old audit system
 
 	return nil
 }

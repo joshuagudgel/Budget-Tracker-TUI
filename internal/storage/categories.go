@@ -14,7 +14,6 @@ type CategoryStore struct {
 	db        *database.Connection
 	helper    *database.SQLHelper
 	defaultId int64
-	audits    *AuditStore
 }
 
 // NewCategoryStore creates a new CategoryStore instance
@@ -29,11 +28,6 @@ func NewCategoryStore(db *database.Connection) *CategoryStore {
 	store.ensureDefaultCategories()
 
 	return store
-}
-
-// SetAuditStore sets the audit store reference (called after all stores are initialized)
-func (cs *CategoryStore) SetAuditStore(as *AuditStore) {
-	cs.audits = as
 }
 
 // ensureDefaultCategories creates default categories if they don't exist
@@ -248,32 +242,32 @@ func (cs *CategoryStore) GetCategoryByDisplayName(displayName string) *types.Cat
 }
 
 // ResolveOrCreateCategory resolves a category by name or creates it if it doesn't exist
-// Returns the category ID and confidence score for ML tracking
-func (cs *CategoryStore) ResolveOrCreateCategory(categoryText string) (int64, float64) {
+// Returns the category ID
+func (cs *CategoryStore) ResolveOrCreateCategory(categoryText string) int64 {
 	if categoryText == "" {
-		return cs.defaultId, 0.0 // Default category, low confidence
+		return cs.defaultId
 	}
 
 	// Clean up category text
 	cleanText := strings.TrimSpace(categoryText)
 	if cleanText == "" {
-		return cs.defaultId, 0.0
+		return cs.defaultId
 	}
 
 	// Try exact match first
 	existingCategory := cs.GetCategoryByDisplayName(cleanText)
 	if existingCategory != nil {
-		return existingCategory.Id, 1.0 // Exact match, high confidence
+		return existingCategory.Id
 	}
 
 	// Create new category for unmatched text
 	result := cs.CreateCategory(cleanText)
 	if result.Success {
-		return result.CategoryId, 1.0 // New category created, high confidence
+		return result.CategoryId
 	}
 
 	// Fallback to default category if creation failed
-	return cs.defaultId, 0.0
+	return cs.defaultId
 }
 
 // CreateCategory creates a new category with display name only (legacy method)
@@ -379,30 +373,16 @@ func (cs *CategoryStore) CreateCategoryFull(category *types.Category) error {
 	category.CreatedAt = createdAt
 	category.UpdatedAt = now
 
-	// Log audit event for category creation
-	if cs.audits != nil {
-		err = cs.audits.RecordFieldChange(
-			types.EntityTypeCategory,
-			category.Id,
-			types.EventTypeCreate,
-			"",  // No specific field for CREATE events
-			nil, // No old value for CREATE
-			"created",
-			types.SourceUser,
-			"", // Empty context for now
-		)
-
-	}
+	// Audit: Category creation events are no longer recorded
 
 	return nil
 }
 
 // UpdateCategory updates an existing category
 func (cs *CategoryStore) UpdateCategory(category *types.Category) error {
-	// Get the old category for audit logging
-	var oldCategory *types.Category
-	if cs.audits != nil {
-		oldCategory = cs.GetCategoryById(category.Id)
+	// Validation check before update
+	if category.Id <= 0 {
+		return fmt.Errorf("invalid category ID")
 	}
 
 	// Validate the category using built-in validation
@@ -453,92 +433,13 @@ func (cs *CategoryStore) UpdateCategory(category *types.Category) error {
 	// Update the category timestamps
 	category.UpdatedAt = now
 
-	// Log audit events for field changes
-	if cs.audits != nil && oldCategory != nil {
-		cs.logCategoryFieldChanges(oldCategory, category)
-	}
+	// Audit: Category updates are no longer recorded
 
 	return nil
 }
 
-// logCategoryFieldChanges compares old and new category and logs field-level changes
-func (cs *CategoryStore) logCategoryFieldChanges(oldCat, newCat *types.Category) {
-	var changes []FieldChange
-
-	// Check display name changes
-	if oldCat.DisplayName != newCat.DisplayName {
-		changes = append(changes, FieldChange{
-			EntityType: types.EntityTypeCategory,
-			EntityId:   newCat.Id,
-			EventType:  types.EventTypeUpdate,
-			FieldName:  "display_name",
-			OldValue:   oldCat.DisplayName,
-			NewValue:   newCat.DisplayName,
-			Source:     types.SourceUser,
-		})
-	}
-
-	// Check color changes
-	if oldCat.Color != newCat.Color {
-		changes = append(changes, FieldChange{
-			EntityType: types.EntityTypeCategory,
-			EntityId:   newCat.Id,
-			EventType:  types.EventTypeUpdate,
-			FieldName:  "color",
-			OldValue:   oldCat.Color,
-			NewValue:   newCat.Color,
-			Source:     types.SourceUser,
-		})
-	}
-
-	// Check is_active changes (soft delete)
-	if oldCat.IsActive != newCat.IsActive {
-		changes = append(changes, FieldChange{
-			EntityType: types.EntityTypeCategory,
-			EntityId:   newCat.Id,
-			EventType:  types.EventTypeUpdate,
-			FieldName:  "is_active",
-			OldValue:   fmt.Sprintf("%t", oldCat.IsActive),
-			NewValue:   fmt.Sprintf("%t", newCat.IsActive),
-			Source:     types.SourceUser,
-		})
-	}
-
-	// Check parent_id changes
-	oldParentId := int64(0)
-	if oldCat.ParentId != nil {
-		oldParentId = *oldCat.ParentId
-	}
-	newParentId := int64(0)
-	if newCat.ParentId != nil {
-		newParentId = *newCat.ParentId
-	}
-	if oldParentId != newParentId {
-		changes = append(changes, FieldChange{
-			EntityType: types.EntityTypeCategory,
-			EntityId:   newCat.Id,
-			EventType:  types.EventTypeUpdate,
-			FieldName:  "parent_id",
-			OldValue:   fmt.Sprintf("%d", oldParentId),
-			NewValue:   fmt.Sprintf("%d", newParentId),
-			Source:     types.SourceUser,
-		})
-	}
-
-	// Record all changes if any exist
-	if len(changes) > 0 {
-		cs.audits.RecordMultipleFieldChanges(changes)
-	}
-}
-
 // DeleteCategory safely deletes a category (sets as inactive)
 func (cs *CategoryStore) DeleteCategory(categoryId int64) error {
-	// Get category details for audit logging before deletion
-	var deletedCategory *types.Category
-	if cs.audits != nil {
-		deletedCategory = cs.GetCategoryById(categoryId)
-	}
-
 	// First validate that deletion is safe
 	err := cs.ValidateCategoryForDeletion(categoryId)
 	if err != nil {
@@ -568,19 +469,7 @@ func (cs *CategoryStore) DeleteCategory(categoryId int64) error {
 		}
 	}
 
-	// Log audit event for category deletion (soft delete)
-	if cs.audits != nil && deletedCategory != nil {
-		err = cs.audits.RecordFieldChange(
-			types.EntityTypeCategory,
-			categoryId,
-			types.EventTypeDelete,
-			"is_active",
-			"true",  // was active
-			"false", // now inactive
-			types.SourceUser,
-			"soft_delete",
-		)
-	}
+	// Audit: Category deletion (soft delete) events are no longer recorded
 
 	return nil
 }
