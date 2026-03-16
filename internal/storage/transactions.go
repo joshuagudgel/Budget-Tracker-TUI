@@ -398,6 +398,8 @@ func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Tran
 		originalTransaction = ts.GetTransactionByID(parentId)
 	}
 
+	var secondSplitId int64 // Capture ID of newly created second split
+
 	err := ts.db.ExecuteInTransaction(func(tx *sql.Tx) error {
 		// Validate splits add up to parent amount
 		parent := ts.GetTransactionByID(parentId)
@@ -451,13 +453,19 @@ func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Tran
 			}
 		}
 
-		_, err = tx.Exec(insertQuery,
+		result, err := tx.Exec(insertQuery,
 			splits[1].Amount, splits[1].Description, parent.Date,
 			splits[1].CategoryId, parent.TransactionType, statementID,
 			false, now, now,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to insert second split: %w", err)
+		}
+
+		// Capture the ID of the newly created second split transaction
+		secondSplitId, err = result.LastInsertId()
+		if err != nil {
+			return fmt.Errorf("failed to get second split ID: %w", err)
 		}
 
 		return nil
@@ -477,19 +485,35 @@ func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Tran
 			}
 		}
 
-		// Create split audit event
-		auditEvent := &types.TransactionAuditEvent{
+		// Create split audit event for parent (first split)
+		parentAuditEvent := &types.TransactionAuditEvent{
 			TransactionId:          parentId,
 			BankStatementId:        bankStatementId,
 			Timestamp:              time.Now(),
 			ActionType:             types.ActionTypeSplit,
 			Source:                 types.SourceUser,
-			DescriptionFingerprint: originalTransaction.Description,
-			CategoryAssigned:       originalTransaction.CategoryId,
-			PreviousCategory:       originalTransaction.CategoryId, // Previous same as current for split
+			DescriptionFingerprint: splits[0].Description,
+			CategoryAssigned:       splits[0].CategoryId,
+			PreviousCategory:       originalTransaction.CategoryId,
 		}
 
-		ts.transactionAudits.RecordEvent(auditEvent)
+		ts.transactionAudits.RecordEvent(parentAuditEvent)
+
+		// Create split audit event for second split (newly created transaction)
+		if secondSplitId > 0 {
+			secondSplitAuditEvent := &types.TransactionAuditEvent{
+				TransactionId:          secondSplitId,
+				BankStatementId:        bankStatementId,
+				Timestamp:              time.Now(),
+				ActionType:             types.ActionTypeSplit,
+				Source:                 types.SourceUser,
+				DescriptionFingerprint: splits[1].Description,
+				CategoryAssigned:       splits[1].CategoryId,
+				PreviousCategory:       originalTransaction.CategoryId,
+			}
+
+			ts.transactionAudits.RecordEvent(secondSplitAuditEvent)
+		}
 	}
 
 	return nil
