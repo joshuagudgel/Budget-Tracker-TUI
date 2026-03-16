@@ -104,7 +104,7 @@ type TransactionAuditEvent struct {
 	TransactionId          int64     `db:"transaction_id"`
 	BankStatementId        int64     `db:"bank_statement_id"`
 	Timestamp              time.Time `db:"timestamp"`
-	ActionType             string    `db:"action_type"` // "create", "categorize", "edit", "import", "split"
+	ActionType             string    `db:"action_type"` // "edit", "import", "split"
 	Source                 string    `db:"source"`      // "user", "import", "auto"
 	DescriptionFingerprint string    `db:"description_fingerprint"`
 	CategoryAssigned       int64     `db:"category_assigned"`
@@ -119,11 +119,9 @@ type TransactionAuditEvent struct {
 // TransactionAuditEvent constants
 const (
 	// Action Types
-	ActionTypeCreate     = "create"
-	ActionTypeCategorize = "categorize"
-	ActionTypeEdit       = "edit"
-	ActionTypeImport     = "import"
-	ActionTypeSplit      = "split"
+	ActionTypeEdit   = "edit"
+	ActionTypeImport = "import"
+	ActionTypeSplit  = "split"
 
 	// Source Types
 	SourceUser   = "user"
@@ -696,7 +694,7 @@ func (tae *TransactionAuditEvent) Validate() ValidationResult {
 }
 
 func (tae *TransactionAuditEvent) validateActionType() error {
-	validTypes := []string{ActionTypeCreate, ActionTypeCategorize, ActionTypeEdit, ActionTypeImport, ActionTypeSplit}
+	validTypes := []string{ActionTypeEdit, ActionTypeImport, ActionTypeSplit}
 	for _, validType := range validTypes {
 		if tae.ActionType == validType {
 			return nil

@@ -22,7 +22,7 @@ CREATE TABLE transaction_audit_events (
     FOREIGN KEY (bank_statement_id) REFERENCES bank_statements(id) ON DELETE CASCADE,
     FOREIGN KEY (category_assigned) REFERENCES categories(id) ON DELETE RESTRICT,
     FOREIGN KEY (previous_category) REFERENCES categories(id) ON DELETE RESTRICT,
-    CHECK (action_type IN ('create', 'categorize', 'edit', 'import', 'split')),
+    CHECK (action_type IN ('edit', 'import', 'split')),
     CHECK (source IN ('user', 'import', 'auto')),
     CHECK (modification_reason IS NULL OR modification_reason IN ('description', 'transaction type', 'category')),
     CHECK (category_confidence IS NULL OR (category_confidence >= 0.0 AND category_confidence <= 1.0)),

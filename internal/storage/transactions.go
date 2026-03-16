@@ -268,36 +268,7 @@ func (ts *TransactionStore) insertTransaction(transaction types.Transaction, now
 	// Update the transaction with the generated ID
 	transaction.Id = id
 
-	// Log audit event for transaction creation
-	if ts.transactionAudits != nil {
-		source := types.SourceUser
-		if transaction.StatementId != "" {
-			source = types.SourceImport
-		}
-
-		// Get bank statement ID (default to 0 if not available)
-		bankStatementId := int64(0)
-		if transaction.StatementId != "" {
-			if id, err := strconv.ParseInt(transaction.StatementId, 10, 64); err == nil {
-				bankStatementId = id
-			}
-		}
-
-		auditEvent := &types.TransactionAuditEvent{
-			TransactionId:          transaction.Id,
-			BankStatementId:        bankStatementId,
-			Timestamp:              time.Now(),
-			ActionType:             types.ActionTypeCreate,
-			Source:                 source,
-			DescriptionFingerprint: transaction.Description, // Simple fingerprint for now
-			CategoryAssigned:       transaction.CategoryId,
-			PreviousCategory:       0, // No previous category for new transactions
-			// Other fields left as defaults/nil for now
-		}
-
-		err = ts.transactionAudits.RecordEvent(auditEvent)
-
-	}
+	// No audit event creation for new transactions
 
 	return nil
 }
