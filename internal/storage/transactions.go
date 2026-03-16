@@ -347,9 +347,7 @@ func (ts *TransactionStore) updateTransaction(transaction types.Transaction, now
 	}
 
 	// Log audit events for field changes
-	if ts.transactionAudits != nil && oldTransaction != nil {
-		ts.logTransactionFieldChanges(oldTransaction, &transaction)
-	}
+	ts.logTransactionFieldChanges(oldTransaction, &transaction)
 
 	return nil
 }
