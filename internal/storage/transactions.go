@@ -291,7 +291,7 @@ func (ts *TransactionStore) insertTransaction(transaction types.Transaction, now
 			Source:                 source,
 			DescriptionFingerprint: transaction.Description, // Simple fingerprint for now
 			CategoryAssigned:       transaction.CategoryId,
-			AlternativeCategories:  "",
+			PreviousCategory:       0, // No previous category for new transactions
 			// Other fields left as defaults/nil for now
 		}
 
@@ -358,7 +358,7 @@ func (ts *TransactionStore) updateTransaction(transaction types.Transaction, now
 func (ts *TransactionStore) logTransactionFieldChanges(oldTx, newTx *types.Transaction) {
 	// Determine what was modified
 	var modificationReason *string
-	
+
 	if oldTx.Description != newTx.Description {
 		reason := types.ModReasonDescription
 		modificationReason = &reason
@@ -379,9 +379,9 @@ func (ts *TransactionStore) logTransactionFieldChanges(oldTx, newTx *types.Trans
 	}
 
 	// Create pre and post snapshots (simplified JSON-like format for now)
-	preSnapshot := fmt.Sprintf("{\"amount\":%.2f,\"description\":\"%s\",\"category\":%d,\"type\":\"%s\"}", 
+	preSnapshot := fmt.Sprintf("{\"amount\":%.2f,\"description\":\"%s\",\"category\":%d,\"type\":\"%s\"}",
 		oldTx.Amount, oldTx.Description, oldTx.CategoryId, oldTx.TransactionType)
-	postSnapshot := fmt.Sprintf("{\"amount\":%.2f,\"description\":\"%s\",\"category\":%d,\"type\":\"%s\"}", 
+	postSnapshot := fmt.Sprintf("{\"amount\":%.2f,\"description\":\"%s\",\"category\":%d,\"type\":\"%s\"}",
 		newTx.Amount, newTx.Description, newTx.CategoryId, newTx.TransactionType)
 
 	auditEvent := &types.TransactionAuditEvent{
@@ -392,10 +392,10 @@ func (ts *TransactionStore) logTransactionFieldChanges(oldTx, newTx *types.Trans
 		Source:                 types.SourceUser,
 		DescriptionFingerprint: newTx.Description,
 		CategoryAssigned:       newTx.CategoryId,
+		PreviousCategory:       oldTx.CategoryId,
 		ModificationReason:     modificationReason,
 		PreEditSnapshot:        &preSnapshot,
 		PostEditSnapshot:       &postSnapshot,
-		AlternativeCategories:  "",
 	}
 
 	ts.transactionAudits.RecordEvent(auditEvent)
@@ -457,12 +457,12 @@ func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Tran
 		updateQuery := `
 			UPDATE transactions SET 
 				amount = ?, description = ?, category_id = ?, is_split = ?, 
-				user_modified = ?, updated_at = ?
+				updated_at = ?
 			WHERE id = ?
 		`
 		_, err := tx.Exec(updateQuery,
 			splits[0].Amount, splits[0].Description, splits[0].CategoryId,
-			true, true, now, parentId,
+			true, now, parentId,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to update parent transaction: %w", err)
@@ -472,8 +472,8 @@ func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Tran
 		insertQuery := `
 			INSERT INTO transactions (
 				amount, description, date, category_id, transaction_type, 
-				statement_id, is_split, user_modified, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+				statement_id, is_split, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 		var statementID interface{}
 		if parent.StatementId != "" {
@@ -485,7 +485,7 @@ func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Tran
 		_, err = tx.Exec(insertQuery,
 			splits[1].Amount, splits[1].Description, parent.Date,
 			splits[1].CategoryId, parent.TransactionType, statementID,
-			false, true, now, now,
+			false, now, now,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to insert second split: %w", err)
@@ -517,7 +517,7 @@ func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Tran
 			Source:                 types.SourceUser,
 			DescriptionFingerprint: originalTransaction.Description,
 			CategoryAssigned:       originalTransaction.CategoryId,
-			AlternativeCategories:  "",
+			PreviousCategory:       originalTransaction.CategoryId, // Previous same as current for split
 		}
 
 		ts.transactionAudits.RecordEvent(auditEvent)
@@ -601,9 +601,8 @@ func (ts *TransactionStore) ImportTransactionsFromCSV(transactions []types.Trans
 func (ts *TransactionStore) FindDuplicateTransactions(date string, amount float64, description string) ([]types.Transaction, error) {
 	query := `
 		SELECT id, parent_id, amount, description, raw_description, date, 
-		       category_id, auto_category, transaction_type, is_split, 
-		       is_recurring, statement_id, confidence, user_modified, 
-		       created_at, updated_at 
+		       category_id, transaction_type, is_split, 
+		       statement_id, created_at, updated_at 
 		FROM transactions 
 		WHERE date = ? AND ABS(amount - ?) < 0.01 AND description = ?
 		ORDER BY id

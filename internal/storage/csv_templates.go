@@ -66,7 +66,7 @@ func (cts *CSVTemplateStore) ensureDefaultTemplates() {
 // GetCSVTemplates returns all CSV templates from the database
 func (cts *CSVTemplateStore) GetCSVTemplates() ([]types.CSVTemplate, error) {
 	query := `
-		SELECT id, name, post_date_column, amount_column, desc_column, category_column, merchant_column,
+		SELECT id, name, post_date_column, amount_column, desc_column, category_column,
 		       has_header, date_format, delimiter, created_at, updated_at
 		FROM csv_templates
 		ORDER BY name
@@ -93,13 +93,13 @@ func (cts *CSVTemplateStore) GetCSVTemplates() ([]types.CSVTemplate, error) {
 // scanCSVTemplate scans a database row into a CSVTemplate struct
 func (cts *CSVTemplateStore) scanCSVTemplate(rows *sql.Rows) (types.CSVTemplate, error) {
 	var template types.CSVTemplate
-	var categoryColumn, merchantColumn sql.NullInt64
+	var categoryColumn sql.NullInt64
 	var dateFormat, delimiter sql.NullString
 	var createdAtStr, updatedAtStr string
 
 	err := rows.Scan(
 		&template.Id, &template.Name, &template.PostDateColumn, &template.AmountColumn,
-		&template.DescColumn, &categoryColumn, &merchantColumn, &template.HasHeader,
+		&template.DescColumn, &categoryColumn, &template.HasHeader,
 		&dateFormat, &delimiter, &createdAtStr, &updatedAtStr,
 	)
 
@@ -121,10 +121,6 @@ func (cts *CSVTemplateStore) scanCSVTemplate(rows *sql.Rows) (types.CSVTemplate,
 	if categoryColumn.Valid {
 		categoryInt := int(categoryColumn.Int64)
 		template.CategoryColumn = &categoryInt
-	}
-	if merchantColumn.Valid {
-		merchantInt := int(merchantColumn.Int64)
-		template.MerchantColumn = &merchantInt
 	}
 	if dateFormat.Valid {
 		template.DateFormat = dateFormat.String
@@ -160,7 +156,7 @@ func (cts *CSVTemplateStore) SetDefaultTemplate(templateName string) *TemplateRe
 // GetTemplateByName returns a CSV template by name
 func (cts *CSVTemplateStore) GetTemplateByName(name string) *types.CSVTemplate {
 	query := `
-		SELECT id, name, post_date_column, amount_column, desc_column, category_column, merchant_column,
+		SELECT id, name, post_date_column, amount_column, desc_column, category_column,
 		       has_header, date_format, delimiter, created_at, updated_at
 		FROM csv_templates
 		WHERE name = ?
@@ -179,13 +175,12 @@ func (cts *CSVTemplateStore) GetTemplateByName(name string) *types.CSVTemplate {
 func (cts *CSVTemplateStore) scanCSVTemplateRow(row *sql.Row) (types.CSVTemplate, error) {
 	var template types.CSVTemplate
 	var categoryColumn sql.NullInt64
-	var merchantColumn sql.NullInt64
 	var dateFormat, delimiter sql.NullString
 	var createdAtStr, updatedAtStr string
 
 	err := row.Scan(
 		&template.Id, &template.Name, &template.PostDateColumn, &template.AmountColumn,
-		&template.DescColumn, &categoryColumn, &merchantColumn, &template.HasHeader, &dateFormat,
+		&template.DescColumn, &categoryColumn, &template.HasHeader, &dateFormat,
 		&delimiter, &createdAtStr, &updatedAtStr,
 	)
 
@@ -208,10 +203,6 @@ func (cts *CSVTemplateStore) scanCSVTemplateRow(row *sql.Row) (types.CSVTemplate
 		categoryInt := int(categoryColumn.Int64)
 		template.CategoryColumn = &categoryInt
 	}
-	if merchantColumn.Valid {
-		merchantInt := int(merchantColumn.Int64)
-		template.MerchantColumn = &merchantInt
-	}
 	if dateFormat.Valid {
 		template.DateFormat = dateFormat.String
 	}
@@ -225,7 +216,7 @@ func (cts *CSVTemplateStore) scanCSVTemplateRow(row *sql.Row) (types.CSVTemplate
 // GetTemplateById returns a CSV template by its ID
 func (cts *CSVTemplateStore) GetTemplateById(id int64) *types.CSVTemplate {
 	query := `
-		SELECT id, name, post_date_column, amount_column, desc_column, category_column, merchant_column,
+		SELECT id, name, post_date_column, amount_column, desc_column, category_column,
 		       has_header, date_format, delimiter, created_at, updated_at
 		FROM csv_templates
 		WHERE id = ?
@@ -308,20 +299,15 @@ func (cts *CSVTemplateStore) SaveCSVTemplate(template types.CSVTemplate) error {
 func (cts *CSVTemplateStore) insertTemplate(template types.CSVTemplate, now time.Time) error {
 	query := `
 		INSERT INTO csv_templates (
-			name, post_date_column, amount_column, desc_column, category_column, merchant_column,
+			name, post_date_column, amount_column, desc_column, category_column,
 			has_header, date_format, delimiter, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	// Handle nullable fields
 	var categoryColumn interface{}
 	if template.CategoryColumn != nil {
 		categoryColumn = *template.CategoryColumn
-	}
-
-	var merchantColumn interface{}
-	if template.MerchantColumn != nil {
-		merchantColumn = *template.MerchantColumn
 	}
 
 	var dateFormat interface{}
@@ -347,7 +333,7 @@ func (cts *CSVTemplateStore) insertTemplate(template types.CSVTemplate, now time
 
 	_, err := cts.helper.ExecReturnID(query,
 		template.Name, template.PostDateColumn, template.AmountColumn,
-		template.DescColumn, categoryColumn, merchantColumn, template.HasHeader,
+		template.DescColumn, categoryColumn, template.HasHeader,
 		dateFormat, delimiter, createdAtStr, updatedAtStr,
 	)
 
@@ -364,7 +350,7 @@ func (cts *CSVTemplateStore) updateTemplate(template types.CSVTemplate, now time
 	query := `
 		UPDATE csv_templates SET 
 			name = ?, post_date_column = ?, amount_column = ?, desc_column = ?, category_column = ?, 
-			merchant_column = ?, has_header = ?, date_format = ?, delimiter = ?, 
+			has_header = ?, date_format = ?, delimiter = ?, 
 			updated_at = ?
 		WHERE id = ?
 	`
@@ -373,11 +359,6 @@ func (cts *CSVTemplateStore) updateTemplate(template types.CSVTemplate, now time
 	var categoryColumn interface{}
 	if template.CategoryColumn != nil {
 		categoryColumn = *template.CategoryColumn
-	}
-
-	var merchantColumn interface{}
-	if template.MerchantColumn != nil {
-		merchantColumn = *template.MerchantColumn
 	}
 
 	var dateFormat interface{}
@@ -393,7 +374,7 @@ func (cts *CSVTemplateStore) updateTemplate(template types.CSVTemplate, now time
 
 	_, err := cts.helper.ExecReturnRowsAffected(query,
 		template.Name, template.PostDateColumn, template.AmountColumn,
-		template.DescColumn, categoryColumn, merchantColumn, template.HasHeader,
+		template.DescColumn, categoryColumn, template.HasHeader,
 		dateFormat, delimiter, now, template.Id,
 	)
 
@@ -503,9 +484,6 @@ func (cts *CSVTemplateStore) ParseTransactionFromTemplate(fields []string, templ
 	if template.DescColumn > maxColumn {
 		maxColumn = template.DescColumn
 	}
-	if template.MerchantColumn != nil && *template.MerchantColumn > maxColumn {
-		maxColumn = *template.MerchantColumn
-	}
 	if template.CategoryColumn != nil && *template.CategoryColumn > maxColumn {
 		maxColumn = *template.CategoryColumn
 	}
@@ -532,15 +510,6 @@ func (cts *CSVTemplateStore) ParseTransactionFromTemplate(fields []string, templ
 	desc := strings.Trim(fields[template.DescColumn], "\"")
 	transaction.Description = desc
 	transaction.RawDescription = desc // Store original description
-
-	// Extract merchant if available
-	if template.MerchantColumn != nil {
-		merchant := strings.Trim(fields[*template.MerchantColumn], "\"")
-		if merchant != "" && merchant != desc {
-			// Combine merchant and description
-			transaction.Description = fmt.Sprintf("%s - %s", merchant, desc)
-		}
-	}
 
 	// Extract amount from specified column
 	amountStr := strings.Trim(fields[template.AmountColumn], "\"")
@@ -726,9 +695,6 @@ func (cts *CSVTemplateStore) ValidateCSVData(filePath string, template *types.CS
 		}
 		if template.DescColumn > maxColumn {
 			maxColumn = template.DescColumn
-		}
-		if template.MerchantColumn != nil && *template.MerchantColumn > maxColumn {
-			maxColumn = *template.MerchantColumn
 		}
 		if template.CategoryColumn != nil && *template.CategoryColumn > maxColumn {
 			maxColumn = *template.CategoryColumn

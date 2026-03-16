@@ -11,20 +11,17 @@ CREATE TABLE transaction_audit_events (
     action_type TEXT NOT NULL,
     source TEXT NOT NULL,
     description_fingerprint TEXT NOT NULL,
-    merchant_extracted TEXT, -- wait to implement  
-    amount_range TEXT, -- wait to implement
     category_assigned INTEGER NOT NULL,
     category_confidence DECIMAL(3,2), -- wait to implement
-    alternative_categories TEXT,
+    previous_category INTEGER NOT NULL,
     modification_reason TEXT, -- "description", "transaction type", "category"
     pre_edit_snapshot TEXT, -- json transaction state
     post_edit_snapshot TEXT, -- json transaction state
-    edit_latency INTEGER, -- wait to implement
-    processing_time_ms INTEGER, -- wait to implement
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE,
     FOREIGN KEY (bank_statement_id) REFERENCES bank_statements(id) ON DELETE CASCADE,
     FOREIGN KEY (category_assigned) REFERENCES categories(id) ON DELETE RESTRICT,
+    FOREIGN KEY (previous_category) REFERENCES categories(id) ON DELETE RESTRICT,
     CHECK (action_type IN ('create', 'categorize', 'edit', 'import', 'split')),
     CHECK (source IN ('user', 'import', 'auto')),
     CHECK (modification_reason IS NULL OR modification_reason IN ('description', 'transaction type', 'category')),
@@ -55,7 +52,6 @@ CREATE TABLE csv_templates (
     amount_column INTEGER NOT NULL,
     desc_column INTEGER NOT NULL,
     category_column INTEGER,
-    merchant_column INTEGER,
     has_header BOOLEAN NOT NULL DEFAULT 0,
     date_format TEXT DEFAULT '2006-01-02',
     delimiter TEXT NOT NULL DEFAULT ',',
@@ -66,7 +62,6 @@ CREATE TABLE csv_templates (
     CHECK (amount_column >= 0),
     CHECK (desc_column >= 0),
     CHECK (category_column IS NULL OR category_column >= 0),
-    CHECK (merchant_column IS NULL OR merchant_column >= 0),
     CHECK (has_header IN (0, 1)),
     CHECK (length(delimiter) > 0)
 );

@@ -38,10 +38,10 @@ func (tas *TransactionAuditStore) RecordEvent(event *types.TransactionAuditEvent
 	query := `
 		INSERT INTO transaction_audit_events (
 			transaction_id, bank_statement_id, timestamp, action_type, source,
-			description_fingerprint, merchant_extracted, amount_range, category_assigned,
-			category_confidence, alternative_categories, modification_reason,
-			pre_edit_snapshot, post_edit_snapshot, edit_latency, processing_time_ms, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+				description_fingerprint, category_assigned,
+				category_confidence, previous_category, modification_reason,
+				pre_edit_snapshot, post_edit_snapshot, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	args := []interface{}{
 		event.TransactionId,
@@ -50,16 +50,12 @@ func (tas *TransactionAuditStore) RecordEvent(event *types.TransactionAuditEvent
 		event.ActionType,
 		event.Source,
 		event.DescriptionFingerprint,
-		sql.NullString{String: event.MerchantExtracted, Valid: event.MerchantExtracted != ""},
-		sql.NullString{String: event.AmountRange, Valid: event.AmountRange != ""},
 		event.CategoryAssigned,
 		sql.NullFloat64{Float64: event.CategoryConfidence, Valid: event.CategoryConfidence > 0},
-		sql.NullString{String: event.AlternativeCategories, Valid: event.AlternativeCategories != ""},
+		event.PreviousCategory,
 		getNullString(event.ModificationReason),
 		getNullString(event.PreEditSnapshot),
 		getNullString(event.PostEditSnapshot),
-		sql.NullInt64{Int64: int64(event.EditLatency), Valid: event.EditLatency > 0},
-		sql.NullInt64{Int64: int64(event.ProcessingTimeMs), Valid: event.ProcessingTimeMs > 0},
 		time.Now().Format(time.RFC3339),
 	}
 
@@ -76,9 +72,9 @@ func (tas *TransactionAuditStore) RecordEvent(event *types.TransactionAuditEvent
 func (tas *TransactionAuditStore) GetEventsByTransaction(transactionId int64) ([]types.TransactionAuditEvent, error) {
 	query := `
 		SELECT id, transaction_id, bank_statement_id, timestamp, action_type, source,
-			   description_fingerprint, merchant_extracted, amount_range, category_assigned,
-			   category_confidence, alternative_categories, modification_reason,
-			   pre_edit_snapshot, post_edit_snapshot, edit_latency, processing_time_ms, created_at
+			   description_fingerprint, category_assigned,
+			   category_confidence, previous_category, modification_reason,
+			   pre_edit_snapshot, post_edit_snapshot, created_at
 		FROM transaction_audit_events 
 		WHERE transaction_id = ?
 		ORDER BY timestamp DESC`
@@ -96,9 +92,9 @@ func (tas *TransactionAuditStore) GetEventsByTransaction(transactionId int64) ([
 func (tas *TransactionAuditStore) GetEventsByStatement(bankStatementId int64) ([]types.TransactionAuditEvent, error) {
 	query := `
 		SELECT id, transaction_id, bank_statement_id, timestamp, action_type, source,
-			   description_fingerprint, merchant_extracted, amount_range, category_assigned,
-			   category_confidence, alternative_categories, modification_reason,
-			   pre_edit_snapshot, post_edit_snapshot, edit_latency, processing_time_ms, created_at
+			   description_fingerprint, category_assigned,
+			   category_confidence, previous_category, modification_reason,
+			   pre_edit_snapshot, post_edit_snapshot, created_at
 		FROM transaction_audit_events 
 		WHERE bank_statement_id = ?
 		ORDER BY timestamp DESC`
@@ -116,9 +112,9 @@ func (tas *TransactionAuditStore) GetEventsByStatement(bankStatementId int64) ([
 func (tas *TransactionAuditStore) GetEventsByTimeRange(startTime, endTime time.Time) ([]types.TransactionAuditEvent, error) {
 	query := `
 		SELECT id, transaction_id, bank_statement_id, timestamp, action_type, source,
-			   description_fingerprint, merchant_extracted, amount_range, category_assigned,
-			   category_confidence, alternative_categories, modification_reason,
-			   pre_edit_snapshot, post_edit_snapshot, edit_latency, processing_time_ms, created_at
+			   description_fingerprint, category_assigned,
+			   category_confidence, previous_category, modification_reason,
+			   pre_edit_snapshot, post_edit_snapshot, created_at
 		FROM transaction_audit_events 
 		WHERE timestamp BETWEEN ? AND ?
 		ORDER BY timestamp DESC`
@@ -139,9 +135,9 @@ func (tas *TransactionAuditStore) GetEventsByTimeRange(startTime, endTime time.T
 func (tas *TransactionAuditStore) GetEventsByActionType(actionType string) ([]types.TransactionAuditEvent, error) {
 	query := `
 		SELECT id, transaction_id, bank_statement_id, timestamp, action_type, source,
-			   description_fingerprint, merchant_extracted, amount_range, category_assigned,
-			   category_confidence, alternative_categories, modification_reason,
-			   pre_edit_snapshot, post_edit_snapshot, edit_latency, processing_time_ms, created_at
+			   description_fingerprint, category_assigned,
+			   category_confidence, previous_category, modification_reason,
+			   pre_edit_snapshot, post_edit_snapshot, created_at
 		FROM transaction_audit_events 
 		WHERE action_type = ?
 		ORDER BY timestamp DESC`
@@ -163,9 +159,9 @@ func (tas *TransactionAuditStore) GetRecentEvents(limit int) ([]types.Transactio
 
 	query := `
 		SELECT id, transaction_id, bank_statement_id, timestamp, action_type, source,
-			   description_fingerprint, merchant_extracted, amount_range, category_assigned,
-			   category_confidence, alternative_categories, modification_reason,
-			   pre_edit_snapshot, post_edit_snapshot, edit_latency, processing_time_ms, created_at
+			   description_fingerprint, category_assigned,
+			   category_confidence, previous_category, modification_reason,
+			   pre_edit_snapshot, post_edit_snapshot, created_at
 		FROM transaction_audit_events 
 		ORDER BY timestamp DESC 
 		LIMIT ?`
@@ -186,10 +182,8 @@ func (tas *TransactionAuditStore) scanTransactionAuditEvents(rows *sql.Rows) ([]
 	for rows.Next() {
 		var event types.TransactionAuditEvent
 		var timestampStr, createdAtStr string
-		var merchantExtracted, amountRange, alternativeCategories sql.NullString
 		var modificationReason, preEditSnapshot, postEditSnapshot sql.NullString
 		var categoryConfidence sql.NullFloat64
-		var editLatency, processingTimeMs sql.NullInt64
 
 		err := rows.Scan(
 			&event.Id,
@@ -199,16 +193,12 @@ func (tas *TransactionAuditStore) scanTransactionAuditEvents(rows *sql.Rows) ([]
 			&event.ActionType,
 			&event.Source,
 			&event.DescriptionFingerprint,
-			&merchantExtracted,
-			&amountRange,
 			&event.CategoryAssigned,
 			&categoryConfidence,
-			&alternativeCategories,
+			&event.PreviousCategory,
 			&modificationReason,
 			&preEditSnapshot,
 			&postEditSnapshot,
-			&editLatency,
-			&processingTimeMs,
 			&createdAtStr,
 		)
 		if err != nil {
@@ -224,15 +214,10 @@ func (tas *TransactionAuditStore) scanTransactionAuditEvents(rows *sql.Rows) ([]
 		}
 
 		// Handle nullable fields
-		event.MerchantExtracted = merchantExtracted.String
-		event.AmountRange = amountRange.String
 		event.CategoryConfidence = categoryConfidence.Float64
-		event.AlternativeCategories = alternativeCategories.String
 		event.ModificationReason = nullStringToPointer(modificationReason)
 		event.PreEditSnapshot = nullStringToPointer(preEditSnapshot)
 		event.PostEditSnapshot = nullStringToPointer(postEditSnapshot)
-		event.EditLatency = int(editLatency.Int64)
-		event.ProcessingTimeMs = int(processingTimeMs.Int64)
 
 		events = append(events, event)
 	}

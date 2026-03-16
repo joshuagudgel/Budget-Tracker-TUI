@@ -93,7 +93,6 @@ type CSVTemplate struct {
 	CategoryColumn *int      `db:"category_column"`
 	HasHeader      bool      `db:"has_header"`
 	DateFormat     string    `db:"date_format"`
-	MerchantColumn *int      `db:"merchant_column"`
 	Delimiter      string    `db:"delimiter"`
 	CreatedAt      time.Time `db:"created_at"`
 	UpdatedAt      time.Time `db:"updated_at"`
@@ -106,18 +105,14 @@ type TransactionAuditEvent struct {
 	BankStatementId        int64     `db:"bank_statement_id"`
 	Timestamp              time.Time `db:"timestamp"`
 	ActionType             string    `db:"action_type"` // "create", "categorize", "edit", "import", "split"
-	Source                 string    `db:"source"` // "user", "import", "auto"
+	Source                 string    `db:"source"`      // "user", "import", "auto"
 	DescriptionFingerprint string    `db:"description_fingerprint"`
-	MerchantExtracted      string    `db:"merchant_extracted"` // wait to implement
-	AmountRange            string    `db:"amount_range"` // wait to implement
 	CategoryAssigned       int64     `db:"category_assigned"`
 	CategoryConfidence     float64   `db:"category_confidence"` // wait to implement
-	AlternativeCategories  string    `db:"alternative_categories"`
+	PreviousCategory       int64     `db:"previous_category"`
 	ModificationReason     *string   `db:"modification_reason"` // "description", "transaction type", "category"
-	PreEditSnapshot        *string   `db:"pre_edit_snapshot"` // json transaction state
-	PostEditSnapshot       *string   `db:"post_edit_snapshot"` // json transaction state
-	EditLatency            int       `db:"edit_latency"` // wait to implement
-	ProcessingTimeMs       int       `db:"processing_time_ms"` // wait to implement
+	PreEditSnapshot        *string   `db:"pre_edit_snapshot"`   // json transaction state
+	PostEditSnapshot       *string   `db:"post_edit_snapshot"`  // json transaction state
 	CreatedAt              time.Time `db:"created_at"`
 }
 
@@ -136,9 +131,9 @@ const (
 	SourceImport = "import"
 
 	// Modification Reasons
-	ModReasonDescription    = "description"
+	ModReasonDescription     = "description"
 	ModReasonTransactionType = "transaction type"
-	ModReasonCategory       = "category"
+	ModReasonCategory        = "category"
 )
 
 type ImportResult struct {
@@ -554,17 +549,11 @@ func (ct *CSVTemplate) validateColumns() error {
 	if ct.CategoryColumn != nil && *ct.CategoryColumn < 0 {
 		return fmt.Errorf("category column index cannot be negative")
 	}
-	if ct.MerchantColumn != nil && *ct.MerchantColumn < 0 {
-		return fmt.Errorf("merchant column index cannot be negative")
-	}
 
 	// Check for duplicate column assignments
 	columns := []int{ct.PostDateColumn, ct.AmountColumn, ct.DescColumn}
 	if ct.CategoryColumn != nil {
 		columns = append(columns, *ct.CategoryColumn)
-	}
-	if ct.MerchantColumn != nil {
-		columns = append(columns, *ct.MerchantColumn)
 	}
 
 	for i := 0; i < len(columns); i++ {
