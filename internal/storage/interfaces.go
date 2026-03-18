@@ -3,6 +3,7 @@ package storage
 import (
 	"time"
 
+	"budget-tracker-tui/internal/ml"
 	"budget-tracker-tui/internal/types"
 )
 
@@ -111,6 +112,21 @@ type TransactionAuditStoreInterface interface {
 	GetEventsByTimeRange(startTime, endTime time.Time) ([]types.TransactionAuditEvent, error)
 	GetEventsByActionType(actionType string) ([]types.TransactionAuditEvent, error)
 	GetRecentEvents(limit int) ([]types.TransactionAuditEvent, error)
+
+	// ML Training Data Operations
+	GetCategoryEditEvents() ([]types.TransactionAuditEvent, error)
+	GetImportEvents() ([]types.TransactionAuditEvent, error)
+}
+
+// MLCategorizerInterface defines the contract for ML-based transaction categorization
+type MLCategorizerInterface interface {
+	// Training Operations
+	Train(auditEvents []types.TransactionAuditEvent, categories []types.Category) error
+	GetStats() map[string]interface{}
+
+	// Prediction Operations
+	PredictCategory(description string, amount float64) ml.CategoryPrediction
+	IsHighConfidence(prediction ml.CategoryPrediction) bool
 }
 
 // SharedUtilsInterface defines the contract for shared utilities

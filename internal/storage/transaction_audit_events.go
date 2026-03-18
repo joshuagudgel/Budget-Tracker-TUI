@@ -225,6 +225,49 @@ func (tas *TransactionAuditStore) scanTransactionAuditEvents(rows *sql.Rows) ([]
 	return events, nil
 }
 
+// GetCategoryEditEvents retrieves audit events where users manually changed categories (for ML training)
+func (tas *TransactionAuditStore) GetCategoryEditEvents() ([]types.TransactionAuditEvent, error) {
+	query := `
+		SELECT id, transaction_id, bank_statement_id, timestamp, action_type, source,
+			   description_fingerprint, category_assigned,
+			   category_confidence, previous_category, modification_reason,
+			   pre_edit_snapshot, post_edit_snapshot, created_at
+		FROM transaction_audit_events 
+		WHERE action_type = ? 
+		  AND source = ? 
+		  AND modification_reason = ?
+		ORDER BY timestamp ASC`
+
+	rows, err := tas.helper.QueryRows(query, types.ActionTypeEdit, types.SourceUser, types.ModReasonCategory)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query category edit events: %v", err)
+	}
+	defer rows.Close()
+
+	return tas.scanTransactionAuditEvents(rows)
+}
+
+// GetImportEvents retrieves audit events from CSV imports (for tracking ML predictions)
+func (tas *TransactionAuditStore) GetImportEvents() ([]types.TransactionAuditEvent, error) {
+	query := `
+		SELECT id, transaction_id, bank_statement_id, timestamp, action_type, source,
+			   description_fingerprint, category_assigned,
+			   category_confidence, previous_category, modification_reason,
+			   pre_edit_snapshot, post_edit_snapshot, created_at
+		FROM transaction_audit_events 
+		WHERE action_type = ? 
+		  AND source = ?
+		ORDER BY timestamp DESC`
+
+	rows, err := tas.helper.QueryRows(query, types.ActionTypeImport, types.SourceImport)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query import events: %v", err)
+	}
+	defer rows.Close()
+
+	return tas.scanTransactionAuditEvents(rows)
+}
+
 // Helper functions for nullable fields
 func getNullString(strPtr *string) sql.NullString {
 	if strPtr == nil {

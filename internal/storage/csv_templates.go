@@ -2,6 +2,7 @@ package storage
 
 import (
 	"budget-tracker-tui/internal/database"
+	"budget-tracker-tui/internal/ml"
 	"budget-tracker-tui/internal/types"
 	"database/sql"
 	"fmt"
@@ -19,6 +20,7 @@ type CSVTemplateStore struct {
 	defaultTemplate  string
 	transactionStore *TransactionStore
 	categoryStore    *CategoryStore
+	store            *Store // Reference to main store for ML access
 }
 
 // NewCSVTemplateStore creates a new CSVTemplateStore instance
@@ -43,6 +45,11 @@ func (cts *CSVTemplateStore) SetTransactionStore(ts *TransactionStore) {
 // SetCategoryStore sets the category store reference (called after all stores are initialized)
 func (cts *CSVTemplateStore) SetCategoryStore(cs *CategoryStore) {
 	cts.categoryStore = cs
+}
+
+// SetStore sets the main store reference for ML access (called after all stores are initialized)
+func (cts *CSVTemplateStore) SetStore(s *Store) {
+	cts.store = s
 }
 
 // ensureDefaultTemplates creates default CSV templates if none exist
@@ -518,26 +525,48 @@ func (cts *CSVTemplateStore) ParseTransactionFromTemplate(fields []string, templ
 		return nil, fmt.Errorf("line %d: invalid amount '%s': %v", lineNum, amountStr, err)
 	}
 
-	// Handle category assignment - use CSV category if available, otherwise default
+	// Handle category assignment with ML prediction integration
 	var categoryId int64
+	var mlPrediction *ml.CategoryPrediction
 
-	if template.CategoryColumn != nil {
-		// Extract category from CSV
-		categoryText := strings.Trim(fields[*template.CategoryColumn], "\"")
-
-		if cts.categoryStore != nil {
-			// Use category store to resolve or create category
-			categoryId = cts.categoryStore.ResolveOrCreateCategory(categoryText)
-		} else {
-			// Fallback to default if category store not available
-			categoryId = defaultCategoryId
-		}
-	} else {
-		// No category column, use default
-		categoryId = defaultCategoryId
+	// Step 1: Get ML prediction if available
+	if cts.store != nil && cts.store.MLCategorizer != nil {
+		prediction := cts.store.PredictCategory(desc, transaction.Amount)
+		mlPrediction = &prediction
 	}
 
+	// Step 2: ML-first categorization (prioritizes learning)
+	var finalCategoryId int64
+
+	// Always try ML first if available and high confidence
+	if mlPrediction != nil && cts.store.IsHighConfidencePrediction(*mlPrediction) {
+		finalCategoryId = mlPrediction.CategoryId
+		// Only log when ML is actually used
+		fmt.Printf("[ML] Auto-categorized '%s' → Category %d (confidence: %.2f)\n",
+			desc, mlPrediction.CategoryId, mlPrediction.Confidence)
+	} else if template.CategoryColumn != nil {
+		// Fallback to CSV category if ML not confident enough
+		categoryText := strings.Trim(fields[*template.CategoryColumn], "\"")
+		if categoryText != "" && cts.categoryStore != nil {
+			finalCategoryId = cts.categoryStore.ResolveOrCreateCategory(categoryText)
+		} else {
+			finalCategoryId = defaultCategoryId
+		}
+	} else {
+		// No CSV category, use default
+		finalCategoryId = defaultCategoryId
+	}
+
+	categoryId = finalCategoryId
+
 	transaction.CategoryId = categoryId
+
+	// Store ML prediction metadata for audit trail (will be used in Step 3)
+	if mlPrediction != nil {
+		// Store prediction in transaction for later audit event creation
+		// We'll add these fields to the Transaction struct later if needed
+		// For now, just ensure we have the prediction available for audit events
+	}
 
 	return &transaction, nil
 }

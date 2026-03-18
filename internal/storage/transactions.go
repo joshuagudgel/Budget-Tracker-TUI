@@ -14,6 +14,7 @@ type TransactionStore struct {
 	db                *database.Connection
 	helper            *database.SQLHelper
 	transactionAudits *TransactionAuditStore
+	store             *Store // Reference to main store for ML access
 }
 
 // NewTransactionStore creates a new TransactionStore instance
@@ -27,6 +28,11 @@ func NewTransactionStore(db *database.Connection) *TransactionStore {
 // SetTransactionAuditStore sets the transaction audit store reference (called after all stores are initialized)
 func (ts *TransactionStore) SetTransactionAuditStore(tas *TransactionAuditStore) {
 	ts.transactionAudits = tas
+}
+
+// SetStore sets the main store reference for ML access (called after all stores are initialized)
+func (ts *TransactionStore) SetStore(s *Store) {
+	ts.store = s
 }
 
 // CalculateNextId calculates the next available ID using SQLite's auto-increment
@@ -585,7 +591,14 @@ func (ts *TransactionStore) ImportTransactionsFromCSV(transactions []types.Trans
 		return err
 	}
 
-	// Audit: CSV import events are no longer recorded in the old audit system
+	// Create audit events for imported transactions with ML prediction tracking
+	if ts.transactionAudits != nil {
+		err = ts.createImportAuditEvents(transactions, statementId)
+		if err != nil {
+			// Log error but don't fail the import - audit is supplementary
+			fmt.Printf("[Warning] Failed to create import audit events: %v\n", err)
+		}
+	}
 
 	return nil
 }
@@ -642,6 +655,51 @@ func (ts *TransactionStore) parseFlexibleDate(dateStr string) (time.Time, error)
 	}
 
 	return time.Time{}, fmt.Errorf("unable to parse date '%s' with any known format", dateStr)
+}
+
+// createImportAuditEvents creates audit events for imported transactions with ML prediction tracking
+func (ts *TransactionStore) createImportAuditEvents(transactions []types.Transaction, statementId string) error {
+	// Parse statement ID
+	var bankStatementId int64
+	if statementId != "" {
+		if id, err := strconv.ParseInt(statementId, 10, 64); err == nil {
+			bankStatementId = id
+		}
+	}
+
+	// Create audit events for each imported transaction
+	for _, tx := range transactions {
+		// Get ML prediction for confidence tracking
+		var mlConfidence float64 = 0.0
+		if ts.store != nil && ts.store.MLCategorizer != nil {
+			prediction := ts.store.PredictCategory(tx.Description, tx.Amount)
+			mlConfidence = prediction.Confidence
+		}
+
+		auditEvent := &types.TransactionAuditEvent{
+			TransactionId:          tx.Id, // Note: This will be 0 initially - updated after bulk insert if needed
+			BankStatementId:        bankStatementId,
+			Timestamp:              time.Now(),
+			ActionType:             types.ActionTypeImport,
+			Source:                 types.SourceImport,
+			DescriptionFingerprint: tx.Description,
+			CategoryAssigned:       tx.CategoryId,
+			CategoryConfidence:     mlConfidence, // ML prediction confidence
+			PreviousCategory:       0,            // No previous category for new imports
+			ModificationReason:     nil,          // Not applicable for imports
+			PreEditSnapshot:        nil,          // No pre-state for imports
+			PostEditSnapshot:       nil,          // Could add transaction JSON if needed
+		}
+
+		// Record the audit event
+		err := ts.transactionAudits.RecordEvent(auditEvent)
+		if err != nil {
+			// Log individual failures but continue with other events
+			fmt.Printf("[Warning] Failed to create audit event for transaction %s: %v\n", tx.Description, err)
+		}
+	}
+
+	return nil
 }
 
 // End of TransactionStore

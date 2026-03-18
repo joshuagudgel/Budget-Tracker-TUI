@@ -2,6 +2,7 @@ package storage
 
 import (
 	"budget-tracker-tui/internal/database"
+	"budget-tracker-tui/internal/ml"
 	"budget-tracker-tui/internal/types"
 	"database/sql"
 	"fmt"
@@ -12,11 +13,14 @@ import (
 // Store is the main store that integrates all domain stores using SQLite
 type Store struct {
 	// Public domain stores - directly accessible by UI layer
-	Transactions         *TransactionStore
-	Categories           *CategoryStore
-	Statements           *BankStatementStore
-	Templates            *CSVTemplateStore
-	TransactionAudits    *TransactionAuditStore
+	Transactions      *TransactionStore
+	Categories        *CategoryStore
+	Statements        *BankStatementStore
+	Templates         *CSVTemplateStore
+	TransactionAudits *TransactionAuditStore
+
+	// ML categorization service
+	MLCategorizer *ml.EmbeddingsCategorizer
 
 	// Private database connection
 	db *database.Connection
@@ -47,7 +51,15 @@ func (s *Store) Init() error {
 	// Set cross-references between stores
 	s.Templates.SetTransactionStore(s.Transactions)
 	s.Templates.SetCategoryStore(s.Categories)
+	s.Templates.SetStore(s) // Add store reference for ML access
 	s.Transactions.SetTransactionAuditStore(s.TransactionAudits)
+	s.Transactions.SetStore(s) // Add store reference for ML access
+
+	// Initialize ML categorization service
+	err = s.initializeMLCategorizer()
+	if err != nil {
+		return fmt.Errorf("failed to initialize ML categorizer: %w", err)
+	}
 
 	// No need to load stores explicitly with SQLite - data is always persisted
 	// Database health check to ensure everything is working
@@ -58,6 +70,39 @@ func (s *Store) Init() error {
 
 	// Migrate existing data to new category system if needed
 	return s.MigrateTransactionCategories()
+}
+
+// initializeMLCategorizer sets up the ML categorization service with training data from audit events
+func (s *Store) initializeMLCategorizer() error {
+	// Initialize categorizer with default category
+	defaultCategoryId := s.Categories.GetDefaultCategoryId()
+	s.MLCategorizer = ml.NewEmbeddingsCategorizer(defaultCategoryId)
+
+	// Load categories for ML service
+	categories, err := s.Categories.GetCategories()
+	if err != nil {
+		return fmt.Errorf("failed to load categories: %w", err)
+	}
+
+	// Load training data from category edit audit events
+	auditEvents, err := s.TransactionAudits.GetCategoryEditEvents()
+	if err != nil {
+		return fmt.Errorf("failed to load category edit events: %w", err)
+	}
+
+	// Train the ML model
+	err = s.MLCategorizer.Train(auditEvents, categories)
+	if err != nil {
+		return fmt.Errorf("failed to train ML categorizer: %w", err)
+	}
+
+	// Log training statistics
+	stats := s.MLCategorizer.GetStats()
+	fmt.Printf("[ML] Categorizer initialized with %v examples from %v categories\n",
+		stats["total_examples"], stats["categories_with_examples"])
+	fmt.Printf("[ML] Training data loaded: %d audit events found\n", len(auditEvents))
+
+	return nil
 }
 
 // Close closes the database connection
@@ -480,4 +525,74 @@ func (s *Store) GetCategorySpendingByDateRange(startDate, endDate time.Time) ([]
 	}
 
 	return categorySpending, rows.Err()
+}
+
+// ML Categorization Methods
+
+// PredictCategory uses ML to predict the category for a transaction description
+func (s *Store) PredictCategory(description string, amount float64) ml.CategoryPrediction {
+	if s.MLCategorizer == nil {
+		// ML not initialized - return default category
+		return ml.CategoryPrediction{
+			CategoryId:   s.Categories.GetDefaultCategoryId(),
+			Confidence:   0.1,
+			ReasonCode:   "ml_not_available",
+			SimilarityTo: "ML categorizer not initialized",
+		}
+	}
+
+	return s.MLCategorizer.PredictCategory(description, amount)
+}
+
+// IsHighConfidencePrediction checks if an ML prediction is high confidence
+func (s *Store) IsHighConfidencePrediction(prediction ml.CategoryPrediction) bool {
+	if s.MLCategorizer == nil {
+		return false
+	}
+	return s.MLCategorizer.IsHighConfidence(prediction)
+}
+
+// RetrainMLCategorizer retrains the ML categorizer with latest audit events
+func (s *Store) RetrainMLCategorizer() error {
+	if s.MLCategorizer == nil {
+		return fmt.Errorf("ML categorizer not initialized")
+	}
+
+	// Load fresh categories
+	categories, err := s.Categories.GetCategories()
+	if err != nil {
+		return fmt.Errorf("failed to load categories: %w", err)
+	}
+
+	// Load fresh training data from category edit audit events
+	auditEvents, err := s.TransactionAudits.GetCategoryEditEvents()
+	if err != nil {
+		return fmt.Errorf("failed to load category edit events: %w", err)
+	}
+
+	// Retrain the ML model
+	err = s.MLCategorizer.Train(auditEvents, categories)
+	if err != nil {
+		return fmt.Errorf("failed to retrain ML categorizer: %w", err)
+	}
+
+	// Log retraining statistics
+	stats := s.MLCategorizer.GetStats()
+	fmt.Printf("[ML] Categorizer retrained with %v examples from %v categories\n",
+		stats["total_examples"], stats["categories_with_examples"])
+
+	return nil
+}
+
+// GetMLCategorizerStats returns ML categorizer statistics for debugging/analysis
+func (s *Store) GetMLCategorizerStats() map[string]interface{} {
+	if s.MLCategorizer == nil {
+		return map[string]interface{}{
+			"status": "not_initialized",
+		}
+	}
+
+	stats := s.MLCategorizer.GetStats()
+	stats["status"] = "active"
+	return stats
 }
