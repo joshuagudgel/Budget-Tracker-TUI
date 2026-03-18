@@ -1,5 +1,4 @@
 # Project-specific exclusions
-.github/
 dist/
 debug.log
 *.txt
