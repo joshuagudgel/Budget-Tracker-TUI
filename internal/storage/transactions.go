@@ -5,6 +5,8 @@ import (
 	"budget-tracker-tui/internal/types"
 	"database/sql"
 	"fmt"
+	"log"
+	"os"
 	"strconv"
 	"time"
 )
@@ -15,13 +17,27 @@ type TransactionStore struct {
 	helper            *database.SQLHelper
 	transactionAudits *TransactionAuditStore
 	store             *Store // Reference to main store for ML access
+	debugLogger       *log.Logger
 }
 
 // NewTransactionStore creates a new TransactionStore instance
 func NewTransactionStore(db *database.Connection) *TransactionStore {
+	// Create debug logger that writes to debug.log
+	debugFile, err := os.OpenFile("debug.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	var debugLogger *log.Logger
+	if err != nil {
+		// Fallback to stdout if file can't be opened
+		debugLogger = log.New(os.Stdout, "[DEBUG] ", log.LstdFlags)
+	} else {
+		debugLogger = log.New(debugFile, "", log.LstdFlags)
+		// Log initialization message
+		debugLogger.Printf("[INIT] TransactionStore debug logging initialized")
+	}
+
 	return &TransactionStore{
-		db:     db,
-		helper: database.NewSQLHelper(db),
+		db:          db,
+		helper:      database.NewSQLHelper(db),
+		debugLogger: debugLogger,
 	}
 }
 
@@ -593,11 +609,14 @@ func (ts *TransactionStore) ImportTransactionsFromCSV(transactions []types.Trans
 
 	// Create audit events for imported transactions with ML prediction tracking
 	if ts.transactionAudits != nil {
+		ts.debugLogger.Printf("[DEBUG] Creating audit events for %d imported transactions", len(transactions))
 		err = ts.createImportAuditEvents(transactions, statementId)
 		if err != nil {
 			// Log error but don't fail the import - audit is supplementary
-			fmt.Printf("[Warning] Failed to create import audit events: %v\n", err)
+			ts.debugLogger.Printf("[Warning] Failed to create import audit events: %v", err)
 		}
+	} else {
+		ts.debugLogger.Printf("[WARNING] TransactionAudits store is nil - audit events will not be created")
 	}
 
 	return nil
@@ -659,6 +678,8 @@ func (ts *TransactionStore) parseFlexibleDate(dateStr string) (time.Time, error)
 
 // createImportAuditEvents creates audit events for imported transactions with ML prediction tracking
 func (ts *TransactionStore) createImportAuditEvents(transactions []types.Transaction, statementId string) error {
+	ts.debugLogger.Printf("[DEBUG] createImportAuditEvents called with %d transactions, statementId=%s", len(transactions), statementId)
+
 	// Parse statement ID
 	var bankStatementId int64
 	if statementId != "" {
@@ -666,36 +687,129 @@ func (ts *TransactionStore) createImportAuditEvents(transactions []types.Transac
 			bankStatementId = id
 		}
 	}
+	ts.debugLogger.Printf("[DEBUG] Parsed bankStatementId: %d", bankStatementId)
 
-	// Create audit events for each imported transaction
+	// Query for the actual inserted transactions to get their database IDs
+	// We'll match by statement_id, description, amount, and date to identify each transaction
 	for _, tx := range transactions {
-		// Get ML prediction for confidence tracking
-		var mlConfidence float64 = 0.0
+		// Find the actual inserted transaction by its unique attributes
+		query := `
+			SELECT id FROM transactions 
+			WHERE statement_id = ? AND description = ? AND amount = ? AND date = ?
+			ORDER BY id DESC LIMIT 1
+		`
+
+		var actualTxId int64
+		dateStr := tx.Date.Format("2006-01-02")
+		err := ts.helper.QuerySingleRow(query, bankStatementId, tx.Description, tx.Amount, dateStr).Scan(&actualTxId)
+		if err != nil {
+			ts.debugLogger.Printf("[Warning] Could not find inserted transaction ID for %s: %v", tx.Description, err)
+			continue
+		}
+
+		// Determine if this was ML auto-categorized
+		var source string = types.SourceImport // Default to import source
+		var confidenceScore float64 = 0.0
+
 		if ts.store != nil && ts.store.MLCategorizer != nil {
 			prediction := ts.store.PredictCategory(tx.Description, tx.Amount)
-			mlConfidence = prediction.Confidence
+			confidenceScore = prediction.Confidence
+			ts.debugLogger.Printf("[DEBUG] ML Prediction for '%s': CategoryId=%d, Confidence=%.2f, Assigned=%d", tx.Description, prediction.CategoryId, prediction.Confidence, tx.CategoryId)
+
+			// Validate confidence score is in expected range
+			if confidenceScore < 0.0 || confidenceScore > 1.0 {
+				ts.debugLogger.Printf("[WARNING] ML confidence score out of range (0.0-1.0): %.2f for '%s'", confidenceScore, tx.Description)
+				confidenceScore = 0.0 // Reset to safe value
+			}
+
+			// If ML made a high confidence prediction and it matches the assigned category, it was auto-categorized
+			if ts.store.IsHighConfidencePrediction(prediction) && prediction.CategoryId == tx.CategoryId {
+				source = types.SourceAuto
+				ts.debugLogger.Printf("[DEBUG] Detected ML auto-categorization for '%s'", tx.Description)
+			}
 		}
 
-		auditEvent := &types.TransactionAuditEvent{
-			TransactionId:          tx.Id, // Note: This will be 0 initially - updated after bulk insert if needed
-			BankStatementId:        bankStatementId,
-			Timestamp:              time.Now(),
-			ActionType:             types.ActionTypeImport,
-			Source:                 types.SourceImport,
-			DescriptionFingerprint: tx.Description,
-			CategoryAssigned:       tx.CategoryId,
-			CategoryConfidence:     mlConfidence, // ML prediction confidence
-			PreviousCategory:       0,            // No previous category for new imports
-			ModificationReason:     nil,          // Not applicable for imports
-			PreEditSnapshot:        nil,          // No pre-state for imports
-			PostEditSnapshot:       nil,          // Could add transaction JSON if needed
-		}
+		// Create appropriate audit event based on source
+		var postSnapshot *string
+		var modReason *string
+		var preSnapshot *string
 
-		// Record the audit event
-		err := ts.transactionAudits.RecordEvent(auditEvent)
-		if err != nil {
-			// Log individual failures but continue with other events
-			fmt.Printf("[Warning] Failed to create audit event for transaction %s: %v\n", tx.Description, err)
+		// Only create audit events for ML auto-categorized transactions
+		if source == types.SourceAuto {
+			// For auto-categorization, include the required fields
+			postSnapshotStr := fmt.Sprintf(`{"id":%d,"amount":%.2f,"description":"%s","category":%d,"type":"%s","date":"%s"}`,
+				actualTxId, tx.Amount, tx.Description, tx.CategoryId, tx.TransactionType, tx.Date.Format("2006-01-02"))
+			postSnapshot = &postSnapshotStr
+
+			modReasonStr := types.ModReasonCategory
+			modReason = &modReasonStr
+
+			preSnapshotStr := ""
+			preSnapshot = &preSnapshotStr
+
+			auditEvent := &types.TransactionAuditEvent{
+				TransactionId:          actualTxId, // Use the actual database ID
+				BankStatementId:        bankStatementId,
+				Timestamp:              time.Now(),
+				ActionType:             types.ActionTypeImport,
+				Source:                 source, // 'auto' for ML categorization
+				DescriptionFingerprint: tx.Description,
+				CategoryAssigned:       tx.CategoryId,
+				CategoryConfidence:     confidenceScore, // Use actual ML confidence score
+				PreviousCategory:       tx.CategoryId,   // Same as assigned for new imports (no previous state)
+				ModificationReason:     modReason,       // Set for auto-categorization
+				PreEditSnapshot:        preSnapshot,     // Set for auto-categorization
+				PostEditSnapshot:       postSnapshot,    // Set for auto-categorization
+			}
+
+			// Record the audit event
+			ts.debugLogger.Printf("[DEBUG] Creating audit event: source=%s, confidence=%.2f, categoryId=%d, previousCategory=%d",
+				source, confidenceScore, tx.CategoryId, tx.CategoryId)
+
+			// Validate foreign key references before creating audit event
+			ts.debugLogger.Printf("[DEBUG] Validating audit event references - TxId:%d, StatementId:%d, CategoryId:%d",
+				actualTxId, bankStatementId, tx.CategoryId)
+
+			// Check if transaction exists
+			if txExists := ts.GetTransactionByID(actualTxId); txExists == nil {
+				ts.debugLogger.Printf("[ERROR] Transaction ID %d does not exist - cannot create audit event", actualTxId)
+				continue
+			}
+
+			// Check if bank statement exists (if StatementId > 0)
+			if bankStatementId > 0 {
+				checkStmtQuery := "SELECT COUNT(*) FROM bank_statements WHERE id = ?"
+				var stmtCount int
+				err := ts.helper.QuerySingleRow(checkStmtQuery, bankStatementId).Scan(&stmtCount)
+				if err != nil || stmtCount == 0 {
+					ts.debugLogger.Printf("[ERROR] Bank statement ID %d does not exist - cannot create audit event", bankStatementId)
+					continue
+				}
+			}
+
+			// Check if category exists
+			checkCatQuery := "SELECT COUNT(*) FROM categories WHERE id = ?"
+			var catCount int
+			err = ts.helper.QuerySingleRow(checkCatQuery, tx.CategoryId).Scan(&catCount)
+			if err != nil || catCount == 0 {
+				ts.debugLogger.Printf("[ERROR] Category ID %d does not exist - cannot create audit event", tx.CategoryId)
+				continue
+			}
+
+			ts.debugLogger.Printf("[DEBUG] All foreign key references validated successfully")
+
+			err = ts.transactionAudits.RecordEvent(auditEvent)
+			if err != nil {
+				// Log individual failures but continue with other events
+				ts.debugLogger.Printf("[ERROR] Failed to create audit event for transaction %s: %v", tx.Description, err)
+				ts.debugLogger.Printf("[ERROR] Audit event details - TxId:%d, StatementId:%d, CategoryId:%d, Source:%s",
+					actualTxId, bankStatementId, tx.CategoryId, source)
+			} else {
+				ts.debugLogger.Printf("[ML] Created audit event for auto-categorized transaction: %s → Category %d", tx.Description, tx.CategoryId)
+			}
+		} else {
+			// Regular import transactions don't need audit events
+			ts.debugLogger.Printf("[DEBUG] Skipping audit event for regular import transaction: %s", tx.Description)
 		}
 	}
 
