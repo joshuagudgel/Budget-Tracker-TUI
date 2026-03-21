@@ -279,18 +279,6 @@ func (m model) Init() tea.Cmd {
 
 // Update handles all state transitions and user input
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if file, err := tea.LogToFile("debug.log", "debug"); err == nil {
-		defer file.Close()
-
-		// Safe debug logging with bounds checking
-		currTxId := int64(-1)
-		if len(m.transactions) > 0 && m.listIndex >= 0 && m.listIndex < len(m.transactions) {
-			currTxId = m.transactions[m.listIndex].Id
-		}
-
-		log.Printf("State: %d, ListIndex: %d, Transactions: %d, CurrTx: %d",
-			m.state, m.listIndex, len(m.transactions), currTxId)
-	}
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
