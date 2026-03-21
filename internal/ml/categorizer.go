@@ -35,7 +35,7 @@ type EmbeddingsCategorizer struct {
 
 	// Configuration
 	minConfidenceThreshold float64 // predictions below this trigger user review
-	exactMatchBonus        float64 // bonus for exact description matches
+	exactMatchConfidence   float64 // confidence for exact description matches (should be < 1.0)
 	amountSimilarityWeight float64 // weight for amount-based similarity
 }
 
@@ -46,7 +46,7 @@ func NewEmbeddingsCategorizer(defaultCategoryId int64) *EmbeddingsCategorizer {
 		availableCategories:    make([]types.Category, 0),
 		defaultCategoryId:      defaultCategoryId,
 		minConfidenceThreshold: 0.7, // configurable later
-		exactMatchBonus:        0.3,
+		exactMatchConfidence:   0.9, // high confidence for exact matches, but stays under 1.0
 		amountSimilarityWeight: 0.2,
 	}
 }
@@ -121,7 +121,7 @@ func (ec *EmbeddingsCategorizer) PredictCategory(description string, amount floa
 		if ec.normalizeDescription(example.Description) == normalizedDesc {
 			return CategoryPrediction{
 				CategoryId:   example.CategoryId,
-				Confidence:   0.95 + ec.exactMatchBonus, // High confidence for exact matches
+				Confidence:   ec.exactMatchConfidence, // Configurable exact match confidence (0.9)
 				ReasonCode:   "exact_match",
 				SimilarityTo: example.Description,
 			}
