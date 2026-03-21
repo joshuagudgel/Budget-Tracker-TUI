@@ -56,6 +56,9 @@ func (ec *EmbeddingsCategorizer) Train(auditEvents []types.TransactionAuditEvent
 	ec.availableCategories = categories
 	ec.trainingExamples = make([]TrainingExample, 0)
 
+	// Group audit events by description to find the most recent category assignment for each
+	descriptionMap := make(map[string]types.TransactionAuditEvent)
+
 	// Extract training examples from user edit audit events
 	for _, event := range auditEvents {
 		// Only use user edits that changed categories as high-quality labels
@@ -64,22 +67,37 @@ func (ec *EmbeddingsCategorizer) Train(auditEvents []types.TransactionAuditEvent
 			event.ModificationReason != nil &&
 			*event.ModificationReason == types.ModReasonCategory {
 
-			example := TrainingExample{
-				Description: event.DescriptionFingerprint,
-				CategoryId:  event.CategoryAssigned, // The corrected category
-				Timestamp:   event.Timestamp,
-				Source:      "user_edit",
+			// Check if we already have an event for this description
+			if existingEvent, exists := descriptionMap[event.DescriptionFingerprint]; exists {
+				// Keep the most recent event (latest timestamp)
+				if event.Timestamp.After(existingEvent.Timestamp) {
+					descriptionMap[event.DescriptionFingerprint] = event
+				}
+			} else {
+				// First event for this description
+				descriptionMap[event.DescriptionFingerprint] = event
 			}
-
-			// TODO: Extract amount from PreEditSnapshot JSON if needed for amount-based similarity
-			// For now, focus on description-based categorization
-			example.Amount = 0.0
-
-			ec.trainingExamples = append(ec.trainingExamples, example)
 		}
 	}
 
-	fmt.Printf("[ML] Trained categorizer with %d examples from audit events\n", len(ec.trainingExamples))
+	// Convert the deduplicated events to training examples
+	for _, event := range descriptionMap {
+		example := TrainingExample{
+			Description: event.DescriptionFingerprint,
+			CategoryId:  event.CategoryAssigned, // The most recent corrected category
+			Timestamp:   event.Timestamp,
+			Source:      "user_edit",
+		}
+
+		// TODO: Extract amount from PreEditSnapshot JSON if needed for amount-based similarity
+		// For now, focus on description-based categorization
+		example.Amount = 0.0
+
+		ec.trainingExamples = append(ec.trainingExamples, example)
+	}
+
+	fmt.Printf("[ML] Trained categorizer with %d examples from %d audit events (deduplicated by description)\n",
+		len(ec.trainingExamples), len(auditEvents))
 	return nil
 }
 
