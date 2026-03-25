@@ -108,7 +108,7 @@ type TransactionAuditEvent struct {
 	Source                 string    `db:"source"`      // "user", "import", "auto"
 	DescriptionFingerprint string    `db:"description_fingerprint"`
 	CategoryAssigned       int64     `db:"category_assigned"`
-	CategoryConfidence     float64   `db:"category_confidence"` // wait to implement
+	CategoryConfidence     float64   `db:"category_confidence"` // ML prediction confidence (0.0-1.0)
 	PreviousCategory       int64     `db:"previous_category"`
 	ModificationReason     *string   `db:"modification_reason"` // "description", "transaction type", "category"
 	PreEditSnapshot        *string   `db:"pre_edit_snapshot"`   // json transaction state

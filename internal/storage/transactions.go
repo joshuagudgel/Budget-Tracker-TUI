@@ -383,6 +383,7 @@ func (ts *TransactionStore) logTransactionFieldChanges(oldTx, newTx *types.Trans
 		Source:                 types.SourceUser,
 		DescriptionFingerprint: newTx.Description,
 		CategoryAssigned:       newTx.CategoryId,
+		CategoryConfidence:     1.0,
 		PreviousCategory:       oldTx.CategoryId,
 		ModificationReason:     modificationReason,
 		PreEditSnapshot:        &preSnapshot,
@@ -516,6 +517,7 @@ func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Tran
 			Source:                 types.SourceUser,
 			DescriptionFingerprint: splits[0].Description,
 			CategoryAssigned:       splits[0].CategoryId,
+			CategoryConfidence:     1.0,
 			PreviousCategory:       originalTransaction.CategoryId,
 		}
 
@@ -531,6 +533,7 @@ func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Tran
 				Source:                 types.SourceUser,
 				DescriptionFingerprint: splits[1].Description,
 				CategoryAssigned:       splits[1].CategoryId,
+				CategoryConfidence:     1.0,
 				PreviousCategory:       originalTransaction.CategoryId,
 			}
 
