@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"time"
 )
 
@@ -151,7 +150,7 @@ func (ts *TransactionStore) scanTransaction(rows *sql.Rows) (types.Transaction, 
 		tx.ParentId = &parentID.Int64
 	}
 	if statementID.Valid {
-		tx.StatementId = fmt.Sprintf("%d", statementID.Int64)
+		tx.StatementId = statementID.Int64
 	}
 	if rawDescription.Valid {
 		tx.RawDescription = rawDescription.String
@@ -216,7 +215,7 @@ func (ts *TransactionStore) scanTransactionRow(row *sql.Row) (types.Transaction,
 		tx.ParentId = &parentID.Int64
 	}
 	if statementID.Valid {
-		tx.StatementId = fmt.Sprintf("%d", statementID.Int64)
+		tx.StatementId = statementID.Int64
 	}
 	if rawDescription.Valid {
 		tx.RawDescription = rawDescription.String
@@ -255,10 +254,8 @@ func (ts *TransactionStore) insertTransaction(transaction types.Transaction, now
 	}
 
 	var statementID interface{}
-	if transaction.StatementId != "" {
-		if id, err := strconv.ParseInt(transaction.StatementId, 10, 64); err == nil {
-			statementID = id
-		}
+	if transaction.StatementId != 0 {
+		statementID = transaction.StatementId
 	}
 
 	var rawDescription interface{}
@@ -318,10 +315,8 @@ func (ts *TransactionStore) updateTransaction(transaction types.Transaction, now
 	}
 
 	var statementID interface{}
-	if transaction.StatementId != "" {
-		if id, err := strconv.ParseInt(transaction.StatementId, 10, 64); err == nil {
-			statementID = id
-		}
+	if transaction.StatementId != 0 {
+		statementID = transaction.StatementId
 	}
 
 	var rawDescription interface{}
@@ -362,12 +357,7 @@ func (ts *TransactionStore) logTransactionFieldChanges(oldTx, newTx *types.Trans
 	}
 
 	// Get bank statement ID
-	bankStatementId := int64(0)
-	if newTx.StatementId != "" {
-		if id, err := strconv.ParseInt(newTx.StatementId, 10, 64); err == nil {
-			bankStatementId = id
-		}
-	}
+	bankStatementId := newTx.StatementId
 
 	// Create pre and post snapshots (simplified JSON-like format for now)
 	preSnapshot := fmt.Sprintf("{\"amount\":%.2f,\"description\":\"%s\",\"category\":%d,\"type\":\"%s\"}",
@@ -470,10 +460,8 @@ func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Tran
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 		var statementID interface{}
-		if parent.StatementId != "" {
-			if id, parseErr := strconv.ParseInt(parent.StatementId, 10, 64); parseErr == nil {
-				statementID = id
-			}
+		if parent.StatementId != 0 {
+			statementID = parent.StatementId
 		}
 
 		result, err := tx.Exec(insertQuery,
@@ -501,12 +489,7 @@ func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Tran
 	// Log audit event for split transaction after successful database transaction
 	if ts.transactionAudits != nil && originalTransaction != nil {
 		// Get bank statement ID
-		bankStatementId := int64(0)
-		if originalTransaction.StatementId != "" {
-			if id, err := strconv.ParseInt(originalTransaction.StatementId, 10, 64); err == nil {
-				bankStatementId = id
-			}
-		}
+		bankStatementId := originalTransaction.StatementId
 
 		// Create split audit event for parent (first split)
 		parentAuditEvent := &types.TransactionAuditEvent{
@@ -545,7 +528,7 @@ func (ts *TransactionStore) SplitTransaction(parentId int64, splits []types.Tran
 }
 
 // ImportTransactionsFromCSV imports a batch of transactions from CSV parsing
-func (ts *TransactionStore) ImportTransactionsFromCSV(transactions []types.Transaction, statementId string) error {
+func (ts *TransactionStore) ImportTransactionsFromCSV(transactions []types.Transaction, statementId int64) error {
 	if len(transactions) == 0 {
 		return nil
 	}
@@ -555,10 +538,8 @@ func (ts *TransactionStore) ImportTransactionsFromCSV(transactions []types.Trans
 	now := time.Now()
 
 	var statementID interface{}
-	if statementId != "" {
-		if id, err := strconv.ParseInt(statementId, 10, 64); err == nil {
-			statementID = id
-		}
+	if statementId != 0 {
+		statementID = statementId
 	}
 
 	for _, tx := range transactions {
@@ -680,16 +661,11 @@ func (ts *TransactionStore) parseFlexibleDate(dateStr string) (time.Time, error)
 }
 
 // createImportAuditEvents creates audit events for imported transactions with ML prediction tracking
-func (ts *TransactionStore) createImportAuditEvents(transactions []types.Transaction, statementId string) error {
-	ts.debugLogger.Printf("[DEBUG] createImportAuditEvents called with %d transactions, statementId=%s", len(transactions), statementId)
+func (ts *TransactionStore) createImportAuditEvents(transactions []types.Transaction, statementId int64) error {
+	ts.debugLogger.Printf("[DEBUG] createImportAuditEvents called with %d transactions, statementId=%d", len(transactions), statementId)
 
-	// Parse statement ID
-	var bankStatementId int64
-	if statementId != "" {
-		if id, err := strconv.ParseInt(statementId, 10, 64); err == nil {
-			bankStatementId = id
-		}
-	}
+	// Use statement ID directly
+	bankStatementId := statementId
 	ts.debugLogger.Printf("[DEBUG] Parsed bankStatementId: %d", bankStatementId)
 
 	// Query for the actual inserted transactions to get their database IDs

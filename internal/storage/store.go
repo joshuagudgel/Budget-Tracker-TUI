@@ -296,7 +296,7 @@ func (s *Store) ImportCSVWithOverride(filePath, templateName string) *types.Impo
 	}
 
 	// Import only new transactions with actual statement ID
-	err = s.Transactions.ImportTransactionsFromCSV(newTransactions, fmt.Sprintf("%d", actualStatementId))
+	err = s.Transactions.ImportTransactionsFromCSV(newTransactions, actualStatementId)
 	if err != nil {
 		result.Message = fmt.Sprintf("Save failed: %v", err)
 		return result
@@ -365,7 +365,7 @@ func (s *Store) ImportTransactionsFromCSV(filePath, templateName string) error {
 	}
 
 	// Now import transactions with actual statement_id reference
-	err = s.Transactions.ImportTransactionsFromCSV(transactions, fmt.Sprintf("%d", actualStatementId))
+	err = s.Transactions.ImportTransactionsFromCSV(transactions, actualStatementId)
 	if err != nil {
 		// If transaction import fails, mark statement as failed using actual ID
 		s.Statements.MarkStatementFailed(actualStatementId, fmt.Sprintf("Transaction import failed: %v", err))
@@ -392,7 +392,7 @@ func (s *Store) UndoImport(statementId int64) (int, error) {
 	var remainingTransactions []types.Transaction
 
 	for _, tx := range transactions {
-		if tx.StatementId != fmt.Sprintf("%d", statementId) {
+		if tx.StatementId != statementId {
 			remainingTransactions = append(remainingTransactions, tx)
 		} else {
 			removedCount++

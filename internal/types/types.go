@@ -19,7 +19,7 @@ type Transaction struct {
 	CategoryId      int64     `db:"category_id"`
 	TransactionType string    `db:"transaction_type"`
 	IsSplit         bool      `db:"is_split"`
-	StatementId     string    `db:"statement_id"`
+	StatementId     int64     `db:"statement_id"`
 	CreatedAt       time.Time `db:"created_at"`
 	UpdatedAt       time.Time `db:"updated_at"`
 }

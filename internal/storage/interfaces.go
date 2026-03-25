@@ -18,7 +18,7 @@ type TransactionStoreInterface interface {
 	FindDuplicateTransactions(date string, amount float64, description string) ([]types.Transaction, error)
 
 	// Bulk Operations
-	ImportTransactionsFromCSV(transactions []types.Transaction, statementId string) error
+	ImportTransactionsFromCSV(transactions []types.Transaction, statementId int64) error
 
 	// Split Operations
 	SplitTransaction(parentId int64, splits []types.Transaction) error
