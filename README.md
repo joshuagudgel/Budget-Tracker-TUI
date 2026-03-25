@@ -88,3 +88,19 @@ sqlite3 finance.db "SELECT event_type, COUNT(*) FROM audit_events GROUP BY event
 # Get all transaction audit events
 sqlite3 finance.db "SELECT * FROM audit_events WHERE entity_type='Transaction' ORDER BY timestamp DESC;"
 ```
+
+# Run Regression Tests
+
+```bash
+# Run all category tests
+go test ./internal/storage -run "TestCategory|TestGetDefault" -v
+
+# Run all transaction tests
+go test ./internal/storage -run "Test.*Transaction" -v
+
+# Run validation tests
+go test ./internal/validation -v
+
+# Run all storage tests
+go test ./internal/storage -v
+```
