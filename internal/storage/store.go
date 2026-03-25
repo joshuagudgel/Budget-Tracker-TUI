@@ -121,14 +121,6 @@ func (s *Store) GetDatabasePath() string {
 	return ""
 }
 
-// GetDatabaseStats returns database statistics
-func (s *Store) GetDatabaseStats() (map[string]interface{}, error) {
-	if s.db != nil {
-		return s.db.GetStats()
-	}
-	return nil, fmt.Errorf("database not initialized")
-}
-
 // SharedUtilsInterface implementation for backward compatibility
 func (s *Store) ParseCSVLine(line string, delimiter string) []string {
 	return s.Templates.ParseCSVLine(line, delimiter)

@@ -305,15 +305,6 @@ func (cs *CategoryStore) CreateCategory(displayName string) *CategoryResult {
 	return result
 }
 
-// AddCategory adds a new category with display name only (legacy wrapper)
-func (cs *CategoryStore) AddCategory(displayName string) error {
-	result := cs.CreateCategory(displayName)
-	if !result.Success {
-		return fmt.Errorf("%s", result.Message)
-	}
-	return nil
-}
-
 // CreateCategoryFull creates a new category with full category object support
 func (cs *CategoryStore) CreateCategoryFull(category *types.Category) error {
 	// Validate the category using built-in validation

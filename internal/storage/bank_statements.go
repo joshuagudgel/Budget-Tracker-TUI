@@ -368,12 +368,6 @@ func (bs *BankStatementStore) DetectOverlap(periodStart, periodEnd string, templ
 	return overlaps
 }
 
-// GetStatementSummary returns a formatted summary for display
-func (bs *BankStatementStore) GetStatementSummary(stmt types.BankStatement) string {
-	return fmt.Sprintf("%s | %s - %s | %d txns | %s",
-		stmt.Filename, stmt.PeriodStart, stmt.PeriodEnd, stmt.TxCount, stmt.Status)
-}
-
 // GetStatementsByStatus returns statements filtered by status
 func (bs *BankStatementStore) GetStatementsByStatus(status string) []types.BankStatement {
 	query := `

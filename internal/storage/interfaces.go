@@ -23,10 +23,6 @@ type TransactionStoreInterface interface {
 	// Split Operations
 	SplitTransaction(parentId int64, splits []types.Transaction) error
 
-	// Backup/Restore
-	CreateBackup() error
-	RestoreFromBackup() (*RestoreResult, error)
-
 	// Utilities
 	CalculateNextId() int64
 }

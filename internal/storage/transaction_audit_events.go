@@ -68,26 +68,6 @@ func (tas *TransactionAuditStore) RecordEvent(event *types.TransactionAuditEvent
 	return nil
 }
 
-// GetEventsByTransaction retrieves all audit events for a specific transaction
-func (tas *TransactionAuditStore) GetEventsByTransaction(transactionId int64) ([]types.TransactionAuditEvent, error) {
-	query := `
-		SELECT id, transaction_id, bank_statement_id, timestamp, action_type, source,
-			   description_fingerprint, category_assigned,
-			   category_confidence, previous_category, modification_reason,
-			   pre_edit_snapshot, post_edit_snapshot, created_at
-		FROM transaction_audit_events 
-		WHERE transaction_id = ?
-		ORDER BY timestamp DESC`
-
-	rows, err := tas.helper.QueryRows(query, transactionId)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query transaction audit events: %v", err)
-	}
-	defer rows.Close()
-
-	return tas.scanTransactionAuditEvents(rows)
-}
-
 // GetEventsByStatement retrieves all audit events for transactions in a bank statement
 func (tas *TransactionAuditStore) GetEventsByStatement(bankStatementId int64) ([]types.TransactionAuditEvent, error) {
 	query := `
