@@ -227,15 +227,6 @@ func (bs *BankStatementStore) GetStatementByIndex(index int) (*types.BankStateme
 	return &statements[index], nil
 }
 
-// GetStatementDetails returns a statement and existence boolean by index
-func (bs *BankStatementStore) GetStatementDetails(index int) (types.BankStatement, bool) {
-	statement, err := bs.GetStatementByIndex(index)
-	if err != nil {
-		return types.BankStatement{}, false
-	}
-	return *statement, true
-}
-
 // GetStatementById retrieves a bank statement by its ID
 func (bs *BankStatementStore) GetStatementById(id int64) (*types.BankStatement, error) {
 	query := `
@@ -366,40 +357,6 @@ func (bs *BankStatementStore) DetectOverlap(periodStart, periodEnd string, templ
 	}
 
 	return overlaps
-}
-
-// GetStatementsByStatus returns statements filtered by status
-func (bs *BankStatementStore) GetStatementsByStatus(status string) []types.BankStatement {
-	query := `
-		SELECT id, filename, import_date, period_start, period_end,
-		       template_used, tx_count, status, processing_time, error_log,
-		       created_at, updated_at
-		FROM bank_statements
-		WHERE status = ?
-		ORDER BY import_date DESC
-	`
-
-	rows, err := bs.helper.QueryRows(query, status)
-	if err != nil {
-		return []types.BankStatement{} // Return empty slice on error
-	}
-	defer rows.Close()
-
-	var statements []types.BankStatement
-	for rows.Next() {
-		stmt, err := bs.scanBankStatement(rows)
-		if err != nil {
-			continue // Skip malformed rows
-		}
-		statements = append(statements, stmt)
-	}
-
-	return statements
-}
-
-// GetUndoableStatements returns statements that can be undone
-func (bs *BankStatementStore) GetUndoableStatements() []types.BankStatement {
-	return bs.GetStatementsByStatus("completed")
 }
 
 // DeleteStatement permanently removes a bank statement from the database
