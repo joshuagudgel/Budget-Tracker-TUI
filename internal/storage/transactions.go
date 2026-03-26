@@ -50,15 +50,6 @@ func (ts *TransactionStore) SetStore(s *Store) {
 	ts.store = s
 }
 
-// CalculateNextId calculates the next available ID using SQLite's auto-increment
-func (ts *TransactionStore) CalculateNextId() int64 {
-	maxID, err := ts.helper.GetMaxID("transactions", "id")
-	if err != nil {
-		return 1 // Default to 1 if error or no records
-	}
-	return maxID + 1
-}
-
 // GetTransactions returns all transactions from the database
 func (ts *TransactionStore) GetTransactions() ([]types.Transaction, error) {
 	query := `
