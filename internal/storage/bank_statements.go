@@ -13,8 +13,9 @@ import (
 
 // BankStatementStore handles all bank statement-related operations using SQLite
 type BankStatementStore struct {
-	db     *database.Connection
-	helper *database.SQLHelper
+	db           *database.Connection
+	helper       *database.SQLHelper
+	transactions *TransactionStore // For cross-domain operations
 }
 
 // NewBankStatementStore creates a new BankStatementStore instance
@@ -23,6 +24,11 @@ func NewBankStatementStore(db *database.Connection) *BankStatementStore {
 		db:     db,
 		helper: database.NewSQLHelper(db),
 	}
+}
+
+// SetTransactionStore sets the transaction store reference for cross-domain operations
+func (bs *BankStatementStore) SetTransactionStore(transactions *TransactionStore) {
+	bs.transactions = transactions
 }
 
 // NextId calculates the next available ID for bank statements
@@ -492,4 +498,44 @@ func (bs *BankStatementStore) GetOrphanedImportingStatements() ([]types.BankStat
 	}
 
 	return statements, nil
+}
+
+// UndoImport removes all transactions from a specific statement import
+func (bs *BankStatementStore) UndoImport(statementId int64) (int, error) {
+	if bs.transactions == nil {
+		return 0, fmt.Errorf("transaction store not initialized")
+	}
+
+	transactions, err := bs.transactions.GetTransactions()
+	if err != nil {
+		return 0, err
+	}
+
+	var removedCount int
+
+	for _, tx := range transactions {
+		if tx.StatementId == statementId {
+			removedCount++
+		}
+	}
+
+	// Batch delete transactions with prepared statement for efficiency
+	if removedCount > 0 {
+		err := bs.db.ExecuteInTransaction(func(tx *sql.Tx) error {
+			deleteQuery := "DELETE FROM transactions WHERE statement_id = ?"
+			_, err := tx.Exec(deleteQuery, statementId)
+			return err
+		})
+		if err != nil {
+			return 0, fmt.Errorf("failed to remove transactions for statement %d: %w", statementId, err)
+		}
+	}
+
+	// Update statement status to indicate it was undone
+	err = bs.MarkStatementUndone(statementId)
+	if err != nil {
+		return removedCount, err
+	}
+
+	return removedCount, nil
 }

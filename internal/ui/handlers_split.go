@@ -462,11 +462,11 @@ func (m model) handleSaveSplit() (tea.Model, tea.Cmd) {
 	// Create split transactions
 	// Find category IDs from display names
 	category1Id := int64(0)
-	if category1 := m.store.GetCategoryByDisplayName(m.splitCategory1); category1 != nil {
+	if category1 := m.store.Categories.GetCategoryByDisplayName(m.splitCategory1); category1 != nil {
 		category1Id = category1.Id
 	}
 	category2Id := int64(0)
-	if category2 := m.store.GetCategoryByDisplayName(m.splitCategory2); category2 != nil {
+	if category2 := m.store.Categories.GetCategoryByDisplayName(m.splitCategory2); category2 != nil {
 		category2Id = category2.Id
 	}
 

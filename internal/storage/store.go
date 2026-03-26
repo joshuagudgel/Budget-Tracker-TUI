@@ -4,7 +4,6 @@ import (
 	"budget-tracker-tui/internal/database"
 	"budget-tracker-tui/internal/ml"
 	"budget-tracker-tui/internal/types"
-	"database/sql"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -53,7 +52,9 @@ func (s *Store) Init() error {
 	s.Templates.SetCategoryStore(s.Categories)
 	s.Templates.SetStore(s) // Add store reference for ML access
 	s.Transactions.SetTransactionAuditStore(s.TransactionAudits)
-	s.Transactions.SetStore(s) // Add store reference for ML access
+	s.Transactions.SetStore(s)                       // Add store reference for ML access
+	s.Categories.SetTransactionStore(s.Transactions) // For cross-domain category validation
+	s.Statements.SetTransactionStore(s.Transactions) // For cross-domain undo operations
 
 	// Initialize ML categorization service
 	err = s.initializeMLCategorizer()
@@ -68,8 +69,7 @@ func (s *Store) Init() error {
 		return fmt.Errorf("database health check failed: %w", err)
 	}
 
-	// Migrate existing data to new category system if needed
-	return s.MigrateTransactionCategories()
+	return nil
 }
 
 // initializeMLCategorizer sets up the ML categorization service with training data from audit events
@@ -128,48 +128,6 @@ func (s *Store) ParseCSVLine(line string, delimiter string) []string {
 
 func (s *Store) ParseAmount(amountStr string) (float64, error) {
 	return s.Templates.ParseAmount(amountStr)
-}
-
-// MigrateTransactionCategories migrates transactions to use proper category IDs
-// This function ensures data integrity during the SQLite migration
-func (s *Store) MigrateTransactionCategories() error {
-	transactions, err := s.Transactions.GetTransactions()
-	if err != nil {
-		return err
-	}
-
-	needsMigration := false
-	defaultCategoryId := s.Categories.GetDefaultCategoryId()
-
-	// Set default category ID for transactions that have CategoryId = 0
-	for i := range transactions {
-		if transactions[i].CategoryId == 0 {
-			transactions[i].CategoryId = defaultCategoryId
-			needsMigration = true
-		}
-	}
-
-	if needsMigration {
-		// Update transactions with the migrated data using SQLite transaction
-		err = s.db.ExecuteInTransaction(func(tx *sql.Tx) error {
-			for _, transaction := range transactions {
-				if transaction.CategoryId == defaultCategoryId {
-					updateQuery := "UPDATE transactions SET category_id = ? WHERE id = ?"
-					_, err := tx.Exec(updateQuery, defaultCategoryId, transaction.Id)
-					if err != nil {
-						return fmt.Errorf("failed to migrate transaction %d: %w", transaction.Id, err)
-					}
-				}
-			}
-			return nil
-		})
-
-		if err != nil {
-			return fmt.Errorf("failed to migrate transaction categories: %w", err)
-		}
-	}
-
-	return nil
 }
 
 // High-level operations that coordinate between domain stores
@@ -373,82 +331,9 @@ func (s *Store) ImportTransactionsFromCSV(filePath, templateName string) error {
 	return nil
 }
 
-// UndoImport removes all transactions from a specific statement import
-func (s *Store) UndoImport(statementId int64) (int, error) {
-	transactions, err := s.Transactions.GetTransactions()
-	if err != nil {
-		return 0, err
-	}
-
-	var removedCount int
-	var remainingTransactions []types.Transaction
-
-	for _, tx := range transactions {
-		if tx.StatementId != statementId {
-			remainingTransactions = append(remainingTransactions, tx)
-		} else {
-			removedCount++
-		}
-	}
-
-	// Batch delete transactions with prepared statement for efficiency
-	if removedCount > 0 {
-		err := s.db.ExecuteInTransaction(func(tx *sql.Tx) error {
-			deleteQuery := "DELETE FROM transactions WHERE statement_id = ?"
-			_, err := tx.Exec(deleteQuery, statementId)
-			return err
-		})
-		if err != nil {
-			return 0, fmt.Errorf("failed to remove transactions for statement %d: %w", statementId, err)
-		}
-	}
-
-	// Update statement status to indicate it was undone
-	err = s.Statements.MarkStatementUndone(statementId)
-	if err != nil {
-		return removedCount, err
-	}
-
-	return removedCount, nil
-}
-
-// ValidateCategoryForDeletion validates if a category can be safely deleted
-func (s *Store) ValidateCategoryForDeletion(categoryId int64) error {
-	// First check category-specific validations
-	err := s.Categories.ValidateCategoryForDeletion(categoryId)
-	if err != nil {
-		return err
-	}
-
-	// Check if category is in use by transactions
-	transactions, err := s.Transactions.GetTransactions()
-	if err != nil {
-		return err
-	}
-
-	transactionCount := 0
-	for _, tx := range transactions {
-		if tx.CategoryId == categoryId {
-			transactionCount++
-		}
-	}
-
-	if transactionCount > 0 {
-		categoryName := s.Categories.GetCategoryDisplayName(categoryId)
-		return fmt.Errorf("cannot delete category '%s': it is being used by %d transaction(s)",
-			categoryName, transactionCount)
-	}
-
-	return nil
-}
-
 // Legacy method compatibility - delegate to Categories store
 func (s *Store) GetCategoryDisplayName(categoryId int64) string {
 	return s.Categories.GetCategoryDisplayName(categoryId)
-}
-
-func (s *Store) GetCategoryByDisplayName(displayName string) *types.Category {
-	return s.Categories.GetCategoryByDisplayName(displayName)
 }
 
 // Analytics methods for spending analysis

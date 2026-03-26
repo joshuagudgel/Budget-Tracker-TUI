@@ -398,7 +398,7 @@ func (m *model) executeUndo() {
 		return
 	}
 
-	removedCount, err := m.store.UndoImport(m.undoStatementId)
+	removedCount, err := m.store.Statements.UndoImport(m.undoStatementId)
 	if err != nil {
 		m.undoMessage = fmt.Sprintf("Error during undo: %v", err)
 		return
@@ -547,7 +547,7 @@ func (m *model) validateSplitTransaction() {
 	}
 
 	// Validate categories by finding their IDs from display names
-	if category1 := m.store.GetCategoryByDisplayName(m.splitCategory1); category1 != nil {
+	if category1 := m.store.Categories.GetCategoryByDisplayName(m.splitCategory1); category1 != nil {
 		tempTx.CategoryId = category1.Id
 		if err := m.validator.ValidateField(&tempTx, "categoryId", categories); err != nil {
 			m.fieldErrors["splitCategory1"] = err.Error()
@@ -558,7 +558,7 @@ func (m *model) validateSplitTransaction() {
 		m.hasValidationErrors = true
 	}
 
-	if category2 := m.store.GetCategoryByDisplayName(m.splitCategory2); category2 != nil {
+	if category2 := m.store.Categories.GetCategoryByDisplayName(m.splitCategory2); category2 != nil {
 		tempTx.CategoryId = category2.Id
 		if err := m.validator.ValidateField(&tempTx, "categoryId", categories); err != nil {
 			m.fieldErrors["splitCategory2"] = err.Error()
@@ -900,7 +900,7 @@ func (m *model) deleteCategoryWithValidation() tea.Cmd {
 	categoryToDelete := m.categories[m.selectedCategoryIdx]
 
 	// Check if category can be deleted
-	err := m.store.ValidateCategoryForDeletion(categoryToDelete.Id)
+	err := m.store.Categories.ValidateCategoryForDeletion(categoryToDelete.Id)
 	if err != nil {
 		m.categoryMessage = "Cannot delete category: " + err.Error()
 		return nil

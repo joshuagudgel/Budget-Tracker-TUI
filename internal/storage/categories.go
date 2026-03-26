@@ -11,9 +11,10 @@ import (
 
 // CategoryStore handles all category-related operations using SQLite
 type CategoryStore struct {
-	db        *database.Connection
-	helper    *database.SQLHelper
-	defaultId int64
+	db           *database.Connection
+	helper       *database.SQLHelper
+	defaultId    int64
+	transactions *TransactionStore // For cross-domain operations
 }
 
 // NewCategoryStore creates a new CategoryStore instance
@@ -28,6 +29,11 @@ func NewCategoryStore(db *database.Connection) *CategoryStore {
 	store.ensureDefaultCategories()
 
 	return store
+}
+
+// SetTransactionStore sets the transaction store reference for cross-domain operations
+func (cs *CategoryStore) SetTransactionStore(transactions *TransactionStore) {
+	cs.transactions = transactions
 }
 
 // ensureDefaultCategories creates default categories if they don't exist
@@ -494,9 +500,26 @@ func (cs *CategoryStore) ValidateCategoryForDeletion(categoryId int64) error {
 		return fmt.Errorf("cannot delete the last active category")
 	}
 
-	// Note: We don't check for transaction usage here as that would require
-	// coordination with TransactionStore. The UI or main Store should handle
-	// that validation at a higher level.
+	// Check if category is in use by transactions (cross-domain validation)
+	if cs.transactions != nil {
+		transactions, err := cs.transactions.GetTransactions()
+		if err != nil {
+			return fmt.Errorf("failed to check transaction usage: %w", err)
+		}
+
+		transactionCount := 0
+		for _, tx := range transactions {
+			if tx.CategoryId == categoryId {
+				transactionCount++
+			}
+		}
+
+		if transactionCount > 0 {
+			categoryName := cs.GetCategoryDisplayName(categoryId)
+			return fmt.Errorf("cannot delete category '%s': it is being used by %d transaction(s)",
+				categoryName, transactionCount)
+		}
+	}
 
 	return nil
 }
