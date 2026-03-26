@@ -22,9 +22,6 @@ type TransactionStoreInterface interface {
 
 	// Split Operations
 	SplitTransaction(parentId int64, splits []types.Transaction) error
-
-	// Utilities
-	CalculateNextId() int64
 }
 
 // CategoryStoreInterface defines the contract for category operations
