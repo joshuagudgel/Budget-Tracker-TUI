@@ -84,14 +84,7 @@ type CSVTemplateStoreInterface interface {
 	GetDefaultTemplate() string
 	SetDefaultTemplate(templateName string) *TemplateResult
 
-	// Parsing Operations
-	ParseCSVLine(line string, delimiter string) []string
-	ParseTransactionFromTemplate(fields []string, template *types.CSVTemplate, lineNum int) (*types.Transaction, error)
-	ParseCSVTransactions(filePath string, template *types.CSVTemplate) ([]types.Transaction, error)
-	ParseCSVTransactionsWithDuplicateFilter(filePath string, template *types.CSVTemplate, defaultCategoryId int64) ([]types.Transaction, []types.Transaction, error)
-
-	// Utilities
-	ParseAmount(amountStr string) (float64, error)
+	// Note: CSV parsing operations moved to CSVParser service
 }
 
 // TransactionAuditStoreInterface defines the contract for transaction audit event operations
@@ -127,9 +120,7 @@ type SharedUtilsInterface interface {
 	// Cross-domain Operations
 	MigrateTransactionCategories() error
 
-	// Shared parsing utilities
-	ParseCSVLine(line string, delimiter string) []string
-	ParseAmount(amountStr string) (float64, error)
+	// Note: Shared parsing utilities moved to CSVParser service
 }
 
 // Result types for operations

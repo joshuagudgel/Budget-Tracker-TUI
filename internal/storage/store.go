@@ -18,6 +18,9 @@ type Store struct {
 	Templates         *CSVTemplateStore
 	TransactionAudits *TransactionAuditStore
 
+	// CSV parsing service
+	CSVParser *CSVParser
+
 	// ML categorization service
 	MLCategorizer *ml.EmbeddingsCategorizer
 
@@ -48,9 +51,6 @@ func (s *Store) Init() error {
 	s.TransactionAudits = NewTransactionAuditStore(db)
 
 	// Set cross-references between stores
-	s.Templates.SetTransactionStore(s.Transactions)
-	s.Templates.SetCategoryStore(s.Categories)
-	s.Templates.SetStore(s) // Add store reference for ML access
 	s.Transactions.SetTransactionAuditStore(s.TransactionAudits)
 	s.Transactions.SetStore(s)                       // Add store reference for ML access
 	s.Categories.SetTransactionStore(s.Transactions) // For cross-domain category validation
@@ -61,6 +61,9 @@ func (s *Store) Init() error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize ML categorizer: %w", err)
 	}
+
+	// Initialize CSV parser with dependencies
+	s.CSVParser = NewCSVParser(s.Transactions, s.Categories, s.MLCategorizer)
 
 	// No need to load stores explicitly with SQLite - data is always persisted
 	// Database health check to ensure everything is working
@@ -121,15 +124,6 @@ func (s *Store) GetDatabasePath() string {
 	return ""
 }
 
-// SharedUtilsInterface implementation for backward compatibility
-func (s *Store) ParseCSVLine(line string, delimiter string) []string {
-	return s.Templates.ParseCSVLine(line, delimiter)
-}
-
-func (s *Store) ParseAmount(amountStr string) (float64, error) {
-	return s.Templates.ParseAmount(amountStr)
-}
-
 // High-level operations that coordinate between domain stores
 
 // ValidateAndImportCSV validates and imports CSV with overlap detection
@@ -142,28 +136,30 @@ func (s *Store) ValidateAndImportCSV(filePath, templateName string) *types.Impor
 		return result
 	}
 
-	// Validate CSV data before importing
-	validationErrors, err := s.Templates.ValidateCSVData(filePath, template, s.Categories.GetDefaultCategoryId())
+	// Validate CSV data before importing using fail-fast mode
+	parseResult, err := s.CSVParser.ParseCSV(filePath, template, types.FailFast)
 	if err != nil {
 		result.Message = fmt.Sprintf("Validation error: %v", err)
 		return result
 	}
 
-	if len(validationErrors) > 0 {
+	if parseResult.HasErrors() {
 		result.HasValidationErrors = true
-		result.ValidationErrors = validationErrors
+		// Convert CSV parse errors to validation errors format
+		for _, rowError := range parseResult.FailedRows {
+			validationError := types.ValidationError{
+				LineNumber: rowError.LineNumber,
+				Field:      rowError.Field,
+				Message:    rowError.Message,
+			}
+			result.ValidationErrors = append(result.ValidationErrors, validationError)
+		}
 		result.Success = false
-		result.Message = fmt.Sprintf("Found %d formatting error(s) in CSV file", len(validationErrors))
+		result.Message = fmt.Sprintf("Found %d formatting error(s) in CSV file", len(parseResult.FailedRows))
 		return result
 	}
 
-	// Parse transactions to check for overlaps
-	transactions, err := s.Templates.ParseCSVTransactions(filePath, template, s.Categories.GetDefaultCategoryId())
-	if err != nil {
-		result.Message = fmt.Sprintf("Parse error: %v", err)
-		return result
-	}
-
+	transactions := parseResult.SuccessfulTransactions
 	if len(transactions) == 0 {
 		result.Message = "No valid transactions found in CSV file"
 		return result
@@ -204,27 +200,31 @@ func (s *Store) ImportCSVWithOverride(filePath, templateName string) *types.Impo
 		return result
 	}
 
-	// Validate CSV data before importing
-	validationErrors, err := s.Templates.ValidateCSVData(filePath, template, s.Categories.GetDefaultCategoryId())
-	if err != nil {
-		result.Message = fmt.Sprintf("Validation error: %v", err)
-		return result
-	}
-
-	if len(validationErrors) > 0 {
-		result.HasValidationErrors = true
-		result.ValidationErrors = validationErrors
-		result.Success = false
-		result.Message = fmt.Sprintf("Found %d formatting error(s) in CSV file", len(validationErrors))
-		return result
-	}
-
-	// Parse transactions and filter duplicates
-	newTransactions, duplicateTransactions, err := s.Templates.ParseCSVTransactionsWithDuplicateFilter(filePath, template, s.Categories.GetDefaultCategoryId())
+	// Parse CSV with duplicate detection
+	parseResult, err := s.CSVParser.ParseWithDuplicateDetection(filePath, template)
 	if err != nil {
 		result.Message = fmt.Sprintf("Parse error: %v", err)
 		return result
 	}
+
+	if parseResult.HasErrors() {
+		result.HasValidationErrors = true
+		// Convert CSV parse errors to validation errors format
+		for _, rowError := range parseResult.FailedRows {
+			validationError := types.ValidationError{
+				LineNumber: rowError.LineNumber,
+				Field:      rowError.Field,
+				Message:    rowError.Message,
+			}
+			result.ValidationErrors = append(result.ValidationErrors, validationError)
+		}
+		result.Success = false
+		result.Message = fmt.Sprintf("Found %d formatting error(s) in CSV file", len(parseResult.FailedRows))
+		return result
+	}
+
+	newTransactions := parseResult.SuccessfulTransactions
+	duplicateTransactions := parseResult.DuplicateRows
 
 	if len(newTransactions) == 0 {
 		if len(duplicateTransactions) > 0 {
@@ -270,12 +270,13 @@ func (s *Store) ImportTransactionsFromCSV(filePath, templateName string) error {
 		return fmt.Errorf("template '%s' not found", templateName)
 	}
 
-	// Parse transactions
-	transactions, err := s.Templates.ParseCSVTransactions(filePath, template, s.Categories.GetDefaultCategoryId())
+	// Parse transactions using CSV parser
+	parseResult, err := s.CSVParser.ParseCSV(filePath, template, types.FailFast)
 	if err != nil {
 		return fmt.Errorf("failed to parse CSV: %v", err)
 	}
 
+	transactions := parseResult.SuccessfulTransactions
 	if len(transactions) == 0 {
 		return fmt.Errorf("no valid transactions found in CSV")
 	}
