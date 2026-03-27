@@ -236,6 +236,18 @@ func (tv *TransactionValidator) ValidateBulkEdit(transactions []*types.Transacti
 	return results
 }
 
+// ValidateTransactionStruct validates an entire transaction using struct methods (deprecated, use ValidateTransaction instead)
+func ValidateTransactionStruct(transaction *types.Transaction, availableCategories []types.Category) types.ValidationResult {
+	validator := NewTransactionValidator()
+	return validator.ValidateTransaction(transaction, availableCategories)
+}
+
+// ValidateTransactionField validates a single field using struct methods (deprecated, use ValidateField instead)
+func ValidateTransactionField(transaction *types.Transaction, field string, availableCategories []types.Category) error {
+	validator := NewTransactionValidator()
+	return validator.ValidateField(transaction, field, availableCategories)
+}
+
 // CategoryManagementValidator provides validation for category CRUD operations
 type CategoryManagementValidator struct{}
 
