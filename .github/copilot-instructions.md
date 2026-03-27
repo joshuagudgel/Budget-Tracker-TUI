@@ -304,7 +304,7 @@ successStyle       // Green background for success
 //    - rejects entire import if ANY date unparseable
 //    - returns line numbers for debugging
 
-// 2. ParseTransactionFromTemplate: Date normalization
+// 2. parseTransactionFromTemplate: Date normalization
 //    - calls types.NormalizeDateToISO8601(csvDate, template.DateFormat)
 //    - stores normalized dates as YYYY-MM-DD
 
@@ -413,7 +413,7 @@ type CategoryPrediction struct {
 
 #### Prediction Flow
 
-**CSV Import Integration** (`ParseTransactionFromTemplate`):
+**CSV Import Integration** (`parseTransactionFromTemplate`):
 
 ```go
 // 1. Generate ML prediction for transaction description
@@ -445,7 +445,7 @@ auditEvent.CategoryConfidence = prediction.Confidence
 #### Integration Points
 
 - **Store Initialization**: `initializeMLCategorizer()` called during `store.Init()`
-- **CSV Import**: ML predictions injected in `ParseTransactionFromTemplate()`
+- **CSV Import**: ML predictions injected in `parseTransactionFromTemplate()`
 - **Audit Events**: Import events created in `ImportTransactionsFromCSV()` with confidence scores
 - **Retraining**: `store.RetrainMLCategorizer()` available for manual retraining
 - **Statistics**: `store.GetMLCategorizerStats()` for debugging and analysis
@@ -467,8 +467,8 @@ auditEvent.CategoryConfidence = prediction.Confidence
 - `internal/storage/transactions.go`: Transaction domain store (CRUD, splitting, backup/restore, bulk import)
 - `internal/storage/categories.go`: Category domain store (hierarchy, validation, CRUD operations)
 - `internal/storage/bank_statements.go`: Bank statement domain store (import tracking, undo functionality, overlap detection)
-- `internal/storage/csv_templates.go`: CSV template domain store (template management, CSV parsing logic)
-- `internal/storage/csv_parser.go`: CSV parsing service with ML integration and duplicate detection
+- `internal/storage/csv_templates.go`: CSV template domain store (template management - CRUD operations, validation, defaults)
+- `internal/storage/csv_parser.go`: CSV parsing logic (file processing, transaction creation from template definitions, ML integration, duplicate detection)
 - `internal/storage/transaction_audit_events.go`: Audit trail store (ML training data, user behavior tracking)
 - `internal/storage/interfaces.go`: Domain store contracts and result types
 - `internal/ml/categorizer.go`: ML categorization service (embeddings-based transaction categorization)
@@ -583,7 +583,24 @@ tests := []struct {
 - **ML Validation**: Graceful handling when ML components unavailable
 - **Error Scenarios**: Comprehensive coverage of failure modes and edge cases
 
-## CSV Template Management
+### CSV Template vs Parser Separation
+
+**KEY ARCHITECTURAL PRINCIPLE**: CSV templates and CSV parsing are completely separate concerns:
+
+#### CSVTemplateStore (csv_templates.go) - Template Management ONLY
+
+- Template CRUD operations (Create, Read, Update, Delete)
+- Template validation and defaults handling
+- Database persistence of template definitions
+- **ZERO CSV parsing methods** - templates define structure, don't process files
+
+#### CSVParser (csv_parser.go) - File Processing ONLY
+
+- CSV file reading and line parsing
+- Transaction creation from CSV data using templates
+- ML-integrated category assignment
+- Duplicate detection and validation
+- **ZERO template management** - pure stateless file processing service
 
 ### Template Creation (`createTemplateView`)
 
@@ -624,6 +641,25 @@ tests := []struct {
 - **Column Indices**: Non-negative integers, no duplicates allowed
 - **Category Column**: Optional field, when not provided transactions remain uncategorized
 - **Column Uniqueness**: Prevents multiple fields using same column index
+
+### CSV Template vs Parser Separation
+
+**KEY ARCHITECTURAL PRINCIPLE**: CSV templates and CSV parsing are completely separate concerns:
+
+#### CSVTemplateStore (csv_templates.go) - Template Management ONLY
+
+- Template CRUD operations (Create, Read, Update, Delete)
+- Template validation and defaults handling
+- Database persistence of template definitions
+- **ZERO CSV parsing methods** - templates define structure, don't process files
+
+#### CSVParser (csv_parser.go) - File Processing ONLY
+
+- CSV file reading and line parsing
+- Transaction creation from CSV data using templates
+- ML-integrated category assignment
+- Duplicate detection and validation
+- **ZERO template management** - pure stateless file processing service
 
 ## CSV Import Flow
 

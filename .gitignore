@@ -2,6 +2,7 @@
 dist/
 debug.log
 *.txt
+TEST-COVERAGE.md
 
 # Go build artifacts
 *.exe
