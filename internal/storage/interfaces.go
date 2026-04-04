@@ -113,7 +113,19 @@ type SnapshotStoreInterface interface {
 	CreateSnapshot(name, description, filePath string) (*SnapshotResult, error)
 	DeleteSnapshot(id int64) error
 
-	// Snapshot Operations
+	// Phase 2: Enhanced Snapshot Operations
+	CreateSnapshotWithUserPath(name, description, userSelectedPath string) (*SnapshotResult, error)
+	RestoreFromSnapshotWithBackup(snapshotId int64) (*RestoreResult, error)
+
+	// File Management & Directory Navigation
+	LoadSnapshotDirectoryEntries(currentDir string) *SnapshotDirectoryResult
+	LoadSnapshotDirectoryEntriesWithFallback(currentDir string) *SnapshotDirectoryResult
+	ValidateSnapshotFileAdvanced(filePath string) error
+	GetSnapshotFileSize(filePath string) (int64, error)
+	GenerateSnapshotFileName(baseName string) string
+	CleanupOrphanedSnapshots() (int, error)
+
+	// Legacy Operations (Phase 1)
 	CreateSnapshotFile(filePath string) error
 	RestoreFromSnapshot(snapshotId int64) (*RestoreResult, error)
 	ValidateSnapshotFile(filePath string) error
@@ -143,6 +155,13 @@ type SharedUtilsInterface interface {
 }
 
 // Result types for operations
+type SnapshotDirectoryResult struct {
+	Entries     []string
+	CurrentPath string
+	Success     bool
+	Message     string
+}
+
 type SnapshotResult struct {
 	Success    bool
 	Message    string

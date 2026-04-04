@@ -476,3 +476,110 @@ func (s *Store) GetMLCategorizerStats() map[string]interface{} {
 	stats["status"] = "active"
 	return stats
 }
+
+// Phase 2: Snapshot coordination methods
+
+// CreateSnapshotToUserLocation creates a snapshot at a user-specified location with full coordination
+func (s *Store) CreateSnapshotToUserLocation(name, description, userPath string) (*SnapshotResult, error) {
+	// Input validation
+	if name == "" {
+		return &SnapshotResult{Success: false, Message: "Snapshot name is required"}, nil
+	}
+
+	if userPath == "" {
+		return &SnapshotResult{Success: false, Message: "File path is required"}, nil
+	}
+
+	// Use the enhanced snapshot store method
+	return s.Snapshots.CreateSnapshotWithUserPath(name, description, userPath)
+}
+
+// RestoreSnapshotSafely performs a safe restore with automatic backup
+func (s *Store) RestoreSnapshotSafely(snapshotId int64) (*RestoreResult, error) {
+	// Validate snapshot exists
+	snapshot, err := s.Snapshots.GetSnapshotById(snapshotId)
+	if err != nil {
+		return &RestoreResult{Success: false, Message: fmt.Sprintf("Failed to validate snapshot: %v", err)}, nil
+	}
+	if snapshot == nil {
+		return &RestoreResult{Success: false, Message: fmt.Sprintf("Snapshot with ID %d not found", snapshotId)}, nil
+	}
+
+	// Perform safe restore with backup
+	return s.Snapshots.RestoreFromSnapshotWithBackup(snapshotId)
+}
+
+// LoadSnapshotDirectoryForPicker loads directory entries for snapshot file picker
+func (s *Store) LoadSnapshotDirectoryForPicker(currentDir string) *SnapshotDirectoryResult {
+	// Use fallback behavior to handle directory access issues gracefully
+	return s.Snapshots.LoadSnapshotDirectoryEntriesWithFallback(currentDir)
+}
+
+// GenerateSnapshotFileNameSuggestion creates a suggested filename for snapshots
+func (s *Store) GenerateSnapshotFileNameSuggestion(baseName string) string {
+	return s.Snapshots.GenerateSnapshotFileName(baseName)
+}
+
+// ValidateSnapshotFileForRestore validates a snapshot file for restoration
+func (s *Store) ValidateSnapshotFileForRestore(filePath string) error {
+	return s.Snapshots.ValidateSnapshotFileAdvanced(filePath)
+}
+
+// GetSnapshotStatistics returns comprehensive snapshot statistics
+func (s *Store) GetSnapshotStatistics() (map[string]interface{}, error) {
+	snapshots, err := s.Snapshots.GetSnapshots()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get snapshots: %v", err)
+	}
+
+	totalSize := int64(0)
+	totalTransactions := 0
+	for _, snapshot := range snapshots {
+		totalSize += snapshot.FileSize
+		totalTransactions += snapshot.TransactionCount
+	}
+
+	// Get current database counts
+	currentTx, currentCat, currentStmt, currentTmp, currentAudit, err := s.Snapshots.CalculateSnapshotCounts()
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate current counts: %v", err)
+	}
+
+	return map[string]interface{}{
+		"total_snapshots":      len(snapshots),
+		"total_size_bytes":     totalSize,
+		"total_size_display":   formatBytes(totalSize),
+		"total_transactions":   totalTransactions,
+		"current_transactions": currentTx,
+		"current_categories":   currentCat,
+		"current_statements":   currentStmt,
+		"current_templates":    currentTmp,
+		"current_audit_events": currentAudit,
+	}, nil
+}
+
+// CleanupSnapshotDatabase removes orphaned snapshot metadata
+func (s *Store) CleanupSnapshotDatabase() (int, error) {
+	return s.Snapshots.CleanupOrphanedSnapshots()
+}
+
+// Helper function for human-readable byte formatting
+func formatBytes(bytes int64) string {
+	const (
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+	)
+
+	size := float64(bytes)
+	switch {
+	case size >= GB:
+		return fmt.Sprintf("%.1f GB", size/GB)
+	case size >= MB:
+		return fmt.Sprintf("%.1f MB", size/MB)
+	case size >= KB:
+		return fmt.Sprintf("%.1f KB", size/KB)
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
+}
