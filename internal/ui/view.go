@@ -267,9 +267,20 @@ func (m model) View() string {
 
 		s += faintStyle.Render("Up/Down: Navigate | Enter/Backspace: Edit | Ctrl+S: Save | Esc: Cancel")
 	case backupView:
-		s += headerStyle.Render("Backup Options:") + "\n\n"
+		s += headerStyle.Render("Snapshot Options:") + "\n\n"
 
-		s += faintStyle.Render("r: Restore from backup | Esc: Return to menu") + "\n\n"
+		s += faintStyle.Render("s: Save Snapshot") + "\n"
+		s += faintStyle.Render("l: Load Snapshot") + "\n\n"
+
+		if m.snapshotMessage != "" {
+			if strings.Contains(m.snapshotMessage, "successfully") {
+				s += successStyle.Render(m.snapshotMessage) + "\n\n"
+			} else {
+				s += warningStyle.Render(m.snapshotMessage) + "\n\n"
+			}
+		}
+
+		s += faintStyle.Render("Esc: Return to menu") + "\n\n"
 	case filePickerView:
 		s += headerStyle.Render("Select CSV File") + "\n\n"
 		s += faintStyle.Render("Current Directory: "+m.currentDir) + "\n\n"
@@ -552,6 +563,12 @@ func (m model) View() string {
 
 	case analyticsView:
 		return m.renderAnalyticsView()
+	case snapshotNameInputView:
+		return m.renderSnapshotNameInputView()
+	case snapshotSavePickerView:
+		return m.renderSnapshotSavePickerView()
+	case snapshotLoadPickerView:
+		return m.renderSnapshotLoadPickerView()
 	}
 
 	return s
@@ -1661,6 +1678,119 @@ func (m model) formatNetAmount(amount float64) string {
 	} else {
 		return notificationStyle.Render(fmt.Sprintf("-$%.2f", -amount))
 	}
+}
+
+// Snapshot view render methods
+
+func (m model) renderSnapshotNameInputView() string {
+	var s string
+	s += headerStyle.Render("Save Snapshot") + "\n\n"
+
+	s += faintStyle.Render("Enter snapshot name:") + "\n\n"
+
+	// Display input field
+	inputValue := m.snapshotName
+	if m.isEditingSnapshotName {
+		inputValue = m.editingSnapshotNameStr
+	}
+
+	fieldStyle := formFieldStyle
+	if m.isEditingSnapshotName {
+		fieldStyle = selectingFieldStyle
+	}
+
+	s += fieldStyle.Render(inputValue) + "\n\n"
+
+	// Display messages
+	if m.snapshotMessage != "" {
+		s += warningStyle.Render(m.snapshotMessage) + "\n\n"
+	}
+
+	s += faintStyle.Render("Enter: Continue | Esc: Cancel") + "\n"
+
+	return s
+}
+
+func (m model) renderSnapshotSavePickerView() string {
+	var s string
+	s += headerStyle.Render("Save Snapshot: "+m.snapshotName) + "\n\n"
+	s += faintStyle.Render("Choose location to save snapshot:") + "\n"
+	s += faintStyle.Render("Current Directory: "+m.currentSnapshotDir) + "\n\n"
+
+	if len(m.snapshotDirectoryEntries) == 0 {
+		s += faintStyle.Render("No directories found in this location.") + "\n\n"
+	} else {
+		// Display directory entries
+		for i, entry := range m.snapshotDirectoryEntries {
+			prefix := "  "
+			if i == m.snapshotFileIndex {
+				prefix = "> "
+			}
+
+			// Style directories differently
+			fullPath := filepath.Join(m.currentSnapshotDir, entry)
+			if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
+				s += enumeratorStyle.Render(prefix) + headerStyle.Render(entry+"/") + "\n"
+			} else {
+				s += enumeratorStyle.Render(prefix) + entry + "\n"
+			}
+		}
+		s += "\n"
+	}
+
+	// Display messages
+	if m.snapshotMessage != "" {
+		if strings.Contains(m.snapshotMessage, "successfully") {
+			s += successStyle.Render(m.snapshotMessage) + "\n\n"
+		} else {
+			s += warningStyle.Render(m.snapshotMessage) + "\n\n"
+		}
+	}
+
+	s += faintStyle.Render("Up/Down: Navigate | Enter: Select Directory | s: Save Here | Esc: Back") + "\n"
+	return s
+}
+
+func (m model) renderSnapshotLoadPickerView() string {
+	var s string
+	s += headerStyle.Render("Load Snapshot") + "\n\n"
+	s += faintStyle.Render("Choose snapshot file to load:") + "\n"
+	s += faintStyle.Render("Current Directory: "+m.currentSnapshotDir) + "\n\n"
+
+	if len(m.snapshotDirectoryEntries) == 0 {
+		s += faintStyle.Render("No directories or .db files found in this location.") + "\n\n"
+	} else {
+		// Display directory entries
+		for i, entry := range m.snapshotDirectoryEntries {
+			prefix := "  "
+			if i == m.snapshotFileIndex {
+				prefix = "> "
+			}
+
+			// Style directories and .db files differently
+			fullPath := filepath.Join(m.currentSnapshotDir, entry)
+			if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
+				s += enumeratorStyle.Render(prefix) + headerStyle.Render(entry+"/") + "\n"
+			} else if strings.HasSuffix(strings.ToLower(entry), ".db") {
+				s += enumeratorStyle.Render(prefix) + successStyle.Render(entry) + "\n"
+			} else {
+				s += enumeratorStyle.Render(prefix) + faintStyle.Render(entry) + "\n"
+			}
+		}
+		s += "\n"
+	}
+
+	// Display messages
+	if m.snapshotMessage != "" {
+		if strings.Contains(m.snapshotMessage, "successfully") {
+			s += successStyle.Render(m.snapshotMessage) + "\n\n"
+		} else {
+			s += warningStyle.Render(m.snapshotMessage) + "\n\n"
+		}
+	}
+
+	s += faintStyle.Render("Up/Down: Navigate | Enter: Load File/Enter Directory | Esc: Back") + "\n"
+	return s
 }
 
 // renderUndoConfirmView renders the undo import confirmation view

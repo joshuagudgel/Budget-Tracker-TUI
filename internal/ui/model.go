@@ -140,14 +140,24 @@ type model struct {
 	availableParents  []types.Category // Categories available for parent selection
 
 	// Multi-select / bulk edit mode
-	isMultiSelectMode        bool
-	selectedTxIds            map[int64]bool
-	bulkEditField            uint
-	bulkEditValue            string
-	isBulkSelectingCategory  bool
-	isBulkSelectingType      bool
-	bulkCategorySelectIndex  int
-	bulkTypeSelectIndex      int
+	isMultiSelectMode       bool
+	selectedTxIds           map[int64]bool
+	bulkEditField           uint
+	bulkEditValue           string
+	isBulkSelectingCategory bool
+	isBulkSelectingType     bool
+	bulkCategorySelectIndex int
+	bulkTypeSelectIndex     int
+
+	// Snapshot save/load functionality
+	snapshotName             string
+	snapshotMessage          string
+	isEditingSnapshotName    bool
+	editingSnapshotNameStr   string
+	snapshotDirectoryEntries []string
+	snapshotFileIndex        int
+	currentSnapshotDir       string
+	selectedSnapshotFile     string
 	bulkCategoryValue        string
 	bulkTypeValue            string
 	bulkAmountValue          string
@@ -332,6 +342,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleStatementTransactionListView(key)
 		case analyticsView:
 			return m.handleAnalyticsView(key)
+		case snapshotNameInputView:
+			return m.handleSnapshotNameInputView(key)
+		case snapshotSavePickerView:
+			return m.handleSnapshotSavePickerView(key)
+		case snapshotLoadPickerView:
+			return m.handleSnapshotLoadPickerView(key)
 		}
 	case tea.WindowSizeMsg:
 		m.windowHeight = msg.Height

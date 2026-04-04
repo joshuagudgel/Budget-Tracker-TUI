@@ -25,6 +25,9 @@ const (
 	statementTransactionListView      = 20
 	validationErrorView               = 21
 	analyticsView                     = 22
+	snapshotNameInputView             = 23
+	snapshotSavePickerView            = 24
+	snapshotLoadPickerView            = 25
 )
 
 // Edit field constants

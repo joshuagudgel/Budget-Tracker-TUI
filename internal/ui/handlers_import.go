@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,9 +17,19 @@ func (m model) handleBackupView(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc":
 		m.state = menuView
-	case "r":
-		// Backup/restore functionality has been removed - SQLite only storage
-		m.backupMessage = "Backup/restore functionality has been removed. All data is stored in SQLite database."
+	case "s":
+		// Save snapshot - prompt for name
+		m.state = snapshotNameInputView
+		m.snapshotName = ""
+		m.isEditingSnapshotName = true
+		m.editingSnapshotNameStr = ""
+		m.snapshotMessage = ""
+	case "l":
+		// Load snapshot - open file picker
+		m.state = snapshotLoadPickerView
+		m.snapshotMessage = ""
+		m.snapshotFileIndex = 0
+		return m.loadSnapshotDirectory()
 	}
 	return m, nil
 }
@@ -295,5 +306,220 @@ func (m model) handleValidationErrorView(key string) (tea.Model, tea.Cmd) {
 		m.statementMessage = ""
 		m.state = filePickerView
 	}
+	return m, nil
+}
+
+// Snapshot Name Input View Handler
+func (m model) handleSnapshotNameInputView(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "esc":
+		// Cancel and return to backup view
+		m.state = backupView
+		m.snapshotMessage = ""
+	case "enter":
+		// Validate snapshot name and proceed to file picker
+		if m.isEditingSnapshotName {
+			// Save editing state and deactivate editing
+			m.snapshotName = m.editingSnapshotNameStr
+			m.isEditingSnapshotName = false
+		}
+
+		if strings.TrimSpace(m.snapshotName) == "" {
+			m.snapshotMessage = "Please enter a snapshot name"
+			return m, nil
+		}
+
+		// Proceed to save picker
+		m.state = snapshotSavePickerView
+		m.snapshotMessage = ""
+		m.snapshotFileIndex = 0
+		return m.loadSnapshotDirectory()
+	case "backspace":
+		if m.isEditingSnapshotName && len(m.editingSnapshotNameStr) > 0 {
+			m.editingSnapshotNameStr = m.editingSnapshotNameStr[:len(m.editingSnapshotNameStr)-1]
+		}
+	default:
+		if m.isEditingSnapshotName {
+			m.editingSnapshotNameStr += key
+		}
+	}
+	return m, nil
+}
+
+// Snapshot Save Picker View Handler
+func (m model) handleSnapshotSavePickerView(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "esc":
+		// Return to name input
+		m.state = snapshotNameInputView
+	case "s":
+		// Save to current directory
+		return m.handleSnapshotSaveToCurrentDirectory()
+	case "up":
+		if m.snapshotFileIndex > 0 {
+			m.snapshotFileIndex--
+		}
+	case "down":
+		if len(m.snapshotDirectoryEntries) > 0 && m.snapshotFileIndex < len(m.snapshotDirectoryEntries)-1 {
+			m.snapshotFileIndex++
+		}
+	case "enter":
+		return m.handleSnapshotSaveSelection()
+	}
+	return m, nil
+}
+
+// Snapshot Load Picker View Handler
+func (m model) handleSnapshotLoadPickerView(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "esc":
+		// Return to backup view
+		m.state = backupView
+		m.snapshotMessage = ""
+	case "up":
+		if m.snapshotFileIndex > 0 {
+			m.snapshotFileIndex--
+		}
+	case "down":
+		if len(m.snapshotDirectoryEntries) > 0 && m.snapshotFileIndex < len(m.snapshotDirectoryEntries)-1 {
+			m.snapshotFileIndex++
+		}
+	case "enter":
+		return m.handleSnapshotLoadSelection()
+	}
+	return m, nil
+}
+
+// Load snapshot directory helper
+func (m model) loadSnapshotDirectory() (tea.Model, tea.Cmd) {
+	if m.currentSnapshotDir == "" {
+		// Start with user home directory
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			m.currentSnapshotDir = "."
+		} else {
+			m.currentSnapshotDir = homeDir
+		}
+	}
+
+	result := m.store.LoadSnapshotDirectoryForPicker(m.currentSnapshotDir)
+	if !result.Success {
+		m.snapshotMessage = result.Message
+	} else {
+		m.snapshotDirectoryEntries = result.Entries
+	}
+	return m, nil
+}
+
+// Handle snapshot save location selection
+func (m model) handleSnapshotSaveSelection() (tea.Model, tea.Cmd) {
+	if len(m.snapshotDirectoryEntries) == 0 || m.snapshotFileIndex >= len(m.snapshotDirectoryEntries) {
+		return m, nil
+	}
+
+	selected := m.snapshotDirectoryEntries[m.snapshotFileIndex]
+	fullPath := filepath.Join(m.currentSnapshotDir, selected)
+
+	// Handle directory navigation
+	if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
+		if selected == ".." {
+			m.currentSnapshotDir = filepath.Dir(m.currentSnapshotDir)
+		} else {
+			m.currentSnapshotDir = fullPath
+		}
+		m.snapshotFileIndex = 0
+
+		result := m.store.LoadSnapshotDirectoryForPicker(m.currentSnapshotDir)
+		if !result.Success {
+			m.snapshotMessage = result.Message
+		} else {
+			m.snapshotDirectoryEntries = result.Entries
+		}
+		return m, nil
+	}
+
+	// Save snapshot to selected directory
+	snapshotPath := filepath.Join(m.currentSnapshotDir, m.snapshotName+".db")
+	err := m.store.Snapshots.CreateSnapshotFile(snapshotPath)
+
+	if err == nil {
+		m.snapshotMessage = fmt.Sprintf("Snapshot saved successfully: %s", snapshotPath)
+		m.state = backupView
+	} else {
+		m.snapshotMessage = fmt.Sprintf("Failed to save snapshot: %s", err.Error())
+	}
+
+	return m, nil
+}
+
+// Handle saving to current directory
+func (m model) handleSnapshotSaveToCurrentDirectory() (tea.Model, tea.Cmd) {
+	// Save snapshot to current directory
+	snapshotPath := filepath.Join(m.currentSnapshotDir, m.snapshotName+".db")
+	err := m.store.Snapshots.CreateSnapshotFile(snapshotPath)
+
+	if err == nil {
+		m.snapshotMessage = fmt.Sprintf("Snapshot saved successfully: %s", snapshotPath)
+		m.state = backupView
+	} else {
+		m.snapshotMessage = fmt.Sprintf("Failed to save snapshot: %s", err.Error())
+	}
+
+	return m, nil
+}
+
+// Handle snapshot load selection
+func (m model) handleSnapshotLoadSelection() (tea.Model, tea.Cmd) {
+	if len(m.snapshotDirectoryEntries) == 0 || m.snapshotFileIndex >= len(m.snapshotDirectoryEntries) {
+		return m, nil
+	}
+
+	selected := m.snapshotDirectoryEntries[m.snapshotFileIndex]
+	fullPath := filepath.Join(m.currentSnapshotDir, selected)
+
+	// Handle directory navigation
+	if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
+		if selected == ".." {
+			m.currentSnapshotDir = filepath.Dir(m.currentSnapshotDir)
+		} else {
+			m.currentSnapshotDir = fullPath
+		}
+		m.snapshotFileIndex = 0
+
+		result := m.store.LoadSnapshotDirectoryForPicker(m.currentSnapshotDir)
+		if !result.Success {
+			m.snapshotMessage = result.Message
+		} else {
+			m.snapshotDirectoryEntries = result.Entries
+		}
+		return m, nil
+	}
+
+	// Load snapshot from selected file
+	if strings.HasSuffix(strings.ToLower(selected), ".db") {
+		// Create backup of current database before restore
+		backupPath, err := m.createCurrentDatabaseBackup()
+		if err != nil {
+			m.snapshotMessage = fmt.Sprintf("Failed to create backup before restore: %s", err.Error())
+			return m, nil
+		}
+
+		// Simple restore by copying file and reinitializing database
+		err = m.restoreFromSnapshotFile(fullPath)
+
+		if err == nil {
+			// Successful restore - reload all data
+			m.transactions, _ = m.store.Transactions.GetTransactions()
+			// Reset UI state
+			m.listIndex = 0
+			m.snapshotMessage = fmt.Sprintf("Snapshot restored successfully from: %s (backup saved to: %s)", fullPath, backupPath)
+			m.state = backupView
+		} else {
+			m.snapshotMessage = fmt.Sprintf("Failed to restore snapshot: %s", err.Error())
+		}
+	} else {
+		m.snapshotMessage = "Please select a .db file to load"
+	}
+
 	return m, nil
 }
