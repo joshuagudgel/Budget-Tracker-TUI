@@ -202,6 +202,12 @@ type model struct {
 	undoTxCount       int
 	undoMessage       string
 
+	// Transaction deletion confirmation
+	pendingDeleteTx         bool
+	deleteTransactionId     int64
+	deleteTransactionDesc   string
+	deleteTransactionAmount string
+
 	// Validation state
 	fieldErrors            map[string]string
 	hasValidationErrors    bool

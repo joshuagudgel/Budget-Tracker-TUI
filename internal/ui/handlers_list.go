@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -42,9 +44,18 @@ func (m model) handleListView(key string) (tea.Model, tea.Cmd) {
 			return m.handleToggleSelection()
 		}
 	case "d":
-		if !m.isMultiSelectMode {
-			// Existing single delete logic
-			m.store.Transactions.DeleteTransaction(m.transactions[m.listIndex].Id)
+		if !m.isMultiSelectMode && !m.pendingDeleteTx {
+			// Setup deletion confirmation
+			tx := m.transactions[m.listIndex]
+			m.pendingDeleteTx = true
+			m.deleteTransactionId = tx.Id
+			m.deleteTransactionDesc = tx.Description
+			m.deleteTransactionAmount = fmt.Sprintf("%.2f", tx.Amount)
+		}
+	case "y":
+		if m.pendingDeleteTx {
+			// Confirm deletion
+			m.store.Transactions.DeleteTransaction(m.deleteTransactionId)
 			m.transactions, _ = m.store.Transactions.GetTransactions()
 			m.sortTransactionsByDate()
 			// Bounds checking for list index
@@ -54,8 +65,29 @@ func (m model) handleListView(key string) (tea.Model, tea.Cmd) {
 			if len(m.transactions) == 0 {
 				m.listIndex = 0
 			}
+			// Clear confirmation state
+			m.pendingDeleteTx = false
+			m.deleteTransactionId = 0
+			m.deleteTransactionDesc = ""
+			m.deleteTransactionAmount = ""
+		}
+	case "n":
+		if m.pendingDeleteTx {
+			// Cancel deletion
+			m.pendingDeleteTx = false
+			m.deleteTransactionId = 0
+			m.deleteTransactionDesc = ""
+			m.deleteTransactionAmount = ""
 		}
 	case "esc":
+		if m.pendingDeleteTx {
+			// Cancel deletion
+			m.pendingDeleteTx = false
+			m.deleteTransactionId = 0
+			m.deleteTransactionDesc = ""
+			m.deleteTransactionAmount = ""
+			return m, nil
+		}
 		if m.isMultiSelectMode {
 			return m.exitMultiSelectMode()
 		}

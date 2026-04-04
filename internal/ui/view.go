@@ -104,6 +104,16 @@ func (m model) View() string {
 	case listView:
 		// view transactions in one large list
 		// headers stay along top with aligned columns
+
+		// Show deletion confirmation if pending
+		if m.pendingDeleteTx {
+			desc := m.deleteTransactionDesc
+			if len(desc) > 30 {
+				desc = desc[:27] + "..."
+			}
+			s += warningStyle.Render(fmt.Sprintf("Delete transaction: %s ($%s)? (y/n/Esc)", desc, m.deleteTransactionAmount)) + "\n\n"
+		}
+
 		s += fmt.Sprintf("%-12s | %-40s | %12s | %-20s | %-15s\n",
 			headerStyle.Render("Date"),
 			headerStyle.Render("Description"),
@@ -1838,6 +1848,15 @@ func (m model) renderStatementTransactionListView() string {
 	s += headerStyle.Render("Transactions: "+stmt.Filename) + "\n"
 	s += faintStyle.Render("Period: "+stmt.PeriodStart.Format("2006-01-02")+" to "+stmt.PeriodEnd.Format("2006-01-02")) + " | " +
 		faintStyle.Render(fmt.Sprintf("%d transactions", len(m.filteredTransactions))) + "\n\n"
+
+	// Show deletion confirmation if pending
+	if m.pendingDeleteTx {
+		desc := m.deleteTransactionDesc
+		if len(desc) > 30 {
+			desc = desc[:27] + "..."
+		}
+		s += warningStyle.Render(fmt.Sprintf("Delete transaction: %s ($%s)? (y/n/Esc)", desc, m.deleteTransactionAmount)) + "\n\n"
+	}
 
 	// Column headers with aligned columns
 	s += fmt.Sprintf("%-12s | %-40s | %12s | %-20s | %-15s\n",
