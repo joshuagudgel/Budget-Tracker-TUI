@@ -251,3 +251,45 @@ func (ct *CSVTemplate) validateUniqueColumns() error {
 
 	return nil
 }
+
+// Snapshot represents a database snapshot
+type Snapshot struct {
+	Id               int64     `db:"id"`
+	Name             string    `db:"name"`
+	Description      string    `db:"description"`
+	FilePath         string    `db:"file_path"`
+	FileSize         int64     `db:"file_size"`
+	TransactionCount int       `db:"transaction_count"`
+	CategoryCount    int       `db:"category_count"`
+	StatementCount   int       `db:"statement_count"`
+	TemplateCount    int       `db:"template_count"`
+	AuditEventCount  int       `db:"audit_event_count"`
+	CreatedAt        time.Time `db:"created_at"`
+	UpdatedAt        time.Time `db:"updated_at"`
+}
+
+// GetSizeDisplay returns human-readable file size
+func (s *Snapshot) GetSizeDisplay() string {
+	const (
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+	)
+
+	size := float64(s.FileSize)
+	switch {
+	case size >= GB:
+		return fmt.Sprintf("%.1f GB", size/GB)
+	case size >= MB:
+		return fmt.Sprintf("%.1f MB", size/MB)
+	case size >= KB:
+		return fmt.Sprintf("%.1f KB", size/KB)
+	default:
+		return fmt.Sprintf("%d B", s.FileSize)
+	}
+}
+
+// GetCreatedAtDisplay returns formatted creation date
+func (s *Snapshot) GetCreatedAtDisplay() string {
+	return s.CreatedAt.Format("01/02/2006 3:04 PM")
+}

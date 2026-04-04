@@ -104,6 +104,25 @@ type TransactionAuditStoreInterface interface {
 	GetImportEvents() ([]types.TransactionAuditEvent, error)
 }
 
+// SnapshotStoreInterface defines the contract for snapshot operations
+type SnapshotStoreInterface interface {
+	// CRUD Operations
+	GetSnapshots() ([]types.Snapshot, error)
+	GetSnapshotById(id int64) (*types.Snapshot, error)
+	GetSnapshotByName(name string) (*types.Snapshot, error)
+	CreateSnapshot(name, description, filePath string) (*SnapshotResult, error)
+	DeleteSnapshot(id int64) error
+
+	// Snapshot Operations
+	CreateSnapshotFile(filePath string) error
+	RestoreFromSnapshot(snapshotId int64) (*RestoreResult, error)
+	ValidateSnapshotFile(filePath string) error
+
+	// Metadata Operations
+	UpdateSnapshotMetadata(snapshot *types.Snapshot) error
+	CalculateSnapshotCounts() (transactionCount, categoryCount, statementCount, templateCount, auditEventCount int, err error)
+}
+
 // MLCategorizerInterface defines the contract for ML-based transaction categorization
 type MLCategorizerInterface interface {
 	// Training Operations
@@ -124,6 +143,13 @@ type SharedUtilsInterface interface {
 }
 
 // Result types for operations
+type SnapshotResult struct {
+	Success    bool
+	Message    string
+	SnapshotId int64
+	FilePath   string
+}
+
 type RestoreResult struct {
 	Success    bool
 	Message    string

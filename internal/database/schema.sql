@@ -149,20 +149,41 @@ BEGIN
     UPDATE transactions SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
 
-CREATE TRIGGER update_csv_templates_updated_at
-    AFTER UPDATE ON csv_templates
-    FOR EACH ROW
-    WHEN NEW.updated_at = OLD.updated_at
-BEGIN
-    UPDATE csv_templates SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
-END;
+-- Snapshots table for database state management
+CREATE TABLE snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT,
+    file_path TEXT NOT NULL UNIQUE,
+    file_size INTEGER NOT NULL,
+    transaction_count INTEGER NOT NULL DEFAULT 0,
+    category_count INTEGER NOT NULL DEFAULT 0,
+    statement_count INTEGER NOT NULL DEFAULT 0,
+    template_count INTEGER NOT NULL DEFAULT 0,
+    audit_event_count INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (length(name) > 0),
+    CHECK (length(file_path) > 0),
+    CHECK (file_size >= 0),
+    CHECK (transaction_count >= 0),
+    CHECK (category_count >= 0),
+    CHECK (statement_count >= 0),
+    CHECK (template_count >= 0),
+    CHECK (audit_event_count >= 0)
+);
 
-CREATE TRIGGER update_bank_statements_updated_at
-    AFTER UPDATE ON bank_statements
+-- Index for snapshot lookups
+CREATE INDEX idx_snapshots_created ON snapshots(created_at);
+CREATE INDEX idx_snapshots_name ON snapshots(name);
+
+-- Trigger for snapshots updated_at maintenance
+CREATE TRIGGER update_snapshots_updated_at
+    AFTER UPDATE ON snapshots
     FOR EACH ROW
     WHEN NEW.updated_at = OLD.updated_at
 BEGIN
-    UPDATE bank_statements SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+    UPDATE snapshots SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
 
 -- Insert default "Uncategorized" category

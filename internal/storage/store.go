@@ -17,6 +17,7 @@ type Store struct {
 	Statements        *BankStatementStore
 	Templates         *CSVTemplateStore
 	TransactionAudits *TransactionAuditStore
+	Snapshots         *SnapshotStore
 
 	// CSV parsing service
 	CSVParser *CSVParser
@@ -49,6 +50,7 @@ func (s *Store) Init() error {
 	s.Statements = NewBankStatementStore(db)
 	s.Transactions = NewTransactionStore(db)
 	s.TransactionAudits = NewTransactionAuditStore(db)
+	s.Snapshots = NewSnapshotStore(db)
 
 	// Set cross-references between stores
 	s.Transactions.SetTransactionAuditStore(s.TransactionAudits)
