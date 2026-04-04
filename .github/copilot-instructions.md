@@ -274,7 +274,36 @@ activeFieldStyle    // Blue border (selected)
 selectingFieldStyle // Orange border (editing)
 
 successStyle       // Green background for success
+warningStyle       // Orange background for destructive actions
 ```
+
+### Transaction Deletion Confirmation
+
+**Inline Confirmation Pattern**: Transaction deletion uses inline confirmation above tables rather than dedicated view states to maintain user workflow.
+
+**Model Fields**:
+
+```go
+// Transaction deletion confirmation
+pendingDeleteTx        bool    // Tracks when deletion confirmation is active
+deleteTransactionId    int64   // Stores ID of transaction to be deleted
+deleteTransactionDesc  string  // Stores description for confirmation display
+deleteTransactionAmount string // Stores formatted amount for display
+```
+
+**User Interaction Flow**:
+
+1. **'d' key**: Shows inline confirmation above table with transaction details
+2. **'y' key**: Confirms deletion, removes transaction, reloads lists, clears confirmation
+3. **'n'/'Esc'**: Cancels deletion, clears confirmation state, returns to normal view
+
+**UI Behavior**:
+
+- Confirmation message appears above table headers in both `listView` and `statementTransactionListView`
+- Uses `warningStyle` formatting with orange background to indicate destructive action
+- Displays truncated description and formatted amount: "Delete transaction: Description... ($123.45)? (y/n/Esc)"
+- Prevents other operations while `pendingDeleteTx = true`
+- Maintains list position and multi-select state during confirmation
 
 ### UI Validation Integration
 
@@ -321,7 +350,7 @@ successStyle       // Green background for success
 
 ## Current Features
 
-- ✅ **Transaction CRUD**: List, edit, delete, split transactions
+- ✅ **Transaction CRUD**: List, edit, delete (with inline confirmation), split transactions
 - ✅ **Multi-select**: Bulk edit multiple transactions with 'e'
 - ✅ **CSV Import**: Template-based bank statement import with overlap detection
 - ✅ **CSV Template Management**: Enhanced template creation, editing, and deletion with validation
@@ -881,6 +910,7 @@ if template.MerchantColumn != nil {
 **Cancel**: Esc returns to previous view
 **Multi-select**: 'm' toggles, 'e' edits selected items
 **Split**: 's' in edit view, modify original + create second transaction
+**Delete**: 'd' shows confirmation, 'y' confirms, 'n'/'Esc' cancels
 **Bank Statements**: 'i' quick import, 'b' or 'h' management interface, 'u' quick undo
 **CSV Templates**: 'c' create template, 'd' delete template, Enter selects default
 
