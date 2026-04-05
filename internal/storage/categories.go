@@ -435,7 +435,7 @@ func (cs *CategoryStore) UpdateCategory(category *types.Category) error {
 	return nil
 }
 
-// DeleteCategory safely deletes a category (sets as inactive)
+// DeleteCategory safely deletes a category (hard delete when no transactions use it)
 func (cs *CategoryStore) DeleteCategory(categoryId int64) error {
 	// First validate that deletion is safe
 	err := cs.ValidateCategoryForDeletion(categoryId)
@@ -443,10 +443,9 @@ func (cs *CategoryStore) DeleteCategory(categoryId int64) error {
 		return err
 	}
 
-	now := time.Now()
-	query := "UPDATE categories SET is_active = 0, updated_at = ? WHERE id = ?"
-
-	rowsAffected, err := cs.helper.ExecReturnRowsAffected(query, now, categoryId)
+	// Since validation ensures no transactions use this category, we can hard delete
+	query := "DELETE FROM categories WHERE id = ?"
+	rowsAffected, err := cs.helper.ExecReturnRowsAffected(query, categoryId)
 	if err != nil {
 		return fmt.Errorf("failed to delete category: %w", err)
 	}
@@ -465,8 +464,6 @@ func (cs *CategoryStore) DeleteCategory(categoryId int64) error {
 			cs.defaultId = 1 // Fallback to "Uncategorized"
 		}
 	}
-
-	// Audit: Category deletion (soft delete) events are no longer recorded
 
 	return nil
 }
@@ -491,7 +488,7 @@ func (cs *CategoryStore) ValidateCategoryForDeletion(categoryId int64) error {
 		return fmt.Errorf("cannot delete category with active child categories")
 	}
 
-	// Count active categories to ensure at least one remains
+	// Count active categories to ensure at least one remains after deletion
 	activeCount, err := cs.helper.CountBy("categories", "is_active = 1")
 	if err != nil {
 		return fmt.Errorf("failed to count active categories: %w", err)
@@ -500,7 +497,7 @@ func (cs *CategoryStore) ValidateCategoryForDeletion(categoryId int64) error {
 		return fmt.Errorf("cannot delete the last active category")
 	}
 
-	// Check if category is in use by transactions (cross-domain validation)
+	// Check if category is in use by transactions (prevent deletion if in use)
 	if cs.transactions != nil {
 		transactions, err := cs.transactions.GetTransactions()
 		if err != nil {

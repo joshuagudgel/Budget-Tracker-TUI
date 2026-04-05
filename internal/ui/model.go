@@ -730,7 +730,7 @@ func (m *model) handleCategoryFieldNavigation(direction int) {
 }
 
 // activateCategoryFieldEditing activates field editing (returns model, cmd)
-func (m model) activateCategoryFieldEditing() (tea.Model, tea.Cmd) {
+func (m *model) activateCategoryFieldEditing() (tea.Model, tea.Cmd) {
 	// Inline the field activation logic
 	if m.categoryActiveField >= 0 && m.categoryActiveField < len(m.categoryFields) {
 		field := m.categoryFields[m.categoryActiveField]
@@ -748,7 +748,7 @@ func (m model) activateCategoryFieldEditing() (tea.Model, tea.Cmd) {
 }
 
 // activateCategoryFieldEditingWithBackspace activates field editing with backspace (returns model, cmd)
-func (m model) activateCategoryFieldEditingWithBackspace() (tea.Model, tea.Cmd) {
+func (m *model) activateCategoryFieldEditingWithBackspace() (tea.Model, tea.Cmd) {
 	// Inline the backspace activation logic
 	if m.categoryActiveField >= 0 && m.categoryActiveField < len(m.categoryFields) {
 		field := m.categoryFields[m.categoryActiveField]
