@@ -125,13 +125,20 @@ func (m model) handleFileSelection() (tea.Model, tea.Cmd) {
 }
 
 func (m *model) loadDirectoryEntries() error {
-	// Initialize currentDir to user's home directory if not set
+	// Initialize currentDir using last import directory if available
 	if m.currentDir == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return err
+		// Try to get last used import directory
+		lastDir := m.store.GetLastImportDirectory()
+		if lastDir != "" {
+			m.currentDir = lastDir
+		} else {
+			// Fallback to user's home directory
+			homeDir, err := os.UserHomeDir()
+			if err != nil {
+				return err
+			}
+			m.currentDir = homeDir
 		}
-		m.currentDir = homeDir
 	}
 
 	entries, err := os.ReadDir(m.currentDir)

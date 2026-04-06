@@ -104,6 +104,18 @@ type TransactionAuditStoreInterface interface {
 	GetImportEvents() ([]types.TransactionAuditEvent, error)
 }
 
+// UserPreferencesStoreInterface defines the contract for user preferences operations
+type UserPreferencesStoreInterface interface {
+	// Core Operations
+	GetPreference(key string) (string, error)
+	SetPreference(key, value string) error
+	DeletePreference(key string) error
+
+	// Convenience Operations
+	HasPreference(key string) bool
+	GetPreferenceWithDefault(key, defaultValue string) string
+}
+
 // SnapshotStoreInterface defines the contract for snapshot operations
 type SnapshotStoreInterface interface {
 	// CRUD Operations

@@ -14,10 +14,17 @@ func (m model) handleBankStatementView(key string) (tea.Model, tea.Cmd) {
 		m.state = csvTemplateView
 		m.templateIndex = 0
 	case "f", "i":
-		// Initialize directory if needed
+		// Initialize directory if needed, preferring last import directory
 		if m.currentDir == "" {
-			if homeDir, err := os.UserHomeDir(); err == nil {
-				m.currentDir = homeDir
+			// Try to get last used import directory
+			lastDir := m.store.GetLastImportDirectory()
+			if lastDir != "" {
+				m.currentDir = lastDir
+			} else {
+				// Fallback to user's home directory
+				if homeDir, err := os.UserHomeDir(); err == nil {
+					m.currentDir = homeDir
+				}
 			}
 		}
 

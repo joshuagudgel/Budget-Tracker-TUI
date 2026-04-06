@@ -18,6 +18,7 @@ type Store struct {
 	Templates         *CSVTemplateStore
 	TransactionAudits *TransactionAuditStore
 	Snapshots         *SnapshotStore
+	UserPreferences   *UserPreferencesStore
 
 	// CSV parsing service
 	CSVParser *CSVParser
@@ -51,6 +52,7 @@ func (s *Store) Init() error {
 	s.Transactions = NewTransactionStore(db)
 	s.TransactionAudits = NewTransactionAuditStore(db)
 	s.Snapshots = NewSnapshotStore(db)
+	s.UserPreferences = NewUserPreferencesStore(db)
 
 	// Set cross-references between stores
 	s.Transactions.SetTransactionAuditStore(s.TransactionAudits)
@@ -186,6 +188,12 @@ func (s *Store) ValidateAndImportCSV(filePath, templateName string) *types.Impor
 		return result
 	}
 
+	// Save the directory for future imports (only on success)
+	if saveErr := s.SaveLastImportDirectory(filePath); saveErr != nil {
+		// Log error but don't fail the import
+		fmt.Printf("[Warning] Failed to save last import directory: %v\n", saveErr)
+	}
+
 	result.Success = true
 	result.ImportedCount = len(transactions)
 	result.Message = fmt.Sprintf("Successfully imported %d transactions from %s", len(transactions), result.Filename)
@@ -252,6 +260,12 @@ func (s *Store) ImportCSVWithOverride(filePath, templateName string) *types.Impo
 	if err != nil {
 		result.Message = fmt.Sprintf("Save failed: %v", err)
 		return result
+	}
+
+	// Save the directory for future imports (only on success)
+	if saveErr := s.SaveLastImportDirectory(filePath); saveErr != nil {
+		// Log error but don't fail the import
+		fmt.Printf("[Warning] Failed to save last import directory: %v\n", saveErr)
 	}
 
 	result.Success = true
@@ -582,4 +596,50 @@ func formatBytes(bytes int64) string {
 	default:
 		return fmt.Sprintf("%d B", bytes)
 	}
+}
+
+// User preferences convenience methods for file picker improvements
+
+// GetLastImportDirectory retrieves the last used dir for importing bank statements
+func (s *Store) GetLastImportDirectory() string {
+	if s.UserPreferences == nil {
+		return ""
+	}
+
+	// Get saved directory from preferences
+	savedDir := s.UserPreferences.GetPreferenceWithDefault("last_import_directory", "")
+	if savedDir == "" {
+		return ""
+	}
+
+	// Use directory utility to find closest existing directory
+	return types.FindClosestExistingDirectory(savedDir)
+}
+
+// SaveLastImportDirectory saves the directory from a successful import for future use
+func (s *Store) SaveLastImportDirectory(filePath string) error {
+	if s.UserPreferences == nil {
+		return fmt.Errorf("user preferences not initialized")
+	}
+
+	if filePath == "" {
+		return fmt.Errorf("file path cannot be empty")
+	}
+
+	// Extract directory from file path
+	directory := filepath.Dir(filePath)
+	if directory == "" || directory == "." {
+		return fmt.Errorf("invalid file path: %s", filePath)
+	}
+
+	// Clean the directory path
+	directory = filepath.Clean(directory)
+
+	// Validate that the directory exists before saving
+	if !types.ValidateDirectoryExists(directory) {
+		return fmt.Errorf("directory does not exist: %s", directory)
+	}
+
+	// Save to preferences
+	return s.UserPreferences.SetPreference("last_import_directory", directory)
 }

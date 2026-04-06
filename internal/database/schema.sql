@@ -149,6 +149,29 @@ BEGIN
     UPDATE transactions SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
 
+-- User preferences for application settings
+CREATE TABLE user_preferences (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    preference_key TEXT NOT NULL UNIQUE,
+    preference_value TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (length(preference_key) > 0),
+    CHECK (length(preference_value) > 0)
+);
+
+-- Index for fast preference lookups
+CREATE INDEX idx_user_preferences_key ON user_preferences(preference_key);
+
+-- Trigger for automatic updated_at maintenance on user_preferences
+CREATE TRIGGER update_user_preferences_updated_at
+    AFTER UPDATE ON user_preferences
+    FOR EACH ROW
+    WHEN NEW.updated_at = OLD.updated_at
+BEGIN
+    UPDATE user_preferences SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
 -- Snapshots table for database state management
 CREATE TABLE snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
