@@ -168,13 +168,13 @@ func (ct *CSVTemplate) ValidateField(field string) error {
 	switch strings.ToLower(field) {
 	case "name":
 		return ct.validateName()
-	case "postdatecolumn":
+	case "postdate":
 		return ct.validatePostDateColumn()
-	case "amountcolumn":
+	case "amount":
 		return ct.validateAmountColumn()
-	case "desccolumn":
+	case "description":
 		return ct.validateDescColumn()
-	case "categorycolumn":
+	case "category":
 		return ct.validateCategoryColumn()
 	default:
 		return fmt.Errorf("unknown field: %s", field)
