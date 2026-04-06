@@ -355,7 +355,7 @@ func (m model) View() string {
 		if m.isEditingTemplateName {
 			nameValue = m.editingTemplateNameStr
 		}
-		s += formLabelStyle.Render("Template Name:") + nameStyle.Render(nameValue) + "\n"
+		s += formLabelStyle.Render("Template Name:") + "\n" + nameStyle.Render(nameValue) + "\n"
 		s += m.renderTemplateFieldError("name")
 
 		// Post Date Column field
@@ -364,7 +364,7 @@ func (m model) View() string {
 		if m.isEditingTemplatePostDate {
 			postDateValue = m.editingTemplatePostDateStr
 		}
-		s += formLabelStyle.Render("Post Date Column Index:") + postDateStyle.Render(postDateValue) + "\n"
+		s += formLabelStyle.Render("Post Date Column Index:") + "\n" + postDateStyle.Render(postDateValue) + "\n"
 		s += m.renderTemplateFieldError("postdate")
 
 		// Amount Column field
@@ -373,7 +373,7 @@ func (m model) View() string {
 		if m.isEditingTemplateAmount {
 			amountValue = m.editingTemplateAmountStr
 		}
-		s += formLabelStyle.Render("Amount Column Index:") + amountStyle.Render(amountValue) + "\n"
+		s += formLabelStyle.Render("Amount Column Index:") + "\n" + amountStyle.Render(amountValue) + "\n"
 		s += m.renderTemplateFieldError("amount")
 
 		// Description Column field
@@ -382,7 +382,7 @@ func (m model) View() string {
 		if m.isEditingTemplateDesc {
 			descValue = m.editingTemplateDescStr
 		}
-		s += formLabelStyle.Render("Description Column Index:") + descStyle.Render(descValue) + "\n"
+		s += formLabelStyle.Render("Description Column Index:") + "\n" + descStyle.Render(descValue) + "\n"
 		s += m.renderTemplateFieldError("description")
 
 		// Category Column field (optional)
@@ -397,7 +397,7 @@ func (m model) View() string {
 		} else if m.newTemplate.CategoryColumn != nil {
 			categoryValue = fmt.Sprintf("%d", *m.newTemplate.CategoryColumn)
 		}
-		s += formLabelStyle.Render("Category Column Index (optional):") + categoryStyle.Render(categoryValue) + "\n"
+		s += formLabelStyle.Render("Category Column Index (optional):") + "\n" + categoryStyle.Render(categoryValue) + "\n"
 		s += m.renderTemplateFieldError("category")
 
 		// Has Header field
@@ -406,7 +406,7 @@ func (m model) View() string {
 		if m.newTemplate.HasHeader {
 			headerValue = "Yes"
 		}
-		s += formLabelStyle.Render("Has Header:") + headerStyle.Render(headerValue) + "\n\n"
+		s += formLabelStyle.Render("Has Header:") + "\n" + headerStyle.Render(headerValue) + "\n\n"
 
 		s += faintStyle.Render("Up/Down: Navigate | Enter/Backspace: Edit | Ctrl+S: Save | Esc: Cancel")
 	case bulkEditView:
